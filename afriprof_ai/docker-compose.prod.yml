@@ -1,0 +1,125 @@
+services:
+  traefik:
+    image: traefik:v2.11
+    container_name: traefik_prod
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge=true"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.myresolver.acme.email=admin@afriprof.com"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+      - "--log.level=INFO"
+      - "--accesslog=true"
+      - "--providers.file.directory=/etc/traefik/dynamic"
+      - "--providers.file.watch=true"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./compose/prod/traefik/traefik.yml:/etc/traefik/traefik.yml:ro"
+      - "./compose/prod/traefik/dynamic_conf.yml:/etc/traefik/dynamic/dynamic_conf.yml:ro"
+      - "letsencrypt_prod_vol:/letsencrypt"
+    networks:
+      - web
+      - internal-net
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: compose/prod/Dockerfile.prod
+    container_name: app_prod
+    env_file:
+      - .env.prod
+    depends_on:
+      - ollama_prod
+      - kokoro-tts_prod
+      - postgres_prod
+    volumes:
+      - tts_cache_prod_vol:/app/tts_cache
+    networks:
+      - internal-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.app_prod.rule=Host(`ai.dev.afriprof.com`)"
+      - "traefik.http.routers.app_prod.entrypoints=web"
+      - "traefik.http.routers.app_prod_secure.rule=Host(`ai.dev.afriprof.com`)"
+      - "traefik.http.routers.app_prod_secure.entrypoints=websecure"
+      - "traefik.http.routers.app_prod_secure.tls.certresolver=myresolver"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.app_prod.middlewares=redirect-to-https"
+      - "traefik.http.services.app_prod.loadbalancer.server.port=8000"
+    restart: unless-stopped
+    # healthcheck:
+    #   test: ["CMD-SHELL", "curl -f http://localhost:8000/docs || exit 1"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 60s
+
+  ollama_prod:
+    image: ollama/ollama
+    container_name: ollama_prod
+    volumes:
+      - ollama_data_prod_vol:/root/.ollama
+    networks:
+      - internal-net
+    restart: unless-stopped
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    # healthcheck:
+    #   test: ["CMD-SHELL", "curl -f http://localhost:11434/api/tags || exit 1"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 10
+    #   start_period: 60s
+
+  kokoro-tts_prod:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:v0.2.2
+    container_name: kokoro-tts_prod
+    networks:
+      - internal-net
+    restart: unless-stopped
+    environment:
+      - DNS=8.8.8.8,8.8.4.4
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8880/health || curl -f http://localhost:8880/ || exit 1"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 120s
+
+  postgres_prod:
+    image: ankane/pgvector
+    container_name: postgres_prod
+    env_file:
+      - .env.prod
+    volumes:
+      - pgvolume_prod_vol:/var/lib/postgresql/data
+      - ./compose/prod/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - internal-net
+    restart: unless-stopped
+    healthcheck:
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  ollama_data_prod_vol: {}
+  pgvolume_prod_vol: {}
+  tts_cache_prod_vol: {}
+  letsencrypt_prod_vol: {}
+
+networks:
+  web:
+    driver: bridge
+  internal-net:
+    driver: bridge

@@ -1,0 +1,9 @@
+# dynamic_conf.yml (Can be used for more complex routing, middleware, etc. if not using labels)
+# For now, we'll primarily use Docker labels for the app service.
+# Example of how you might define middleware or routers here if needed:
+# http:
+#   middlewares:
+#     my-auth:
+#       basicAuth:
+#         users:
+#           - "user:hashedpassword" # Generate with htpasswd

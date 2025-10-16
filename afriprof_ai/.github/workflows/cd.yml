@@ -1,0 +1,248 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+env:
+  DEPLOY_PATH: /opt/afriprof_ai
+  COMPOSE_FILE: docker-compose.prod.yml
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Create environment file
+      run: |
+        echo "API_HOST=0.0.0.0" >> .env.prod
+        echo "API_PORT=8000" >> .env.prod
+        echo "API_RELOAD=0" >> .env.prod
+        echo "OLLAMA_BASE_URL=http://ollama_prod:11434" >> .env.prod
+        echo "KOKORO_TTS_URL=http://kokoro-tts_prod:8880" >> .env.prod
+        echo "DATABASE_URL=postgresql://${{ vars.POSTGRES_USER }}:${{ vars.POSTGRES_PASSWORD }}@postgres_prod:5432/${{ vars.POSTGRES_DB }}" >> .env.prod
+        echo "VOSK_MODEL_PATH=/app/model/vosk-model-en-us-0.22" >> .env.prod
+        echo "POSTGRES_USER=${{ vars.POSTGRES_USER }}" >> .env.prod
+        echo "POSTGRES_PASSWORD=${{ vars.POSTGRES_PASSWORD }}" >> .env.prod
+        echo "POSTGRES_DB=${{ vars.POSTGRES_DB }}" >> .env.prod
+        echo "PGDATA=/var/lib/postgresql/data/pgdata" >> .env.prod
+
+    - name: Clean up target directory on server
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ vars.SERVER_HOST }}
+        username: ${{ vars.SERVER_USERNAME }}
+        key: ${{ secrets.SERVER_SSH_PRIVATE_KEY }}
+        script: |
+          rm -rf ${{ env.DEPLOY_PATH }}/*
+
+    - name: Copy files to server
+      uses: appleboy/scp-action@master
+      with:
+        host: ${{ vars.SERVER_HOST }}
+        username: ${{ vars.SERVER_USERNAME }}
+        key: ${{ secrets.SERVER_SSH_PRIVATE_KEY }}
+        source: ".,.env.prod"
+        target: "${{ env.DEPLOY_PATH }}"
+        overwrite: true
+
+    - name: Deploy to server
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ vars.SERVER_HOST }}
+        username: ${{ vars.SERVER_USERNAME }}
+        key: ${{ secrets.SERVER_SSH_PRIVATE_KEY }}
+        script: |
+          cd ${{ env.DEPLOY_PATH }}
+          
+          # Check Docker availability and set commands
+          if ! docker info &> /dev/null; then
+            if ! sudo docker info &> /dev/null; then
+              echo "❌ Docker is not accessible"
+              exit 1
+            fi
+            DOCKER_CMD="sudo docker"
+            COMPOSE_CMD="sudo docker compose"
+          else
+            DOCKER_CMD="docker"
+            COMPOSE_CMD="docker compose"
+          fi
+          
+          echo "✅ Docker is accessible"
+          
+          # Create required directories
+          mkdir -p ./compose/prod/postgres
+          mkdir -p ./compose/prod/traefik
+          
+          # Clean up existing deployment
+          echo "🧹 Cleaning up existing deployment..."
+          $COMPOSE_CMD -f ${{ env.COMPOSE_FILE }} down --remove-orphans 2>/dev/null || true
+          $DOCKER_CMD container prune -f 2>/dev/null || true
+          
+          # Create networks (ignore if exists)
+          $DOCKER_CMD network create web 2>/dev/null || true
+          $DOCKER_CMD network create internal-net 2>/dev/null || true
+          
+          # Validate compose file
+          echo "✅ Validating docker-compose file..."
+          if ! $COMPOSE_CMD -f ${{ env.COMPOSE_FILE }} config --quiet; then
+            echo "❌ Docker Compose file validation failed"
+            echo "Debug: Showing compose file content"
+            cat ${{ env.COMPOSE_FILE }}
+            exit 1
+          fi
+          
+          # Build and deploy with real-time output
+          echo "🔨 Building and starting services..."
+          $COMPOSE_CMD -f ${{ env.COMPOSE_FILE }} up --build -d --force-recreate
+          
+          # Monitor service startup
+          echo "⏳ Monitoring service startup..."
+          timeout=180  # 3 minutes
+          elapsed=0
+          
+          while [ $elapsed -lt $timeout ]; do
+            echo "📊 Service Status (${elapsed}s elapsed):"
+            $COMPOSE_CMD -f ${{ env.COMPOSE_FILE }} ps
+            
+            # Count healthy services
+            healthy_count=0
+            
+            # Check postgres
+            if $COMPOSE_CMD -f ${{ env.COMPOSE_FILE }} ps postgres_prod | grep -q "healthy"; then
+              healthy_count=$((healthy_count + 1))
+            fi
+            
+            # Check app (main service)
+            if $COMPOSE_CMD -f ${{ env.COMPOSE_FILE }} ps app_prod | grep -q "Up"; then
+              healthy_count=$((healthy_count + 1))
+            fi
+            
+            # Check kokoro-tts
+            if $COMPOSE_CMD -f ${{ env.COMPOSE_FILE }} ps kokoro-tts_prod | grep -q "healthy"; then
+              healthy_count=$((healthy_count + 1))
+            fi
+            
+            # Check traefik (just running)
+            if $COMPOSE_CMD -f ${{ env.COMPOSE_FILE }} ps traefik | grep -q "Up"; then
+              healthy_count=$((healthy_count + 1))
+            fi
+            
+            echo "Core services ready: $healthy_count/4"
+            
+            if [ $healthy_count -ge 4 ]; then
+              echo "✅ All core services are ready"
+              break
+            fi
+            
+            echo "⏳ Waiting for services... (${elapsed}/${timeout}s)"
+            sleep 15
+            elapsed=$((elapsed + 15))
+          done
+          
+          # Final status check
+          echo "📊 Final Service Status:"
+          $COMPOSE_CMD -f ${{ env.COMPOSE_FILE }} ps
+          
+          # Show recent logs for verification  
+          echo "📋 Recent logs:"
+          $COMPOSE_CMD -f ${{ env.COMPOSE_FILE }} logs --tail=20
+          
+          # Clean up unused images
+          echo "🧹 Cleaning up unused images..."
+          $DOCKER_CMD image prune -f
+
+    - name: Verify deployment and initialize AI model
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ vars.SERVER_HOST }}
+        username: ${{ vars.SERVER_USERNAME }}
+        key: ${{ secrets.SERVER_SSH_PRIVATE_KEY }}
+        script: |
+          cd ${{ env.DEPLOY_PATH }}
+          
+          # Set Docker commands
+          if ! docker info &> /dev/null; then
+            COMPOSE_CMD="sudo docker compose"
+            DOCKER_CMD="sudo docker"
+          else
+            COMPOSE_CMD="docker compose"
+            DOCKER_CMD="docker"
+          fi
+          
+          # Final health check
+          echo "🔍 Final deployment verification:"
+          
+          # Check if all services are running
+          RUNNING_SERVICES=$($COMPOSE_CMD -f ${{ env.COMPOSE_FILE }} ps --services --filter "status=running" | wc -l)
+          TOTAL_SERVICES=$($COMPOSE_CMD -f ${{ env.COMPOSE_FILE }} ps --services | wc -l)
+          
+          echo "Services running: $RUNNING_SERVICES/$TOTAL_SERVICES"
+          
+          if [ "$RUNNING_SERVICES" -ge 3 ]; then
+            echo "✅ Core services are running successfully!"
+            
+            # Initialize Ollama model automatically
+            if $DOCKER_CMD ps | grep -q "ollama_prod.*Up"; then
+              echo "🤖 Initializing AI model..."
+              
+              # Wait for Ollama to be ready (max 2 minutes)
+              timeout=120
+              elapsed=0
+              ollama_ready=false
+              
+              while [ $elapsed -lt $timeout ]; do
+                if $DOCKER_CMD exec ollama_prod curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
+                  echo "✅ Ollama service is ready"
+                  ollama_ready=true
+                  break
+                fi
+                echo "⏳ Waiting for Ollama service... (${elapsed}/${timeout}s)"
+                sleep 10
+                elapsed=$((elapsed + 10))
+              done
+              
+              if [ "$ollama_ready" = true ]; then
+                # Check if any model is already installed
+                model_count=$($DOCKER_CMD exec ollama_prod ollama list 2>/dev/null | grep -v NAME | wc -l || echo "0")
+                
+                if [ "$model_count" -eq 0 ]; then
+                  echo "📥 No models found. Pulling AI model..."
+                  
+                  # Try to pull model with timeout (max 10 minutes)
+                  if timeout 600 $DOCKER_CMD exec ollama_prod ollama pull qwen2.5:1.5b 2>/dev/null; then
+                    echo "✅ AI model qwen2.5:1.5b downloaded successfully"
+                  elif timeout 600 $DOCKER_CMD exec ollama_prod ollama pull qwen2:1.5b 2>/dev/null; then
+                    echo "✅ Fallback AI model qwen2:1.5b downloaded successfully"
+                  elif timeout 300 $DOCKER_CMD exec ollama_prod ollama pull llama3.2:1b 2>/dev/null; then
+                    echo "✅ Lightweight AI model llama3.2:1b downloaded successfully"
+                  else
+                    echo "⚠️  Model download failed. System will work but AI features may not be available."
+                    echo "💡 You can manually pull a model later: docker exec ollama_prod ollama pull llama3.2:1b"
+                  fi
+                else
+                  echo "✅ AI model already installed"
+                fi
+                
+                echo "📋 Available models:"
+                $DOCKER_CMD exec ollama_prod ollama list 2>/dev/null || echo "No models listed"
+              else
+                echo "⚠️  Ollama service not ready for model initialization"
+              fi
+            fi
+            
+            echo ""
+            echo "🎉 Deployment completed successfully!"
+            echo "🌐 Your application should be available at: http://ai.dev.afriprof.com"
+            
+          else
+            echo "⚠️ Some services may not be running properly"
+            echo "Service details:"
+            $COMPOSE_CMD -f ${{ env.COMPOSE_FILE }} ps
+            
+            # Show logs for troubleshooting
+            echo "📋 Recent logs for troubleshooting:"
+            $COMPOSE_CMD -f ${{ env.COMPOSE_FILE }} logs --tail=30
+          fi
