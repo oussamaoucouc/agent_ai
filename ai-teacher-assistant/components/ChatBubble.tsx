@@ -10,38 +10,70 @@ interface ChatBubbleProps {
 }
 
 /**
- * A simple markdown parser to convert assistant responses into formatted HTML.
- * Handles paragraphs, bold, italics, and basic unordered/ordered lists.
- * @param text The raw text string.
- * @returns An HTML string.
+ * Parses inline markdown elements like bold, italics, and links.
+ * @param text The text content of a block element.
+ * @returns An HTML string with inline elements formatted.
+ */
+const parseInlineMarkdown = (text: string): string => {
+    let finalHtml = text;
+    // Links: [text](url) - must be first to avoid conflicts with bold/italic markers
+    finalHtml = finalHtml.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:text-sky-300 hover:underline">$1</a>');
+    // Bold: **text**
+    finalHtml = finalHtml.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-gray-100">$1</strong>');
+    // Italics: *text*
+    finalHtml = finalHtml.replace(/\*(.*?)\*/g, '<em>$1</em>');
+    return finalHtml;
+}
+
+/**
+ * A more robust markdown parser that handles block-level elements first.
+ * It processes headings, lists (ordered and unordered), and paragraphs.
+ * @param text The raw text string from the agent.
+ * @returns A formatted HTML string.
  */
 const parseMarkdown = (text: string): string => {
-    // Split text into logical blocks based on double newlines
-    const blocks = text.split(/\n\n+/);
+    // Split the text into blocks separated by one or more empty lines.
+    const blocks = text.split(/\n\s*\n/);
 
     const htmlBlocks = blocks.map(block => {
-        // Unordered list check
-        if (/^(?:-|\*)\s/.test(block)) {
-            const items = block.split('\n').map(item => `<li>${item.replace(/^(?:-|\*)\s/, '')}</li>`).join('');
-            return `<ul class="list-disc list-inside space-y-1 my-2">${items}</ul>`;
+        const trimmedBlock = block.trim();
+        if (!trimmedBlock) return '';
+
+        // Headings
+        if (trimmedBlock.startsWith('#')) {
+            if (trimmedBlock.startsWith('###')) return `<h3 class="text-lg font-semibold my-2 text-gray-100">${parseInlineMarkdown(trimmedBlock.substring(4))}</h3>`;
+            if (trimmedBlock.startsWith('##')) return `<h2 class="text-xl font-bold my-3 text-gray-50">${parseInlineMarkdown(trimmedBlock.substring(3))}</h2>`;
+            if (trimmedBlock.startsWith('#')) return `<h1 class="text-2xl font-bold my-4 text-white">${parseInlineMarkdown(trimmedBlock.substring(2))}</h1>`;
         }
-        // Ordered list check
-        if (/^\d+\.\s/.test(block)) {
-            const items = block.split('\n').map(item => `<li>${item.replace(/^\d+\.\s/, '')}</li>`).join('');
-            return `<ol class="list-decimal list-inside space-y-1 my-2">${items}</ol>`;
+
+        // Lists
+        const isUnorderedList = /^\s*[-*]/.test(trimmedBlock);
+        const isOrderedList = /^\s*\d+\./.test(trimmedBlock);
+
+        if (isUnorderedList || isOrderedList) {
+            const lines = trimmedBlock.split('\n').filter(line => line.trim());
+            if (lines.length === 0) return '';
+            
+            const listTag = isOrderedList ? 'ol' : 'ul';
+            const listClass = isOrderedList ? 'list-decimal' : 'list-disc';
+            
+            const items = lines.map(line => {
+                const itemContent = line.replace(/^\s*(?:-|\*|\d+\.)\s+/, '');
+                // Skip lines that are just a list marker (e.g., "5.")
+                if (!itemContent.trim()) return '';
+                return `<li>${parseInlineMarkdown(itemContent)}</li>`;
+            }).join('');
+
+            return `<${listTag} class="${listClass} list-inside space-y-1.5 pl-2 my-2">${items}</${listTag}>`;
         }
-        // It's a paragraph
-        return `<p>${block.replace(/\n/g, '<br />')}</p>`;
+
+        // Paragraphs (default)
+        // Convert single newlines to <br> for line breaks within a paragraph.
+        return `<p>${parseInlineMarkdown(trimmedBlock.replace(/\n/g, '<br />'))}</p>`;
     });
 
-    let finalHtml = htmlBlocks.join('');
-
-    // Apply inline formatting (bold and italic) after block processing
-    finalHtml = finalHtml
-        .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-gray-100">$1</strong>')
-        .replace(/\*(.*?)\*/g, '<em class="italic">$1</em>');
-        
-    return finalHtml;
+    // Join the processed blocks. A <p> block already has appropriate margins.
+    return htmlBlocks.join('\n');
 };
 
 
@@ -61,7 +93,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, onPl
                 </div>
                 <div className={`relative text-gray-300 p-4 rounded-xl ${isUser ? 'bg-sky-700 rounded-br-none' : 'bg-gray-800 rounded-tl-none'}`}>
                     <div 
-                        className={`prose-p:m-0 prose-strong:text-white prose-em:text-gray-300 ${message.audioUrl && !isUser ? 'pr-10 pb-6' : ''}`}
+                        className={`prose-p:m-0 prose-strong:text-white prose-em:text-gray-300 space-y-3 ${message.audioUrl && !isUser ? 'pr-10 pb-6' : ''}`}
                         dangerouslySetInnerHTML={{ __html: parseMarkdown(message.text) }} 
                     />
                     {message.audioUrl && !isUser && (
