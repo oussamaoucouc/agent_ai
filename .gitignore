@@ -1,0 +1,47 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.code-workspace
+.history/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Environments
+.env
+.env.*
+env/
+venv/
+.venv/
+
+# Node/Frontend (generic)
+node_modules/
+dist/
+.vite/
+.cache/
+.env*
+
+# Build/Cache
+build/
+dist/
+.cache/
+
+# Data and models (large)
+model/
+data/pdfs/
+
+# Binaries (rhubarb lip-sync)
+rhubarb/Rhubarb-Lip-Sync-1.13.0-Windows/
+rhubarb/Rhubarb-Lip-Sync-1.13.0-Linux/

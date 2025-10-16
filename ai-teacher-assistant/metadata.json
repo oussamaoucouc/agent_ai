@@ -1,0 +1,7 @@
+{
+  "name": "AI Teacher Assistant",
+  "description": "A modern, interactive AI Teacher Assistant with text-to-speech, speech-to-text, and document-aware RAG capabilities. Engage in a dynamic learning experience with a voice-enabled AI tutor.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
