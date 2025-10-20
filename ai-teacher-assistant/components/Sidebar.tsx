@@ -1,7 +1,7 @@
 
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { UploadedFile, Session } from '../types';
-import { DocumentIcon, UploadIcon, SpinnerIcon, CheckIcon, ErrorIcon, PlusIcon, LogoutIcon, ChatIcon, CloseIcon } from './icons';
+import { DocumentIcon, UploadIcon, SpinnerIcon, CheckIcon, ErrorIcon, PlusIcon, LogoutIcon, ChatIcon, CloseIcon, EditIcon, TrashIcon } from './icons';
 
 interface SidebarProps {
     uploadedFiles: UploadedFile[];
@@ -10,6 +10,8 @@ interface SidebarProps {
     activeSessionId: string | null;
     onNewSession: () => void;
     onSelectSession: (sessionId: string) => void;
+    onRenameSession: (sessionId: string, newName: string) => void;
+    onDeleteSession: (sessionId: string) => void;
     onLogout: () => void;
     isSidebarOpen: boolean;
     onClose: () => void;
@@ -35,10 +37,44 @@ export const Sidebar: React.FC<SidebarProps> = ({
     activeSessionId, 
     onNewSession, 
     onSelectSession, 
+    onRenameSession,
+    onDeleteSession,
     onLogout,
     isSidebarOpen,
     onClose
 }) => {
+    const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+    const [sessionName, setSessionName] = useState('');
+    const renameInputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (renamingSessionId && renameInputRef.current) {
+            renameInputRef.current.focus();
+            renameInputRef.current.select();
+        }
+    }, [renamingSessionId]);
+
+    const handleStartRename = (session: Session) => {
+        setRenamingSessionId(session.id);
+        setSessionName(session.name);
+    };
+    
+    const handleFinishRename = () => {
+        if (renamingSessionId) {
+            onRenameSession(renamingSessionId, sessionName);
+            setRenamingSessionId(null);
+        }
+    };
+
+    const handleRenameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            handleFinishRename();
+        } else if (e.key === 'Escape') {
+            setRenamingSessionId(null);
+        }
+    };
+
+
     return (
         <aside className={`w-72 flex-shrink-0 bg-gray-800 p-4 border-r border-gray-700 flex flex-col fixed inset-y-0 left-0 z-40 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
             <div className="flex-1 flex flex-col overflow-y-auto">
@@ -69,21 +105,54 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </div>
                     <div className="pr-1 space-y-1.5">
                         {sessions.map(session => (
-                            <button
-                                key={session.id}
-                                onClick={() => {
-                                    onSelectSession(session.id);
-                                    onClose();
-                                }}
-                                className={`w-full text-left flex items-center p-2 rounded-md transition-colors ${
-                                    session.id === activeSessionId
-                                        ? 'bg-sky-600/50 text-white'
-                                        : 'text-gray-400 hover:bg-gray-700/50 hover:text-gray-200'
-                                }`}
-                            >
-                                <ChatIcon className="w-4 h-4 mr-3 flex-shrink-0" />
-                                <span className="flex-1 text-sm truncate">{session.name}</span>
-                            </button>
+                            <div key={session.id} className="relative group">
+                                <button
+                                    onClick={() => {
+                                        if (renamingSessionId !== session.id) {
+                                            onSelectSession(session.id);
+                                            onClose();
+                                        }
+                                    }}
+                                    className={`w-full text-left flex items-center p-2 rounded-md transition-colors ${
+                                        session.id === activeSessionId
+                                            ? 'bg-sky-600/50 text-white'
+                                            : 'text-gray-400 hover:bg-gray-700/50 hover:text-gray-200'
+                                    }`}
+                                >
+                                    <ChatIcon className="w-4 h-4 mr-3 flex-shrink-0" />
+                                    {renamingSessionId === session.id ? (
+                                        <input
+                                            ref={renameInputRef}
+                                            type="text"
+                                            value={sessionName}
+                                            onChange={(e) => setSessionName(e.target.value)}
+                                            onBlur={handleFinishRename}
+                                            onKeyDown={handleRenameKeyDown}
+                                            className="flex-1 text-sm bg-gray-900/80 rounded px-1 py-0 border border-sky-500 focus:outline-none w-0"
+                                        />
+                                    ) : (
+                                        <span className="flex-1 text-sm truncate">{session.name}</span>
+                                    )}
+                                </button>
+                                {renamingSessionId !== session.id && (
+                                    <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-gray-700/50 rounded-md">
+                                        <button
+                                            onClick={() => handleStartRename(session)}
+                                            className="p-1.5 text-gray-400 hover:text-white rounded-md"
+                                            title="Rename session"
+                                        >
+                                            <EditIcon className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onClick={() => onDeleteSession(session.id)}
+                                            className="p-1.5 text-gray-400 hover:text-red-400 rounded-md"
+                                            title="Delete session"
+                                        >
+                                            <TrashIcon className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                         ))}
                     </div>
                 </div>

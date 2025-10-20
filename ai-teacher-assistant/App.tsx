@@ -189,13 +189,39 @@ const App: React.FC = () => {
             setMessages(session.messages);
         }
     };
+    
+    const handleDeleteSession = (sessionId: string) => {
+        if (!currentUser || !window.confirm("Are you sure you want to delete this session? This action cannot be undone.")) return;
+    
+        const remainingSessions = sessions.filter(s => s.id !== sessionId);
+        setSessions(remainingSessions);
+        storage.saveSessionsForUser(currentUser, remainingSessions);
+    
+        if (activeSessionId === sessionId) {
+            if (remainingSessions.length > 0) {
+                const sorted = [...remainingSessions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                handleSelectSession(sorted[0].id, sorted);
+            } else {
+                handleNewSession();
+            }
+        }
+    };
+
+    const handleRenameSession = (sessionId: string, newName: string) => {
+        if (!currentUser || !newName.trim()) return;
+    
+        const updatedSessions = sessions.map(s => 
+            s.id === sessionId ? { ...s, name: newName.trim() } : s
+        );
+        setSessions(updatedSessions);
+        storage.saveSessionsForUser(currentUser, updatedSessions);
+    };
 
     const handlePlayAudio = useCallback((message: Message) => {
         if (message.audioUrl && message.visemes) {
             playAudioWithVisemes(message.audioUrl, message.visemes, message.id);
         }
     }, [playAudioWithVisemes]);
-
 
     const handleSendText = async (text: string) => {
         if (!text.trim() || isLoading || !activeSessionId || !currentUser) return;
@@ -370,6 +396,8 @@ const App: React.FC = () => {
                 activeSessionId={activeSessionId}
                 onNewSession={handleNewSession}
                 onSelectSession={(id) => handleSelectSession(id, sessions)}
+                onRenameSession={handleRenameSession}
+                onDeleteSession={handleDeleteSession}
                 onLogout={handleLogout}
             />
             <main className="flex flex-col flex-1 h-screen overflow-hidden">

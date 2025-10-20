@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Message, User } from '../types';
-import { PlayIcon, StopIcon, UserIcon } from './icons';
+import { PlayIcon, StopIcon, UserIcon, CopyIcon, CheckIcon } from './icons';
 
 interface ChatBubbleProps {
     message: Message;
@@ -9,44 +9,26 @@ interface ChatBubbleProps {
     onStopAudio: () => void;
 }
 
-/**
- * Parses inline markdown elements like bold, italics, and links.
- * @param text The text content of a block element.
- * @returns An HTML string with inline elements formatted.
- */
 const parseInlineMarkdown = (text: string): string => {
     let finalHtml = text;
-    // Links: [text](url) - must be first to avoid conflicts with bold/italic markers
     finalHtml = finalHtml.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:text-sky-300 hover:underline">$1</a>');
-    // Bold: **text**
     finalHtml = finalHtml.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-gray-100">$1</strong>');
-    // Italics: *text*
     finalHtml = finalHtml.replace(/\*(.*?)\*/g, '<em>$1</em>');
     return finalHtml;
 }
 
-/**
- * A more robust markdown parser that handles block-level elements first.
- * It processes headings, lists (ordered and unordered), and paragraphs.
- * @param text The raw text string from the agent.
- * @returns A formatted HTML string.
- */
 const parseMarkdown = (text: string): string => {
-    // Split the text into blocks separated by one or more empty lines.
     const blocks = text.split(/\n\s*\n/);
-
     const htmlBlocks = blocks.map(block => {
         const trimmedBlock = block.trim();
         if (!trimmedBlock) return '';
 
-        // Headings
         if (trimmedBlock.startsWith('#')) {
             if (trimmedBlock.startsWith('###')) return `<h3 class="text-lg font-semibold my-2 text-gray-100">${parseInlineMarkdown(trimmedBlock.substring(4))}</h3>`;
             if (trimmedBlock.startsWith('##')) return `<h2 class="text-xl font-bold my-3 text-gray-50">${parseInlineMarkdown(trimmedBlock.substring(3))}</h2>`;
             if (trimmedBlock.startsWith('#')) return `<h1 class="text-2xl font-bold my-4 text-white">${parseInlineMarkdown(trimmedBlock.substring(2))}</h1>`;
         }
 
-        // Lists
         const isUnorderedList = /^\s*[-*]/.test(trimmedBlock);
         const isOrderedList = /^\s*\d+\./.test(trimmedBlock);
 
@@ -59,7 +41,6 @@ const parseMarkdown = (text: string): string => {
             
             const items = lines.map(line => {
                 const itemContent = line.replace(/^\s*(?:-|\*|\d+\.)\s+/, '');
-                // Skip lines that are just a list marker (e.g., "5.")
                 if (!itemContent.trim()) return '';
                 return `<li>${parseInlineMarkdown(itemContent)}</li>`;
             }).join('');
@@ -67,18 +48,25 @@ const parseMarkdown = (text: string): string => {
             return `<${listTag} class="${listClass} list-inside space-y-1.5 pl-2 my-2">${items}</${listTag}>`;
         }
 
-        // Paragraphs (default)
-        // Convert single newlines to <br> for line breaks within a paragraph.
         return `<p>${parseInlineMarkdown(trimmedBlock.replace(/\n/g, '<br />'))}</p>`;
     });
 
-    // Join the processed blocks. A <p> block already has appropriate margins.
     return htmlBlocks.join('\n');
 };
 
 
 export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, onPlayAudio, onStopAudio }) => {
     const isUser = message.sender === User.USER;
+    const [showCopied, setShowCopied] = useState(false);
+
+    const handleCopy = () => {
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(message.text).then(() => {
+                setShowCopied(true);
+                setTimeout(() => setShowCopied(false), 2000);
+            });
+        }
+    };
 
     return (
         <div className={`flex items-start gap-4 ${isUser ? 'justify-end' : ''}`}>
@@ -91,30 +79,39 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, onPl
                 <div className={`flex items-center gap-2 ${isUser ? 'justify-end' : ''}`}>
                     <div className="font-bold text-gray-200">{isUser ? 'You' : 'Assistant'}</div>
                 </div>
-                <div className={`relative text-gray-300 p-4 rounded-xl ${isUser ? 'bg-sky-700 rounded-br-none' : 'bg-gray-800 rounded-tl-none'}`}>
+                <div className={`relative text-gray-300 p-4 rounded-xl group ${isUser ? 'bg-sky-700 rounded-br-none' : 'bg-gray-800 rounded-tl-none'}`}>
                     <div 
-                        className={`prose-p:m-0 prose-strong:text-white prose-em:text-gray-300 space-y-3 ${message.audioUrl && !isUser ? 'pr-10 pb-6' : ''}`}
+                        className={`prose-p:m-0 prose-strong:text-white prose-em:text-gray-300 space-y-3 ${!isUser ? 'pb-8' : ''}`}
                         dangerouslySetInnerHTML={{ __html: parseMarkdown(message.text) }} 
                     />
-                    {message.audioUrl && !isUser && (
-                        <div className="absolute bottom-3 right-3 z-10">
-                            {isPlaying ? (
-                                <button 
-                                    onClick={onStopAudio} 
-                                    title="Stop audio" 
-                                    className="w-6 h-6 flex items-center justify-center rounded-full bg-red-600/80 hover:bg-red-600 text-white transition-all duration-200 transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-opacity-50"
-                                >
-                                    <StopIcon className="w-3 h-3" />
-                                </button>
-                            ) : (
-                                <button 
-                                    onClick={onPlayAudio} 
-                                    title="Play audio" 
-                                    className="w-6 h-6 flex items-center justify-center rounded-full bg-sky-600/80 hover:bg-sky-600 text-white transition-all duration-200 transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-opacity-50"
-                                >
-                                    <PlayIcon className="w-3 h-3" />
-                                </button>
+                    {!isUser && (
+                        <div className={`absolute bottom-2 right-2 z-10 flex items-center gap-1.5 bg-gray-900/50 backdrop-blur-sm p-1 rounded-lg transition-opacity duration-200 ${
+                            isPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'
+                        }`}>
+                            {message.audioUrl && (
+                                <>
+                                    {isPlaying ? (
+                                        <button 
+                                            onClick={onStopAudio} 
+                                            title="Stop audio" 
+                                            className="p-1.5 flex items-center justify-center rounded-md bg-red-600/80 hover:bg-red-600 text-white transition-all"
+                                        >
+                                            <StopIcon className="w-4 h-4" />
+                                        </button>
+                                    ) : (
+                                        <button 
+                                            onClick={onPlayAudio} 
+                                            title="Play audio" 
+                                            className="p-1.5 flex items-center justify-center rounded-md text-gray-300 hover:bg-gray-700 hover:text-white transition-all"
+                                        >
+                                            <PlayIcon className="w-4 h-4" />
+                                        </button>
+                                    )}
+                                </>
                             )}
+                            <button onClick={handleCopy} title="Copy text" className="p-1.5 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors">
+                                {showCopied ? <CheckIcon className="w-4 h-4 text-green-400" /> : <CopyIcon className="w-4 h-4" />}
+                            </button>
                         </div>
                     )}
                 </div>

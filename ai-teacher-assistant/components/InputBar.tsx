@@ -1,5 +1,4 @@
-
-import React, { useState, KeyboardEvent } from 'react';
+import React, { useState, KeyboardEvent, useRef, useEffect } from 'react';
 import { MicButton } from './MicButton';
 import { SendIcon, ToolIcon } from './icons';
 
@@ -15,6 +14,17 @@ interface InputBarProps {
 
 export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStartRecording, onStopRecording, isLoading, isToolsActive, onToggleTools }) => {
     const [text, setText] = useState('');
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    // Auto-resize textarea height based on content
+    useEffect(() => {
+        const textarea = textareaRef.current;
+        if (textarea) {
+            textarea.style.height = 'auto'; // Reset height to recalculate
+            const scrollHeight = textarea.scrollHeight;
+            textarea.style.height = `${scrollHeight}px`; // Set height to content height
+        }
+    }, [text]); // Run this effect whenever text changes
 
     const handleSend = () => {
         if (text.trim()) {
@@ -33,11 +43,12 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
     return (
         <div className="w-full bg-gray-800/50 p-3 rounded-xl border border-gray-700 flex items-end gap-3 shadow-lg">
             <textarea
+                ref={textareaRef}
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Type your question here or use the microphone..."
-                className="flex-1 bg-transparent resize-none text-gray-200 placeholder-gray-500 focus:outline-none max-h-32"
+                className="flex-1 bg-transparent resize-none text-gray-200 placeholder-gray-500 focus:outline-none max-h-32 overflow-y-auto"
                 rows={1}
                 disabled={isLoading || isRecording}
             />

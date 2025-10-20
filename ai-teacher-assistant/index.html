@@ -94,23 +94,23 @@
         animation: blink 7s infinite;
       }
       
-      /* Subtle Glance for small avatar */
+      /* Subtle Glance for idle avatar */
       @keyframes subtle-glance {
         0%, 80%, 100% {
           transform: translateX(0);
         }
         85% {
-          transform: translateX(-0.6px); /* SVG units */
+          transform: translateX(-0.8px); /* SVG units */
         }
         95% {
-          transform: translateX(0.6px); /* SVG units */
+          transform: translateX(0.8px); /* SVG units */
         }
       }
       .animate-subtle-glance {
-        animation: subtle-glance 6s infinite ease-in-out;
+        animation: subtle-glance 8s infinite ease-in-out;
       }
 
-      /* Thinking pulse */
+      /* Thinking pulse for avatar glow */
       @keyframes thinking-pulse {
         0%, 100% {
             transform: scale(0.9);
@@ -121,9 +121,20 @@
             opacity: 1;
         }
       }
+       @keyframes glow-pulse {
+        0%, 100% {
+            box-shadow: 0 0 40px rgba(2, 179, 217, 0.7), 0 0 60px rgba(0, 180, 255, 0.6);
+        }
+        50% {
+            box-shadow: 0 0 55px rgba(2, 179, 217, 0.9), 0 0 85px rgba(0, 180, 255, 0.8);
+        }
+      }
       .animate-thinking-pulse {
         animation: thinking-pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         transform-origin: center;
+      }
+      .animate-glow-pulse {
+        animation: glow-pulse 2s ease-in-out infinite;
       }
 
     </style>
