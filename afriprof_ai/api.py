@@ -61,6 +61,16 @@ class TTSRequest(BaseModel):
     session_id: str
     text: constr(strip_whitespace=True, min_length=1, max_length=2000)
 
+class SetModelRequest(BaseModel):
+    user_id: str
+    session_id: str
+    model: str
+
+class SetVoiceRequest(BaseModel):
+    user_id: str
+    session_id: str
+    voice: str
+
 @app.post("/login")
 async def login(request: LoginRequest):
     # In a real application, you would verify the username and create a real session.
@@ -725,7 +735,7 @@ async def query_agent_debug(request: QueryRequest):
         print(f"DEBUG: User ID: {request.user_id}, Session ID: {request.session_id}")
         
         # Test Ollama connection first
-        from teacher_agent.config import OLLAMA_BASE_URL, MODEL_ID
+        from teacher_agent.config import OLLAMA_BASE_URL, get_current_model_id
         import requests
         
         print(f"DEBUG: Testing Ollama connection to {OLLAMA_BASE_URL}")
@@ -733,7 +743,7 @@ async def query_agent_debug(request: QueryRequest):
             test_response = requests.post(
                 f"{OLLAMA_BASE_URL}/api/generate",
                 json={
-                    "model": MODEL_ID,
+                    "model": get_current_model_id(),
                     "prompt": "Hello",
                     "stream": False
                 },
@@ -761,6 +771,27 @@ async def query_agent_debug(request: QueryRequest):
         import traceback
         print(f"DEBUG: Full traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# Configuration endpoints
+@app.post("/set_model")
+async def set_model_endpoint(request: SetModelRequest):
+    """Set the model for the AI agents"""
+    try:
+        from teacher_agent.config import set_model_id
+        set_model_id(request.model)
+        return {"success": True, "message": f"Model changed to {request.model}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error setting model: {str(e)}")
+
+@app.post("/set_voice")
+async def set_voice_endpoint(request: SetVoiceRequest):
+    """Set the voice for TTS"""
+    try:
+        from teacher_agent.config import set_voice
+        set_voice(request.voice)
+        return {"success": True, "message": f"Voice changed to {request.voice}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error setting voice: {str(e)}")
 
 # Health and monitoring endpoints
 @app.get("/")

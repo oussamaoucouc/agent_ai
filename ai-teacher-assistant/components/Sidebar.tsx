@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { UploadedFile, Session } from '../types';
-import { DocumentIcon, UploadIcon, SpinnerIcon, CheckIcon, ErrorIcon, PlusIcon, LogoutIcon, ChatIcon, CloseIcon, EditIcon, TrashIcon } from './icons';
+import { UploadedFile, Session, TTSVoice } from '../types';
+import { DocumentIcon, UploadIcon, SpinnerIcon, CheckIcon, ErrorIcon, PlusIcon, LogoutIcon, ChatIcon, CloseIcon, EditIcon, TrashIcon, BrainIcon, SpeakerIcon } from './icons';
 
 interface SidebarProps {
     uploadedFiles: UploadedFile[];
@@ -14,6 +14,10 @@ interface SidebarProps {
     onLogout: () => void;
     isSidebarOpen: boolean;
     onClose: () => void;
+    currentModel: string;
+    onModelChange: (model: string) => void;
+    currentVoice: TTSVoice;
+    onVoiceChange: (voice: TTSVoice) => void;
 }
 
 const StatusIcon: React.FC<{ status: UploadedFile['status'] }> = ({ status }) => {
@@ -29,6 +33,15 @@ const StatusIcon: React.FC<{ status: UploadedFile['status'] }> = ({ status }) =>
     }
 };
 
+const femaleVoiceOptions: { id: TTSVoice }[] = [
+    { id: TTSVoice.AF_BELLA }, { id: TTSVoice.AF_NICOLE }, { id: TTSVoice.AF_SARAH },
+    { id: TTSVoice.AF_SKY }, { id: TTSVoice.BF_EMMA }, { id: TTSVoice.BF_ISABELLA },
+];
+const maleVoiceOptions: { id: TTSVoice }[] = [
+    { id: TTSVoice.AM_ADAM }, { id: TTSVoice.AM_MICHAEL }, { id: TTSVoice.BM_GEORGE }, { id: TTSVoice.BM_LEWIS },
+];
+
+
 export const Sidebar: React.FC<SidebarProps> = ({ 
     uploadedFiles, 
     onFileChange, 
@@ -40,10 +53,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
     onDeleteSession,
     onLogout,
     isSidebarOpen,
-    onClose
+    onClose,
+    currentModel,
+    onModelChange,
+    currentVoice,
+    onVoiceChange
 }) => {
     const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
     const [sessionName, setSessionName] = useState('');
+    const [localModel, setLocalModel] = useState(currentModel);
+    
     const renameInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -52,6 +71,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
             renameInputRef.current.select();
         }
     }, [renamingSessionId]);
+
+    // Sync local model state if the prop changes from App
+    useEffect(() => {
+        setLocalModel(currentModel);
+    }, [currentModel]);
+
 
     const handleStartRename = (session: Session) => {
         setRenamingSessionId(session.id);
@@ -73,6 +98,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }
     };
 
+    const handleModelBlur = () => {
+        if (currentModel !== localModel) {
+            onModelChange(localModel);
+        }
+    };
 
     return (
         <aside className={`w-72 flex-shrink-0 bg-gray-800 p-4 border-r border-gray-700 flex flex-col fixed inset-y-0 left-0 z-40 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
@@ -92,7 +122,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <div className="flex items-center justify-between mb-3 flex-shrink-0">
                         <h2 className="text-lg font-semibold text-gray-200">Sessions</h2>
                         <button 
-                            onClick={onNewSession}
+                            onClick={() => {
+                                onNewSession();
+                                // Keep sidebar open on mobile if creating a new session
+                            }}
                             className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded-md transition-colors"
                             title="New Session"
                         >
@@ -152,6 +185,55 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         ))}
                     </div>
                 </div>
+                
+                <div className="border-t border-gray-700 pt-4 my-4 flex-shrink-0">
+                    <h2 className="text-lg font-semibold text-gray-200 mb-4">Settings</h2>
+                    <div className="space-y-4">
+                        <div>
+                            <h3 className="text-sm font-medium text-gray-400 mb-2 flex items-center"><BrainIcon className="w-4 h-4 mr-2" />AI Model</h3>
+                            <input
+                                type="text"
+                                value={localModel}
+                                onChange={(e) => setLocalModel(e.target.value)}
+                                onBlur={handleModelBlur}
+                                placeholder="e.g., gemini-pro"
+                                className="w-full px-3 py-2 text-sm font-mono rounded-md transition-colors bg-gray-700/60 hover:bg-gray-700 text-gray-200 border-2 border-transparent focus:outline-none focus:border-sky-500"
+                            />
+                        </div>
+                        <div>
+                             <h3 className="text-sm font-medium text-gray-400 mb-2 flex items-center"><SpeakerIcon className="w-4 h-4 mr-2" />Voice</h3>
+                             <h4 className="text-xs font-semibold text-gray-500 mb-2">Female Voices</h4>
+                             <div className="grid grid-cols-3 gap-2">
+                                {femaleVoiceOptions.map(voice => (
+                                    <button
+                                        key={voice.id}
+                                        onClick={() => onVoiceChange(voice.id)}
+                                        className={`px-2 py-1.5 text-xs font-mono rounded-md transition-colors border-2 focus:outline-none focus:border-sky-500 ${
+                                            currentVoice === voice.id ? 'bg-sky-600 text-white font-bold border-sky-600' : 'bg-gray-700/60 hover:bg-gray-700 text-gray-300 border-transparent'
+                                        }`}
+                                    >
+                                        {voice.id.replace('af_', 'af-').replace('bf_', 'bf-')}
+                                    </button>
+                                ))}
+                            </div>
+                            <h4 className="text-xs font-semibold text-gray-500 mt-3 mb-2">Male Voices</h4>
+                             <div className="grid grid-cols-3 gap-2">
+                                {maleVoiceOptions.map(voice => (
+                                    <button
+                                        key={voice.id}
+                                        onClick={() => onVoiceChange(voice.id)}
+                                        className={`px-2 py-1.5 text-xs font-mono rounded-md transition-colors border-2 focus:outline-none focus:border-sky-500 ${
+                                            currentVoice === voice.id ? 'bg-sky-600 text-white font-bold border-sky-600' : 'bg-gray-700/60 hover:bg-gray-700 text-gray-300 border-transparent'
+                                        }`}
+                                    >
+                                        {voice.id.replace('am_', 'am-').replace('bm_', 'bm-')}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
 
                 <div className="border-t border-gray-700 pt-4 mb-4 flex-shrink-0">
                     <h2 className="text-lg font-semibold text-gray-200 mb-3">Knowledge Base</h2>

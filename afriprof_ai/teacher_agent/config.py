@@ -20,7 +20,40 @@ OLLAMA_HOST = OLLAMA_BASE_URL
 # Use the model that's actually pulled in docker-compose
 #MODEL_ID = "ai_teacher_qwen" # Use the model without thinking capabilities
 MODEL_ID = "granite4:tiny-h" # Use the model without thinking capabilities
+
+# Dynamic configuration variables for runtime changes
+_current_model_id = MODEL_ID
+_current_voice = "af_sky"
+
+# Initialize the model
 MODEL = Ollama(id=MODEL_ID, host=OLLAMA_BASE_URL)
+
+def get_current_model():
+    """Get the current model instance."""
+    return MODEL
+
+def get_current_model_id():
+    """Get the current model ID."""
+    return _current_model_id
+
+def set_model_id(new_model_id: str):
+    """Set a new model ID and update the MODEL instance."""
+    global _current_model_id, MODEL
+    _current_model_id = new_model_id
+    MODEL = Ollama(id=new_model_id, host=OLLAMA_BASE_URL)
+    print(f"Model changed to: {new_model_id}")
+
+def get_current_voice():
+    """Get the current voice setting."""
+    return _current_voice
+
+def set_voice(new_voice: str):
+    """Set a new voice for TTS."""
+    global _current_voice
+    _current_voice = new_voice
+    # Update the KOKORO_TTS_CONFIG with the new voice
+    KOKORO_TTS_CONFIG["voice"] = new_voice
+    print(f"Voice changed to: {new_voice}")
 
 
 
@@ -29,7 +62,9 @@ __all__ = [
     'MODEL', 'DB_URL', 'DATA_DIR', 'OLLAMA_BASE_URL',
     'VOSK_MODEL_PATH', 'TTS_CACHE_DIR', 'KOKORO_TTS_URL', 'KOKORO_TTS_CONFIG',
     'KOKORO_TTS_HEADERS', 'KOKORO_TTS_TIMEOUT', 'RHUBARB_PATH',
-    'MCP_TRANSPORT', 'MCP_SERVER_URL', 'MCP_STDIO_COMMAND', 'MCP_STDIO_ARGS'
+    'MCP_TRANSPORT', 'MCP_SERVER_URL', 'MCP_STDIO_COMMAND', 'MCP_STDIO_ARGS',
+    'get_current_model', 'get_current_model_id', 'set_model_id', 
+    'get_current_voice', 'set_voice'
 ]
 
 # Database configuration

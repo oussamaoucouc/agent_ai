@@ -1,4 +1,3 @@
-
 import { API_BASE_URL } from '../constants';
 import { 
     QueryRequest, 
@@ -7,7 +6,9 @@ import {
     FullAgentResponse, 
     QueryResponse, 
     UploadDocumentRequest,
-    UploadDocumentResponse
+    UploadDocumentResponse,
+    SetModelRequest,
+    SetVoiceRequest
 } from '../types';
 
 const handleResponse = async <T,>(response: Response): Promise<T> => {
@@ -15,7 +16,13 @@ const handleResponse = async <T,>(response: Response): Promise<T> => {
         const errorData = await response.json().catch(() => ({ detail: 'Unknown error occurred' }));
         throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
     }
-    return response.json() as Promise<T>;
+    // For POST requests that might not return a body but indicate success
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.indexOf("application/json") !== -1) {
+        return response.json() as Promise<T>;
+    }
+    // Create a generic success response if no JSON body is present
+    return Promise.resolve({ success: true } as unknown as T);
 };
 
 export const query = async (request: QueryRequest): Promise<QueryResponse> => {
@@ -100,4 +107,22 @@ export const uploadDocument = async (request: UploadDocumentRequest): Promise<Up
         body: formData,
     });
     return handleResponse<UploadDocumentResponse>(response);
+};
+
+export const setModel = async (request: SetModelRequest): Promise<{success: boolean}> => {
+    const response = await fetch(`${API_BASE_URL}/set_model`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+    });
+    return handleResponse<{success: boolean}>(response);
+};
+
+export const setVoice = async (request: SetVoiceRequest): Promise<{success: boolean}> => {
+    const response = await fetch(`${API_BASE_URL}/set_voice`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+    });
+    return handleResponse<{success: boolean}>(response);
 };

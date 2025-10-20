@@ -11,7 +11,7 @@ from agno.storage.postgres import PostgresStorage
 from agno.memory.v2.db.sqlite import SqliteMemoryDb
 from agno.memory.v2.memory import Memory
 from .config import (
-    DB_URL, MODEL, OLLAMA_BASE_URL,
+    DB_URL, get_current_model, OLLAMA_BASE_URL,
     MCP_TRANSPORT, MCP_SERVER_URL, MCP_STDIO_COMMAND, MCP_STDIO_ARGS,
 )
 from agno.tools.mcp import MCPTools
@@ -86,7 +86,7 @@ async def run_agent_async(query, user_id, session_id):
     # Memory DBs already initialized via the cached function
     # Common Agent configuration to avoid duplication across transports
     agent_common_kwargs = dict(
-        model=MODEL,
+        model=get_current_model(),
         name="mcp_llm_agent",
         instructions=dedent("""\
             You are an AI assistant that MUST use MCP tools to answer.

@@ -1,4 +1,3 @@
-
 export enum User {
     USER = 'user',
     ASSISTANT = 'assistant',
@@ -39,6 +38,20 @@ export interface Session {
     name: string;
     messages: Message[];
     createdAt: string; 
+}
+
+// Updated voices from Kokoro TTS documentation
+export enum TTSVoice {
+    AF_BELLA = 'af_bella',
+    AF_NICOLE = 'af_nicole',
+    AF_SARAH = 'af_sarah',
+    AF_SKY = 'af_sky',
+    BF_EMMA = 'bf_emma',
+    BF_ISABELLA = 'bf_isabella',
+    AM_ADAM = 'am_adam',
+    AM_MICHAEL = 'am_michael',
+    BM_GEORGE = 'bm_george',
+    BM_LEWIS = 'bm_lewis',
 }
 
 
@@ -90,4 +103,16 @@ export interface UploadDocumentRequest {
 export interface UploadDocumentResponse {
     message: string;
     filename: string;
+}
+
+export interface SetModelRequest {
+    user_id: string;
+    session_id: string;
+    model: string;
+}
+
+export interface SetVoiceRequest {
+    user_id: string;
+    session_id: string;
+    voice: TTSVoice;
 }

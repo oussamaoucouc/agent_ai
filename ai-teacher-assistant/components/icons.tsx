@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 type IconProps = {
@@ -117,5 +116,17 @@ export const TrashIcon: React.FC<IconProps> = ({ className }) => (
 export const ToolIcon: React.FC<IconProps> = ({ className }) => (
     <svg className={className} fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
         <path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z" />
+    </svg>
+);
+
+export const BrainIcon: React.FC<IconProps> = ({ className }) => (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19V6.223c0-1.01.616-1.91 1.566-2.313a2.5 2.5 0 012.868 0C14.384 4.313 15 5.213 15 6.223V19M9 19c-1.333 0-2.667-.4-4-1M9 19c1 .5 2.167.833 3.5.833M15 19c1.333 0 2.667-.4-4-1M15 19c-1 .5-2.167.833-3.5.833M5 18c-1.333 0-2.667-.4-4-1M23 17c-1.333.6-2.667 1-4 1m-4-6.777v.001c0 1.01-.616 1.91-1.566 2.313a2.5 2.5 0 01-2.868 0C8.616 12.124 8 11.223 8 10.213v-.001" />
+    </svg>
+);
+
+export const SpeakerIcon: React.FC<IconProps> = ({ className }) => (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
     </svg>
 );

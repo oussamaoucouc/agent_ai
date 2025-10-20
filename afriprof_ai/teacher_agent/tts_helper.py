@@ -13,6 +13,11 @@ import numpy as np
 
 from config import KOKORO_TTS_URL, KOKORO_TTS_CONFIG, KOKORO_TTS_HEADERS, KOKORO_TTS_TIMEOUT, RHUBARB_PATH
 
+# Override voice from environment if provided
+VOICE_OVERRIDE = os.getenv("KOKORO_VOICE")
+if VOICE_OVERRIDE:
+    KOKORO_TTS_CONFIG["voice"] = VOICE_OVERRIDE
+
 
 
 def generate_visemes(audio_path, text):
@@ -64,6 +69,7 @@ def synthesize_speech_kokoro(text, output_path):
         # Create payload using configuration from config.py
         payload = {
             **KOKORO_TTS_CONFIG,
+            
             "input": text
         }
 

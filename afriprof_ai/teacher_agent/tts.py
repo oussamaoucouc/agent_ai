@@ -53,7 +53,15 @@ def run_tts_script(text, tts_script_path):
 
     try:
         command = [sys.executable, tts_script_path, text, audio_file_path]
-        result = subprocess.run(command, check=True, capture_output=True, text=True, encoding='utf-8')
+        # Pass selected voice to subprocess so tts_helper can use it
+        try:
+            from .config import get_current_voice
+            current_voice = get_current_voice()
+        except Exception:
+            current_voice = "af_sky"
+        env = os.environ.copy()
+        env["KOKORO_VOICE"] = current_voice
+        result = subprocess.run(command, check=True, capture_output=True, text=True, encoding='utf-8', env=env)
         
         if result.stderr:
             print("TTS Helper STDERR:", result.stderr, file=sys.stderr)
@@ -94,7 +102,13 @@ def text_to_speech(text):
         print("Text is empty after cleaning, skipping TTS.", file=sys.stderr)
         return None, None
     
-    text_hash = get_text_hash(cleaned_text)
+    # Include voice in cache key so voice changes reflect in audio
+    try:
+        from .config import get_current_voice
+        current_voice = get_current_voice()
+    except Exception:
+        current_voice = "af_sky"
+    text_hash = get_text_hash(f"{current_voice}|{cleaned_text}")
     cache_audio_path = os.path.join(TTS_CACHE_DIR, f"{text_hash}.wav")
     cache_viseme_path = os.path.join(TTS_CACHE_DIR, f"{text_hash}.json")
     

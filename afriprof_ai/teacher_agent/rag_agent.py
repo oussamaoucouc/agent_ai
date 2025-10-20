@@ -25,7 +25,7 @@ from agno.tools.reasoning import ReasoningTools
 from agno.tools.thinking import ThinkingTools
 from agno.tools.knowledge import KnowledgeTools
 from agno.storage.sqlite import SqliteStorage
-from .config import DB_URL, DATA_DIR, MODEL, OLLAMA_BASE_URL
+from .config import DB_URL, DATA_DIR, get_current_model, OLLAMA_BASE_URL
 
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -155,7 +155,7 @@ async def run_rag_agent_async(query, user_id, session_id):
     )
 
     teacher_agent = Agent(
-        model=MODEL,
+        model=get_current_model(),
         reasoning=True,
         name="teacher_agent_rag",
         session_id=session_id,
@@ -224,7 +224,7 @@ async def run_rag_agent_async(query, user_id, session_id):
     LLM_agent = Agent(
         name="general_knowledge_llm_agent",
         role="Answer general knowledge questions using only your pre-trained knowledge",
-        model=MODEL,
+        model=get_current_model(),
         reasoning=True,
         session_id=storage_session_id,
         user_id=user_id,
@@ -253,7 +253,7 @@ async def run_rag_agent_async(query, user_id, session_id):
     multi_agent_team = Team(
         name="Multi Language Team",
         mode="route",
-        model=MODEL,
+        model=get_current_model(),
         share_member_interactions=True, # Share interactions
         user_id=user_id,
         session_id=storage_session_id,

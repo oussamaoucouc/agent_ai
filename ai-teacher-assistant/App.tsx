@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -7,9 +6,9 @@ import { InputBar } from './components/InputBar';
 import { AvatarView } from './components/AvatarView';
 import { LoginPage } from './components/LoginPage';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
-import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp } from './services/apiService';
+import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice } from './services/apiService';
 import * as storage from './services/storageService';
-import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse } from './types';
+import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice } from './types';
 import { API_BASE_URL } from './constants';
 
 const createNewSession = (): Session => {
@@ -43,6 +42,11 @@ const App: React.FC = () => {
     const [spokenResponses, setSpokenResponses] = useState<boolean>(true);
     const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
     const [isToolsActive, setIsToolsActive] = useState<boolean>(false);
+
+    // New states for model and voice selection
+    const [currentModel, setCurrentModel] = useState<string>('gemini-pro');
+    const [currentVoice, setCurrentVoice] = useState<TTSVoice>(TTSVoice.AF_BELLA);
+
 
     const { isRecording, startRecording, stopRecording } = useAudioRecorder();
     const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -215,6 +219,28 @@ const App: React.FC = () => {
         );
         setSessions(updatedSessions);
         storage.saveSessionsForUser(currentUser, updatedSessions);
+    };
+
+    const handleModelChange = async (model: string) => {
+        if (!currentUser || !activeSessionId) return;
+        setCurrentModel(model);
+        try {
+            await setModel({ user_id: currentUser, session_id: activeSessionId, model });
+        } catch (error) {
+            console.error("Failed to set model on backend:", error);
+            // Optionally: show an error message to the user
+        }
+    };
+    
+    const handleVoiceChange = async (voice: TTSVoice) => {
+        if (!currentUser || !activeSessionId) return;
+        setCurrentVoice(voice);
+        try {
+            await setVoice({ user_id: currentUser, session_id: activeSessionId, voice });
+        } catch (error) {
+            console.error("Failed to set voice on backend:", error);
+            // Optionally: show an error message to the user
+        }
     };
 
     const handlePlayAudio = useCallback((message: Message) => {
@@ -399,6 +425,10 @@ const App: React.FC = () => {
                 onRenameSession={handleRenameSession}
                 onDeleteSession={handleDeleteSession}
                 onLogout={handleLogout}
+                currentModel={currentModel}
+                currentVoice={currentVoice}
+                onModelChange={handleModelChange}
+                onVoiceChange={handleVoiceChange}
             />
             <main className="flex flex-col flex-1 h-screen overflow-hidden">
                 <Header 
