@@ -45,7 +45,7 @@ const App: React.FC = () => {
 
     // New states for model and voice selection
     const [currentModel, setCurrentModel] = useState<string>('gemini-pro');
-    const [currentVoice, setCurrentVoice] = useState<TTSVoice>(TTSVoice.AF_BELLA);
+    const [currentVoice, setCurrentVoice] = useState<TTSVoice>(TTSVoice.BF_EMMA);
 
 
     const { isRecording, startRecording, stopRecording } = useAudioRecorder();
