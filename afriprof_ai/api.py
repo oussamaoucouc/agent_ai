@@ -1,7 +1,7 @@
 """
 API endpoints for the AI Teacher Assistant application (FastAPI app instance).
 """
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, constr
@@ -20,6 +20,7 @@ import base64
 import uuid
 from fastapi.responses import FileResponse
 from fastapi.concurrency import run_in_threadpool
+import asyncio
 
 
 app = FastAPI(
@@ -41,6 +42,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Registry of active tasks per user/session for cancellation
+active_tasks: Dict[str, asyncio.Task] = {}
 
 class LoginRequest(BaseModel):
     username: str
@@ -70,6 +74,19 @@ class SetVoiceRequest(BaseModel):
     user_id: str
     session_id: str
     voice: str
+
+class CancelRequest(BaseModel):
+    user_id: str
+    session_id: str
+
+@app.post("/cancel")
+async def cancel_endpoint(request: CancelRequest):
+    key = f"{request.user_id}:{request.session_id}"
+    task = active_tasks.pop(key, None)
+    if task and not task.done():
+        task.cancel()
+        return {"status": "cancelled"}
+    return {"status": "idle"}
 
 @app.post("/login")
 async def login(request: LoginRequest):
@@ -127,21 +144,31 @@ async def query_mcp(request: QueryRequest):
 # MCP LLM QUERY not displayed Reasoning
 @app.post("/query_mcp_direct", response_model=QueryResponse)
 async def query_mcp_direct(request: QueryRequest):
+    key = f"{request.user_id}:{request.session_id}"
     try:
-        response = await run_mcp_agent(request.query, request.user_id, request.session_id)
+        # Track the current handler task for cancellation as well
+        current = asyncio.current_task()
+        if current:
+            active_tasks[key] = current
+        # Run MCP agent as a cancellable task
+        task = asyncio.create_task(run_mcp_agent(request.query, request.user_id, request.session_id))
+        response = await task
         marker = "</think>"
         marker_pos = response.find(marker)
         if marker_pos != -1:
             response = response[marker_pos + len(marker):]
         response = response.strip()
-
         return QueryResponse(
             user_id=request.user_id,
             session_id=request.session_id,
             response=response
         )
+    except asyncio.CancelledError:
+        raise HTTPException(status_code=499, detail="Request cancelled")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        active_tasks.pop(key, None)
 
 # MCP Speech-to-text then Query
 @app.post("/stt_query_mcp", response_model=Dict[str, str])
@@ -244,6 +271,8 @@ async def query_mcp_tts_direct(request: QueryRequest):
     """
     Returns a JSON with the filtered MCP text response, audio filename, and viseme data.
     """
+    key = f"{request.user_id}:{request.session_id}"
+    active_tasks[key] = asyncio.current_task()
     try:
         response_text = await run_mcp_agent(request.query, request.user_id, request.session_id)
         # Filter out the thinking process, even if the opening tag is missing.
@@ -268,8 +297,12 @@ async def query_mcp_tts_direct(request: QueryRequest):
             "visemes": viseme_data,
             "status": "success"
         }
+    except asyncio.CancelledError:
+        raise HTTPException(status_code=499, detail="Request cancelled")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        active_tasks.pop(key, None)
 
 # MCP Full Agent: STT -> Query -> TTS
 @app.post("/stt_query_mcp_tts", response_model=Dict[str, Any])
@@ -324,6 +357,8 @@ async def stt_query_mcp_tts_direct_endpoint(
     """
     Combined STT, filtered MCP query, and TTS endpoint that returns viseme data and audio filename.
     """
+    key = f"{user_id}:{session_id}"
+    active_tasks[key] = asyncio.current_task()
     try:
         # First transcribe the audio
         stt_result = await stt_endpoint(file, user_id, session_id)
@@ -360,11 +395,17 @@ async def stt_query_mcp_tts_direct_endpoint(
             "session_id": session_id,
             "status": "success"
         }
+    except asyncio.CancelledError:
+        raise HTTPException(status_code=499, detail="Request cancelled")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing audio query with TTS: {str(e)}")
+    finally:
+        active_tasks.pop(key, None)
 #LLM QUERY not displayed Reasoning
 @app.post("/query_direct", response_model=QueryResponse)
 async def query_direct(request: QueryRequest):
+    key = f"{request.user_id}:{request.session_id}"
+    active_tasks[key] = asyncio.current_task()
     try:
         response = await run_rag_agent(request.query, request.user_id, request.session_id)
         # Filter out the thinking process, even if the opening tag is missing.
@@ -379,8 +420,12 @@ async def query_direct(request: QueryRequest):
             session_id=request.session_id,
             response=response
         )
+    except asyncio.CancelledError:
+        raise HTTPException(status_code=499, detail="Request cancelled")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        active_tasks.pop(key, None)
 
 #Speach to text
 @app.post("/stt", response_model=Dict[str, str])
@@ -589,6 +634,8 @@ async def query_tts_direct(request: QueryRequest):
     """
     Returns a JSON with the filtered text response, audio filename, and viseme data.
     """
+    key = f"{request.user_id}:{request.session_id}"
+    active_tasks[key] = asyncio.current_task()
     try:
         response_text = await run_rag_agent(request.query, request.user_id, request.session_id)
         # Filter out the thinking process, even if the opening tag is missing.
@@ -613,8 +660,12 @@ async def query_tts_direct(request: QueryRequest):
             "visemes": viseme_data,
             "status": "success"
         }
+    except asyncio.CancelledError:
+        raise HTTPException(status_code=499, detail="Request cancelled")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        active_tasks.pop(key, None)
 
 # Full Agent
 @app.post("/stt_query_tts", response_model=Dict[str, Any])
@@ -669,6 +720,8 @@ async def stt_query_tts_direct_endpoint(
     """
     Combined STT, filtered query, and TTS endpoint that returns viseme data and audio filename.
     """
+    key = f"{user_id}:{session_id}"
+    active_tasks[key] = asyncio.current_task()
     try:
         # First transcribe the audio
         stt_result = await stt_endpoint(file, user_id, session_id)
@@ -705,8 +758,12 @@ async def stt_query_tts_direct_endpoint(
             "session_id": session_id,
             "status": "success"
         }
+    except asyncio.CancelledError:
+        raise HTTPException(status_code=499, detail="Request cancelled")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing audio query with TTS: {str(e)}")
+    finally:
+        active_tasks.pop(key, None)
 
 #Downloading audio file
 @app.get("/querytts_audio/{filename}")

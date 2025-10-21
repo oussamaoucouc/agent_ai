@@ -118,3 +118,8 @@ export interface SetVoiceRequest {
     session_id: string;
     voice: TTSVoice;
 }
+
+export interface CancelRequest {
+    user_id: string;
+    session_id: string;
+}

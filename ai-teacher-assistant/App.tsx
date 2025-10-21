@@ -6,7 +6,7 @@ import { InputBar } from './components/InputBar';
 import { AvatarView } from './components/AvatarView';
 import { LoginPage } from './components/LoginPage';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
-import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice } from './services/apiService';
+import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession } from './services/apiService';
 import * as storage from './services/storageService';
 import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice } from './types';
 import { API_BASE_URL } from './constants';
@@ -68,13 +68,14 @@ const App: React.FC = () => {
     const [isToolsActive, setIsToolsActive] = useState<boolean>(false);
 
     // New states for model and voice selection
-    const [currentModel, setCurrentModel] = useState<string>('gemini-pro');
+    const [currentModel, setCurrentModel] = useState<string>('gemini-2.5-pro');
     const [currentVoice, setCurrentVoice] = useState<TTSVoice>(TTSVoice.BF_EMMA);
 
 
     const { isRecording, startRecording, stopRecording } = useAudioRecorder();
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const animationFrameIdRef = useRef<number | null>(null);
+    const abortControllerRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
         const user = storage.getCurrentUser();
@@ -273,12 +274,28 @@ const App: React.FC = () => {
         }
     }, [playAudioWithVisemes]);
 
+    const handleCancelGeneration = () => {
+        if (abortControllerRef.current) {
+            // Proactively tell backend to cancel the active task
+            if (currentUser && activeSessionId) {
+                cancelSession({ user_id: currentUser, session_id: activeSessionId })
+                    .catch((err) => console.debug('Cancel request error (likely already finished):', err));
+            }
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
+            setIsLoading(false); // Give immediate UI feedback
+        }
+    };
+
     const handleSendText = async (text: string) => {
         if (!text.trim() || isLoading || !activeSessionId || !currentUser) return;
 
         const userMessage: Message = { id: crypto.randomUUID(), text, sender: User.USER };
         setMessages(prev => [...prev, userMessage]);
         setIsLoading(true);
+
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
 
         try {
             let assistantMessage: Message;
@@ -291,7 +308,7 @@ const App: React.FC = () => {
 
             if (isToolsActive) {
                 if (spokenResponses) {
-                    const data = await queryMcpTTS(requestParams);
+                    const data = await queryMcpTTS(requestParams, controller.signal);
                     assistantMessage = {
                         id: crypto.randomUUID(),
                         text: data.response,
@@ -303,7 +320,7 @@ const App: React.FC = () => {
                         playAudioWithVisemes(assistantMessage.audioUrl, assistantMessage.visemes, assistantMessage.id);
                     }
                 } else {
-                    const data = await queryMcp(requestParams);
+                    const data = await queryMcp(requestParams, controller.signal);
                     assistantMessage = {
                         id: crypto.randomUUID(),
                         text: data.response,
@@ -312,7 +329,7 @@ const App: React.FC = () => {
                 }
             } else {
                 if (spokenResponses) {
-                    const data = await queryTTS(requestParams);
+                    const data = await queryTTS(requestParams, controller.signal);
                     assistantMessage = {
                         id: crypto.randomUUID(),
                         text: data.response,
@@ -324,7 +341,7 @@ const App: React.FC = () => {
                         playAudioWithVisemes(assistantMessage.audioUrl, assistantMessage.visemes, assistantMessage.id);
                     }
                 } else {
-                    const data = await query(requestParams);
+                    const data = await query(requestParams, controller.signal);
                     assistantMessage = {
                         id: crypto.randomUUID(),
                         text: data.response,
@@ -334,16 +351,21 @@ const App: React.FC = () => {
             }
             setMessages(prev => [...prev, assistantMessage]);
 
-        } catch (error) {
-            console.error("Error sending message:", error);
-            const errorMessage: Message = {
-                id: crypto.randomUUID(),
-                text: "Sorry, I encountered an error. Please try again.",
-                sender: User.ASSISTANT,
-            };
-            setMessages(prev => [...prev, errorMessage]);
+        } catch (error: any) {
+            if (error.name === 'AbortError') {
+                console.log("Generation cancelled by user.");
+            } else {
+                console.error("Error sending message:", error);
+                const errorMessage: Message = {
+                    id: crypto.randomUUID(),
+                    text: "Sorry, I encountered an error. Please try again.",
+                    sender: User.ASSISTANT,
+                };
+                setMessages(prev => [...prev, errorMessage]);
+            }
         } finally {
             setIsLoading(false);
+            abortControllerRef.current = null;
         }
     };
 
@@ -351,6 +373,8 @@ const App: React.FC = () => {
         if (!audioBlob || isLoading || !activeSessionId || !currentUser) return;
 
         setIsLoading(true);
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
 
         try {
             const requestParams = { 
@@ -362,9 +386,9 @@ const App: React.FC = () => {
             let data: FullAgentResponse;
 
             if (isToolsActive) {
-                data = await fullAgentMcp(requestParams);
+                data = await fullAgentMcp(requestParams, controller.signal);
             } else {
-                data = await fullAgent(requestParams);
+                data = await fullAgent(requestParams, controller.signal);
             }
             
             const userMessage: Message = { id: crypto.randomUUID(), text: `🎤: "${data.text}"`, sender: User.USER };
@@ -382,16 +406,21 @@ const App: React.FC = () => {
                 playAudioWithVisemes(assistantMessage.audioUrl, assistantMessage.visemes, assistantMessage.id);
             }
 
-        } catch (error) {
-            console.error("Error with full agent:", error);
-            const errorMessage: Message = {
-                id: crypto.randomUUID(),
-                text: "Sorry, I couldn't process the audio. Please try again.",
-                sender: User.ASSISTANT,
-            };
-            setMessages(prev => [...prev, errorMessage]);
+        } catch (error: any) {
+            if (error.name === 'AbortError') {
+                console.log("Generation cancelled by user.");
+            } else {
+                console.error("Error with full agent:", error);
+                const errorMessage: Message = {
+                    id: crypto.randomUUID(),
+                    text: "Sorry, I couldn't process the audio. Please try again.",
+                    sender: User.ASSISTANT,
+                };
+                setMessages(prev => [...prev, errorMessage]);
+            }
         } finally {
             setIsLoading(false);
+            abortControllerRef.current = null;
         }
     };
 
@@ -503,6 +532,7 @@ const App: React.FC = () => {
                             isLoading={isLoading}
                             isToolsActive={isToolsActive}
                             onToggleTools={() => setIsToolsActive(!isToolsActive)}
+                            onCancel={handleCancelGeneration}
                         />
                     </div>
                 </div>

@@ -5,6 +5,7 @@ Configurable MCP transport (streamable-http or stdio) with clean lifecycle.
 from textwrap import dedent
 import os
 import logging
+import asyncio
 
 from agno.agent import Agent
 from agno.storage.postgres import PostgresStorage
@@ -209,6 +210,10 @@ async def run_agent_async(query, user_id, session_id):
     except McpError as e:
         logger.error(f"MCP Error: {e}")
         logger.error("This usually means the MCP server failed to start or is not responding.")
+        raise
+    except asyncio.CancelledError:
+        # Propagate cancellation so API endpoints can return 499
+        logger.info("MCP agent cancelled")
         raise
     except Exception as e:
         logger.error(f"Error in mcp agent: {type(e).__name__}: {str(e)}")

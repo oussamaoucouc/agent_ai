@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { UploadedFile, Session, TTSVoice } from '../types';
-import { DocumentIcon, UploadIcon, SpinnerIcon, CheckIcon, ErrorIcon, PlusIcon, LogoutIcon, ChatIcon, CloseIcon, EditIcon, TrashIcon, BrainIcon, SpeakerIcon } from './icons';
+import { DocumentIcon, UploadIcon, SpinnerIcon, CheckIcon, ErrorIcon, PlusIcon, LogoutIcon, ChatIcon, CloseIcon, EditIcon, TrashIcon, CubeIcon, SpeakerIcon } from './icons';
 
 interface SidebarProps {
     uploadedFiles: UploadedFile[];
@@ -61,7 +61,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
     const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
     const [sessionName, setSessionName] = useState('');
-    const [localModel, setLocalModel] = useState(currentModel);
     
     const renameInputRef = useRef<HTMLInputElement>(null);
 
@@ -71,11 +70,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             renameInputRef.current.select();
         }
     }, [renamingSessionId]);
-
-    // Sync local model state if the prop changes from App
-    useEffect(() => {
-        setLocalModel(currentModel);
-    }, [currentModel]);
 
 
     const handleStartRename = (session: Session) => {
@@ -95,12 +89,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             handleFinishRename();
         } else if (e.key === 'Escape') {
             setRenamingSessionId(null);
-        }
-    };
-
-    const handleModelBlur = () => {
-        if (currentModel !== localModel) {
-            onModelChange(localModel);
         }
     };
 
@@ -194,15 +182,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <h2 className="text-lg font-bold text-gray-200 mb-4">Settings</h2>
                     <div className="space-y-6">
                         <div>
-                            <h3 className="text-sm font-medium text-gray-400 mb-2 flex items-center"><BrainIcon className="w-4 h-4 mr-2" />AI Model</h3>
-                            <input
-                                type="text"
-                                value={localModel}
-                                onChange={(e) => setLocalModel(e.target.value)}
-                                onBlur={handleModelBlur}
-                                placeholder="e.g., gemini-pro"
-                                className="w-full px-3 py-2 text-sm font-mono rounded-lg transition-colors bg-slate-800 text-gray-200 border-2 border-slate-700 focus:outline-none focus:border-sky-500"
-                            />
+                            <h3 className="text-sm font-medium text-gray-400 mb-2 flex items-center"><CubeIcon className="w-4 h-4 mr-2" />AI Model</h3>
+                            <div className="relative">
+                                <select
+                                    value={currentModel}
+                                    onChange={(e) => onModelChange(e.target.value)}
+                                    className="w-full appearance-none px-3 py-2 text-sm rounded-lg transition-colors bg-slate-800 text-gray-200 border-2 border-slate-700 focus:outline-none focus:border-sky-500"
+                                >
+                                    <option value="granite4:tiny-h o">granite4:tiny-h</option>
+                                    <option value="qwen3:1.7b">qwen3:1.7b</option>
+                                    <option value="qwen2.5:3b">qwen2.5:3b</option>
+                                    <option value="phi4-mini:3.8b ">phi4-mini:3.8b </option>
+                                    <option value="ai_teacher_qwen">ai_teacher_qwen</option>              
+                                </select>
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
+                                    <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                                </div>
+                            </div>
+                            <p className="mt-2 text-xs text-gray-500">
+                                Choose the AI model to power your assistant. Pro is more capable, while Flash is faster.
+                            </p>
                         </div>
                         <div>
                              <h3 className="text-sm font-medium text-gray-400 mb-2 flex items-center"><SpeakerIcon className="w-4 h-4 mr-2" />Voice</h3>
