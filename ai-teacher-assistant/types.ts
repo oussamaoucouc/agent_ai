@@ -61,6 +61,7 @@ export interface QueryRequest {
     user_id: string;
     session_id: string;
     query: string;
+    system_prompt?: string;
 }
 
 export interface QueryResponse {
@@ -82,6 +83,7 @@ export interface FullAgentRequest {
     file: Blob;
     user_id: string;
     session_id: string;
+    system_prompt?: string;
 }
 
 export interface FullAgentResponse {

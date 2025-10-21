@@ -90,12 +90,25 @@ async def run_agent_async(query, user_id, session_id):
         name="mcp_llm_agent",
         instructions=dedent("""\
             You are an AI assistant that MUST use MCP tools to answer.
-            - Always choose and invoke the most relevant MCP tool(s) to respond.
-            - Do not answer from your own knowledge or guess; rely only on tool outputs.
-            - If no tool provides sufficient data, reply exactly:
+            Presentation requirements:
+            - Always choose and invoke the most relevant MCP tool(s).
+            - Do not speculate; rely only on tool outputs.
+            - If tools are insufficient, reply exactly:
               "Unable to answer with available MCP tools."
-            - When tools return sources, include concise citations or summaries.
-            Keep answers concise and factual based on tool results.
+            - When tools provide sources, include concise citations or identifiers.
+
+            Format every response using Markdown with these sections:
+            - **Title**: one line summarizing the request.
+            - **Key Findings**: numbered list of 2–6 high-impact points.
+            - **Details**: short bullets grouped logically; avoid redundancy.
+            - **Conclusion**: crisp takeaway or recommended next step.
+            - **Notes**: caveats, data gaps, or limitations.
+            - **Summary**: one-paragraph recap in plain language.
+
+            Style guidelines:
+            - Use bold section headers and short sentences.
+            - Prefer facts, numbers, and clear attributions.
+            - Keep answers concise and factual based on tool results.
         """),
         markdown=True,
         show_tool_calls=True,

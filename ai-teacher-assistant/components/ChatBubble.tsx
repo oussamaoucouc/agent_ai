@@ -11,47 +11,84 @@ interface ChatBubbleProps {
 
 const parseInlineMarkdown = (text: string): string => {
     let finalHtml = text;
+    // Links
     finalHtml = finalHtml.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:text-sky-300 hover:underline">$1</a>');
+    // Bold
     finalHtml = finalHtml.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-gray-100">$1</strong>');
+    // Italic
     finalHtml = finalHtml.replace(/\*(.*?)\*/g, '<em>$1</em>');
     return finalHtml;
-}
+};
 
 const parseMarkdown = (text: string): string => {
-    const blocks = text.split(/\n\s*\n/);
-    const htmlBlocks = blocks.map(block => {
-        const trimmedBlock = block.trim();
-        if (!trimmedBlock) return '';
+    const lines = text.split('\n');
+    let html = '';
+    let currentBlock: string[] = [];
+    let blockType: 'p' | 'ul' | 'ol' | null = null;
 
-        if (trimmedBlock.startsWith('#')) {
-            if (trimmedBlock.startsWith('###')) return `<h3 class="text-lg font-semibold my-2 text-gray-100">${parseInlineMarkdown(trimmedBlock.substring(4))}</h3>`;
-            if (trimmedBlock.startsWith('##')) return `<h2 class="text-xl font-bold my-3 text-gray-50">${parseInlineMarkdown(trimmedBlock.substring(3))}</h2>`;
-            if (trimmedBlock.startsWith('#')) return `<h1 class="text-2xl font-bold my-4 text-white">${parseInlineMarkdown(trimmedBlock.substring(2))}</h1>`;
+    const flushBlock = () => {
+        if (currentBlock.length === 0) return;
+
+        if (blockType === 'p') {
+            html += `<p>${currentBlock.join('<br />')}</p>`;
+        } else if (blockType === 'ul') {
+            html += `<ul class="list-disc list-inside space-y-1.5 pl-2 my-2">${currentBlock.map(li => `<li>${li}</li>`).join('')}</ul>`;
+        } else if (blockType === 'ol') {
+            html += `<ol class="list-decimal list-inside space-y-1.5 pl-2 my-2">${currentBlock.map(li => `<li>${li}</li>`).join('')}</ol>`;
+        }
+        currentBlock = [];
+        blockType = null;
+    };
+
+    for (const line of lines) {
+        // H3 heading
+        let match = line.match(/^###\s+(.*)/);
+        if (match) {
+            flushBlock();
+            html += `<h3 class="text-lg font-semibold text-gray-100 mt-4 mb-2">${parseInlineMarkdown(match[1])}</h3>`;
+            continue;
         }
 
-        const isUnorderedList = /^\s*[-*]/.test(trimmedBlock);
-        const isOrderedList = /^\s*\d+\./.test(trimmedBlock);
-
-        if (isUnorderedList || isOrderedList) {
-            const lines = trimmedBlock.split('\n').filter(line => line.trim());
-            if (lines.length === 0) return '';
-            
-            const listTag = isOrderedList ? 'ol' : 'ul';
-            const listClass = isOrderedList ? 'list-decimal' : 'list-disc';
-            
-            const items = lines.map(line => {
-                const itemContent = line.replace(/^\s*(?:-|\*|\d+\.)\s+/, '');
-                if (!itemContent.trim()) return '';
-                return `<li>${parseInlineMarkdown(itemContent)}</li>`;
-            }).join('');
-
-            return `<${listTag} class="${listClass} list-inside space-y-1.5 pl-2 my-2">${items}</${listTag}>`;
+        // Bold heading fallback
+        match = line.match(/^\*\*(.+?):\*\*$/);
+        if (match) {
+            flushBlock();
+            html += `<h3 class="text-lg font-semibold text-gray-100 mt-4 mb-2">${parseInlineMarkdown(match[1])}:</h3>`;
+            continue;
+        }
+        
+        // Unordered List
+        match = line.match(/^\s*[-*]\s+(.*)/);
+        if (match) {
+            if (blockType !== 'ul') flushBlock();
+            blockType = 'ul';
+            currentBlock.push(parseInlineMarkdown(match[1]));
+            continue;
         }
 
-        return `<p>${parseInlineMarkdown(trimmedBlock.replace(/\n/g, '<br />'))}</p>`;
-    });
+        // Ordered list
+        match = line.match(/^\s*(\d+)\.\s+(.*)/);
+        if (match) {
+            if (blockType !== 'ol') flushBlock();
+            blockType = 'ol';
+            currentBlock.push(parseInlineMarkdown(match[2]));
+            continue;
+        }
 
-    return htmlBlocks.join('\n');
+        // Empty line
+        if (line.trim() === '') {
+            flushBlock();
+            continue;
+        }
+
+        // Paragraph line
+        if (blockType !== 'p') flushBlock();
+        blockType = 'p';
+        currentBlock.push(parseInlineMarkdown(line));
+    }
+    
+    flushBlock();
+    return html;
 };
 
 

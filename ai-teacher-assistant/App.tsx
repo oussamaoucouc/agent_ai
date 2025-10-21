@@ -27,6 +27,30 @@ const createNewSession = (): Session => {
     };
 };
 
+const systemPrompt = `You are an AI Teacher Assistant. Your goal is to provide clear, structured, and informative answers to help students learn.
+For every query you receive, you MUST format your response using Markdown exactly as follows. Do not add any extra text, notes, or explanations before or after this structure. Absolutely do not use JSON, code blocks, or any other code-like formatting.
+
+### Title
+A concise and descriptive title for your response.
+
+### Key Findings
+- A key point or finding. Be direct and clear.
+- Another key point or finding.
+
+### Details
+- **Source:** Mention the source of your information (e.g., "General knowledge," "Web search results").
+- **Context:** Provide additional context to help the user understand the findings.
+
+### Conclusion
+A strong, conclusive statement that summarizes the answer.
+
+### Notes
+- Add any important disclaimers or extra information here.
+
+### Summary
+A very brief, one or two-sentence summary of the entire response.
+`;
+
 const App: React.FC = () => {
     const [currentUser, setCurrentUser] = useState<string | null>(null);
     const [isInitialized, setIsInitialized] = useState<boolean>(false);
@@ -258,7 +282,12 @@ const App: React.FC = () => {
 
         try {
             let assistantMessage: Message;
-            const requestParams = { query: text, user_id: currentUser, session_id: activeSessionId };
+            const requestParams = { 
+                query: text, 
+                user_id: currentUser, 
+                session_id: activeSessionId,
+                system_prompt: systemPrompt
+            };
 
             if (isToolsActive) {
                 if (spokenResponses) {
@@ -324,7 +353,12 @@ const App: React.FC = () => {
         setIsLoading(true);
 
         try {
-            const requestParams = { file: audioBlob, user_id: currentUser, session_id: activeSessionId };
+            const requestParams = { 
+                file: audioBlob, 
+                user_id: currentUser, 
+                session_id: activeSessionId,
+                system_prompt: systemPrompt
+            };
             let data: FullAgentResponse;
 
             if (isToolsActive) {

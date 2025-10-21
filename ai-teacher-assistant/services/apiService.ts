@@ -74,6 +74,9 @@ export const fullAgent = async (request: FullAgentRequest): Promise<FullAgentRes
     formData.append('file', request.file, 'recording.wav');
     formData.append('user_id', request.user_id);
     formData.append('session_id', request.session_id);
+    if (request.system_prompt) {
+        formData.append('system_prompt', request.system_prompt);
+    }
 
     const response = await fetch(`${API_BASE_URL}/stt_query_tts_direct`, {
         method: 'POST',
@@ -87,6 +90,9 @@ export const fullAgentMcp = async (request: FullAgentRequest): Promise<FullAgent
     formData.append('file', request.file, 'recording.wav');
     formData.append('user_id', request.user_id);
     formData.append('session_id', request.session_id);
+    if (request.system_prompt) {
+        formData.append('system_prompt', request.system_prompt);
+    }
 
     const response = await fetch(`${API_BASE_URL}/stt_query_mcp_tts_direct`, {
         method: 'POST',
