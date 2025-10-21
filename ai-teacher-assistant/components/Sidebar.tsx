@@ -105,34 +105,37 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
 
     return (
-        <aside className={`w-72 flex-shrink-0 bg-gray-800 p-4 border-r border-gray-700 flex flex-col fixed inset-y-0 left-0 z-40 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-            <div className="flex-1 flex flex-col overflow-y-hidden">
-                 <div className="flex items-center justify-between mb-4 flex-shrink-0">
-                    <h2 className="text-lg font-semibold text-gray-200">Menu</h2>
-                    <button 
-                        onClick={onClose}
-                        className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded-md transition-colors"
-                        aria-label="Close sidebar"
-                    >
-                        <CloseIcon className="w-5 h-5" />
-                    </button>
-                </div>
+        <aside className={`w-72 flex-shrink-0 bg-slate-900 p-0 border-r border-slate-800 flex flex-col fixed inset-y-0 left-0 z-40 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 flex-shrink-0">
+                <h2 className="text-xl font-bold text-gray-200">Menu</h2>
+                <button 
+                    onClick={onClose}
+                    className="p-1.5 text-gray-400 hover:text-white hover:bg-slate-700 rounded-md transition-colors"
+                    aria-label="Close sidebar"
+                >
+                    <CloseIcon className="w-5 h-5" />
+                </button>
+            </div>
+             
+             {/* Divider */}
+             <div className="border-t border-slate-700 flex-shrink-0 mx-4"></div>
 
-                <div className="mb-4 flex flex-col overflow-hidden">
-                    <div className="flex items-center justify-between mb-3 flex-shrink-0">
+             {/* Scrollable Content */}
+             <div className="flex-1 overflow-y-auto p-4 space-y-8">
+                {/* Sessions */}
+                <div>
+                    <div className="flex items-center justify-between mb-3">
                         <h2 className="text-lg font-semibold text-gray-200">Sessions</h2>
                         <button 
-                            onClick={() => {
-                                onNewSession();
-                                // Keep sidebar open on mobile if creating a new session
-                            }}
-                            className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded-md transition-colors"
+                            onClick={() => { onNewSession(); }}
+                            className="p-1.5 text-gray-400 hover:text-white hover:bg-slate-700 rounded-md transition-colors"
                             title="New Session"
                         >
                             <PlusIcon className="w-5 h-5" />
                         </button>
                     </div>
-                    <div className="pr-1 space-y-1.5 overflow-y-auto">
+                    <div className="space-y-1.5">
                         {sessions.map(session => (
                             <div key={session.id} className="relative group">
                                 <button
@@ -142,10 +145,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                             onClose();
                                         }
                                     }}
-                                    className={`w-full text-left flex items-center p-2 rounded-md transition-colors ${
+                                    className={`w-full text-left flex items-center p-2 rounded-lg transition-colors ${
                                         session.id === activeSessionId
-                                            ? 'bg-sky-600/50 text-white'
-                                            : 'text-gray-400 hover:bg-gray-700/50 hover:text-gray-200'
+                                            ? 'bg-sky-500/20 text-sky-300'
+                                            : 'text-gray-400 hover:bg-slate-700/50 hover:text-gray-200'
                                     }`}
                                 >
                                     <ChatIcon className="w-4 h-4 mr-3 flex-shrink-0" />
@@ -157,14 +160,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                             onChange={(e) => setSessionName(e.target.value)}
                                             onBlur={handleFinishRename}
                                             onKeyDown={handleRenameKeyDown}
-                                            className="flex-1 text-sm bg-gray-900/80 rounded px-1 py-0 border border-sky-500 focus:outline-none w-0"
+                                            className="flex-1 text-sm bg-slate-800 rounded px-1 py-0 border border-sky-500 focus:outline-none w-0"
                                         />
                                     ) : (
                                         <span className="flex-1 text-sm truncate">{session.name}</span>
                                     )}
                                 </button>
                                 {renamingSessionId !== session.id && (
-                                    <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-gray-700/50 rounded-md">
+                                    <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-slate-700/50 rounded-md">
                                         <button
                                             onClick={() => handleStartRename(session)}
                                             className="p-1.5 text-gray-400 hover:text-white rounded-md"
@@ -185,10 +188,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         ))}
                     </div>
                 </div>
-                
-                <div className="border-t border-gray-700 pt-4 my-4 flex-shrink-0">
-                    <h2 className="text-lg font-semibold text-gray-200 mb-4">Settings</h2>
-                    <div className="space-y-4">
+
+                {/* Settings */}
+                <div className="pt-2">
+                    <h2 className="text-lg font-bold text-gray-200 mb-4">Settings</h2>
+                    <div className="space-y-6">
                         <div>
                             <h3 className="text-sm font-medium text-gray-400 mb-2 flex items-center"><BrainIcon className="w-4 h-4 mr-2" />AI Model</h3>
                             <input
@@ -197,7 +201,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 onChange={(e) => setLocalModel(e.target.value)}
                                 onBlur={handleModelBlur}
                                 placeholder="e.g., gemini-pro"
-                                className="w-full px-3 py-2 text-sm font-mono rounded-md transition-colors bg-gray-700/60 hover:bg-gray-700 text-gray-200 border-2 border-transparent focus:outline-none focus:border-sky-500"
+                                className="w-full px-3 py-2 text-sm font-mono rounded-lg transition-colors bg-slate-800 text-gray-200 border-2 border-slate-700 focus:outline-none focus:border-sky-500"
                             />
                         </div>
                         <div>
@@ -208,8 +212,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     <button
                                         key={voice.id}
                                         onClick={() => onVoiceChange(voice.id)}
-                                        className={`px-2 py-1.5 text-xs font-mono rounded-md transition-colors border-2 focus:outline-none focus:border-sky-500 ${
-                                            currentVoice === voice.id ? 'bg-sky-600 text-white font-bold border-sky-600' : 'bg-gray-700/60 hover:bg-gray-700 text-gray-300 border-transparent'
+                                        className={`px-2 py-1.5 text-xs font-mono rounded-lg transition-colors border-2 focus:outline-none focus:border-sky-500 ${
+                                            currentVoice === voice.id ? 'bg-sky-500 text-white font-bold border-sky-500' : 'bg-slate-800 hover:bg-slate-700 text-gray-300 border-transparent'
                                         }`}
                                     >
                                         {voice.id.replace('af_', 'af-').replace('bf_', 'bf-')}
@@ -222,8 +226,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     <button
                                         key={voice.id}
                                         onClick={() => onVoiceChange(voice.id)}
-                                        className={`px-2 py-1.5 text-xs font-mono rounded-md transition-colors border-2 focus:outline-none focus:border-sky-500 ${
-                                            currentVoice === voice.id ? 'bg-sky-600 text-white font-bold border-sky-600' : 'bg-gray-700/60 hover:bg-gray-700 text-gray-300 border-transparent'
+                                        className={`px-2 py-1.5 text-xs font-mono rounded-lg transition-colors border-2 focus:outline-none focus:border-sky-500 ${
+                                            currentVoice === voice.id ? 'bg-sky-500 text-white font-bold border-sky-500' : 'bg-slate-800 hover:bg-slate-700 text-gray-300 border-transparent'
                                         }`}
                                     >
                                         {voice.id.replace('am_', 'am-').replace('bm_', 'bm-')}
@@ -234,8 +238,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </div>
                 </div>
 
-
-                <div className="border-t border-gray-700 pt-4 mb-4 flex-shrink-0">
+                {/* Knowledge Base */}
+                <div>
                     <h2 className="text-lg font-semibold text-gray-200 mb-3">Knowledge Base</h2>
                     <p className="text-sm text-gray-400 mb-4">Add documents to provide context for the AI assistant.</p>
                     <label htmlFor="file-upload" className="w-full cursor-pointer bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-4 rounded-lg inline-flex items-center justify-center transition-colors">
@@ -243,14 +247,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <span>Upload Document</span>
                     </label>
                     <input id="file-upload" type="file" className="hidden" onChange={onFileChange} multiple />
-                </div>
                 
-                <div className="overflow-hidden flex flex-col">
-                    <h3 className="text-md font-semibold text-gray-300 mb-2 flex-shrink-0">Uploaded Files</h3>
+                    <h3 className="text-md font-semibold text-gray-300 mt-4 mb-2">Uploaded Files</h3>
                     {uploadedFiles.length > 0 ? (
-                        <ul className="space-y-2 overflow-y-auto">
+                        <ul className="space-y-2">
                             {uploadedFiles.map((upload) => (
-                                <li key={upload.id} className="flex items-center p-2 rounded-md bg-gray-700/50">
+                                <li key={upload.id} className="flex items-center p-2 rounded-lg bg-slate-800">
                                     <DocumentIcon className="w-5 h-5 mr-3 text-sky-400 flex-shrink-0" />
                                     <span className="flex-1 text-sm text-gray-300 truncate" title={upload.file.name}>{upload.file.name}</span>
                                     <div className="ml-2">
@@ -260,14 +262,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             ))}
                         </ul>
                     ) : (
-                        <div className="text-center text-gray-500 p-4 border-2 border-dashed border-gray-600 rounded-lg flex-shrink-0">
+                        <div className="text-center text-gray-500 p-4 border-2 border-dashed border-slate-700 rounded-lg">
                             <p>No documents uploaded.</p>
                         </div>
                     )}
                 </div>
             </div>
 
-            <div className="mt-auto flex-shrink-0">
+            {/* Footer */}
+            <div className="p-4 flex-shrink-0">
+                 <div className="border-t border-slate-700 mb-4"></div>
                  <button 
                     onClick={onLogout}
                     className="w-full flex items-center justify-center p-2.5 rounded-lg text-gray-400 hover:bg-red-800/50 hover:text-red-300 transition-colors"
