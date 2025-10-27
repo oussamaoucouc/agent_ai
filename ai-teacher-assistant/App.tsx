@@ -85,6 +85,60 @@ const App: React.FC = () => {
         setIsInitialized(true);
     }, []);
 
+    // Nicely format MCP JSON responses into Markdown sections for display.
+    const formatAssistantText = useCallback((text: string): string => {
+        const trimmed = text?.trim();
+        if (!trimmed) return text;
+        try {
+            const obj = JSON.parse(trimmed);
+            const keys = Object.keys(obj || {});
+            // Detect expected MCP JSON schema and convert to Markdown
+            if (keys.includes('key_findings') || keys.includes('details') || keys.includes('conclusion') || keys.includes('notes') || keys.includes('summary')) {
+                const lines: string[] = [];
+                // Remove any leading bullet characters in provided strings to avoid "• -" duplication.
+                const cleanBullet = (val: unknown): string => {
+                    const s = String(val ?? '').trim();
+                    // Strip one leading bullet-like marker and following spaces ("- ", "* ", "• ", "– ", "— ")
+                    return s.replace(/^[\-*•–—]\s+/, '');
+                };
+                if (Array.isArray(obj.key_findings) && obj.key_findings.length) {
+                    lines.push('### Key Findings');
+                    for (const item of obj.key_findings) {
+                        lines.push(`- ${cleanBullet(item)}`);
+                    }
+                    lines.push('');
+                }
+                if (Array.isArray(obj.details) && obj.details.length) {
+                    lines.push('### Details');
+                    for (const item of obj.details) {
+                        lines.push(`- ${cleanBullet(item)}`);
+                    }
+                    lines.push('');
+                }
+                if (obj.conclusion) {
+                    lines.push('### Conclusion');
+                    lines.push(cleanBullet(obj.conclusion));
+                    lines.push('');
+                }
+                if (Array.isArray(obj.notes) && obj.notes.length) {
+                    lines.push('### Notes');
+                    for (const item of obj.notes) {
+                        lines.push(`- ${cleanBullet(item)}`);
+                    }
+                    lines.push('');
+                }
+                if (obj.summary) {
+                    lines.push('### Summary');
+                    lines.push(cleanBullet(obj.summary));
+                }
+                return lines.join('\n');
+            }
+        } catch {
+            // Not JSON; fall through
+        }
+        return text;
+    }, []);
+
     // Load sessions when user logs in
     useEffect(() => {
         if (currentUser) {
@@ -324,7 +378,7 @@ const App: React.FC = () => {
                     const data = await queryMcpTTS(requestParams, controller.signal);
                     assistantMessage = {
                         id: crypto.randomUUID(),
-                        text: data.response,
+                        text: formatAssistantText(data.response),
                         sender: User.ASSISTANT,
                         audioUrl: data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}` : undefined,
                         visemes: data.visemes,
@@ -336,7 +390,7 @@ const App: React.FC = () => {
                     const data = await queryMcp(requestParams, controller.signal);
                     assistantMessage = {
                         id: crypto.randomUUID(),
-                        text: data.response,
+                        text: formatAssistantText(data.response),
                         sender: User.ASSISTANT,
                     };
                 }
@@ -345,7 +399,7 @@ const App: React.FC = () => {
                     const data = await queryTTS(requestParams, controller.signal);
                     assistantMessage = {
                         id: crypto.randomUUID(),
-                        text: data.response,
+                        text: formatAssistantText(data.response),
                         sender: User.ASSISTANT,
                         audioUrl: data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}` : undefined,
                         visemes: data.visemes,
@@ -357,7 +411,7 @@ const App: React.FC = () => {
                     const data = await query(requestParams, controller.signal);
                     assistantMessage = {
                         id: crypto.randomUUID(),
-                        text: data.response,
+                        text: formatAssistantText(data.response),
                         sender: User.ASSISTANT,
                     };
                 }
@@ -407,7 +461,7 @@ const App: React.FC = () => {
             const userMessage: Message = { id: crypto.randomUUID(), text: `🎤: "${data.text}"`, sender: User.USER };
             const assistantMessage: Message = {
                 id: crypto.randomUUID(),
-                text: data.response,
+                text: formatAssistantText(data.response),
                 sender: User.ASSISTANT,
                 audioUrl: data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}` : undefined,
                 visemes: data.visemes,

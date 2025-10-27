@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import create_engine, Column, String, Text, DateTime, ForeignKey
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship, Session as SASession
 from datetime import datetime
-from teacher_agent.config import DB_URL
+from teacher_agent.config import DB_URL, get_current_voice, set_voice
 import uuid
 
 # SQLAlchemy base and engine
@@ -23,6 +23,15 @@ class SessionDB(Base):
         back_populates="session",
         order_by="MessageDB.created_at",
     )
+
+
+class SessionSettingsDB(Base):
+    __tablename__ = "app_session_settings"
+    # Use session_id as primary key to enforce one settings row per session
+    session_id = Column(String(64), ForeignKey("app_sessions.id", ondelete="CASCADE"), primary_key=True)
+    user_id = Column(String(256), index=True, nullable=False)
+    voice = Column(String(128), nullable=False, default="af_sky")
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
 class MessageDB(Base):
@@ -80,6 +89,21 @@ def _db_to_session_model(s: SessionDB) -> SessionModel:
     )
 
 
+def get_session_voice(db: SASession, user_id: str, session_id: str) -> str:
+    settings = db.query(SessionSettingsDB).filter(SessionSettingsDB.session_id == session_id, SessionSettingsDB.user_id == user_id).first()
+    return settings.voice if settings and settings.voice else get_current_voice()
+
+
+def apply_session_voice(db: SASession, user_id: str, session_id: str) -> str:
+    voice = get_session_voice(db, user_id, session_id)
+    try:
+        set_voice(voice)
+    except Exception:
+        # If setting voice fails (unlikely), continue with current config
+        pass
+    return voice
+
+
 class CreateSessionRequest(BaseModel):
     user_id: str
 
@@ -127,9 +151,14 @@ async def create_session(request: CreateSessionRequest, db: SASession = Depends(
             created_at=now,
         )
         db.add(greet_msg)
+        # Create default session settings
+        default_voice = get_current_voice()
+        settings = SessionSettingsDB(session_id=session_id, user_id=request.user_id, voice=default_voice, updated_at=now)
+        db.add(settings)
         db.commit()
         db.refresh(s)
         db.refresh(greet_msg)
+        db.refresh(settings)
         return _db_to_session_model(s)
     except Exception as e:
         db.rollback()

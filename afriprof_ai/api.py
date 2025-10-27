@@ -261,6 +261,9 @@ async def query_mcp_tts_endpoint(request: QueryRequest):
         response_text = await run_mcp_agent(request.query, request.user_id, request.session_id)
 
         # Generate audio and visemes
+        # Apply per-session voice before generating audio
+        with sessions.SessionLocal() as db:
+            sessions.apply_session_voice(db, request.user_id, request.session_id)
         audio_path, viseme_data = await run_in_threadpool(text_to_speech, response_text)
 
         audio_filename = None
@@ -296,6 +299,9 @@ async def query_mcp_tts_direct(request: QueryRequest):
         response_text = response_text.strip()
 
         # Generate audio and visemes
+        # Apply per-session voice before generating audio
+        with sessions.SessionLocal() as db:
+            sessions.apply_session_voice(db, request.user_id, request.session_id)
         audio_path, viseme_data = await run_in_threadpool(text_to_speech, response_text)
         
         audio_filename = None
@@ -342,6 +348,9 @@ async def stt_query_mcp_tts_endpoint(
         response_text = await run_mcp_agent(query_text, user_id, session_id)
 
         # Generate audio and visemes
+        # Apply per-session voice before generating audio
+        with sessions.SessionLocal() as db:
+            sessions.apply_session_voice(db, user_id, session_id)
         audio_path, viseme_data = await run_in_threadpool(text_to_speech, response_text)
         
         audio_filename = None
@@ -393,6 +402,9 @@ async def stt_query_mcp_tts_direct_endpoint(
         response_text = response_text.strip()
 
         # Generate audio and visemes
+        # Apply per-session voice before generating audio
+        with sessions.SessionLocal() as db:
+            sessions.apply_session_voice(db, user_id, session_id)
         audio_path, viseme_data = await run_in_threadpool(text_to_speech, response_text)
         
         audio_filename = None
@@ -515,7 +527,10 @@ async def stt_endpoint(
 @app.post("/tts")
 def tts_endpoint(request: TTSRequest):
     try:
-        # 1. Generate audio and visemes. This now returns the cached audio path and viseme data.
+        # Apply per-session voice before generating audio
+        with sessions.SessionLocal() as db:
+            sessions.apply_session_voice(db, request.user_id, request.session_id)
+        # Generate audio and visemes. This now returns the cached audio path and viseme data.
         audio_path, viseme_data = text_to_speech(request.text)
 
         if not audio_path:
@@ -624,6 +639,9 @@ async def query_tts_endpoint(request: QueryRequest):
         response_text = await run_rag_agent(request.query, request.user_id, request.session_id)
         
         # Generate audio and visemes
+        # Apply per-session voice before generating audio
+        with sessions.SessionLocal() as db:
+            sessions.apply_session_voice(db, request.user_id, request.session_id)
         audio_path, viseme_data = await run_in_threadpool(text_to_speech, response_text)
 
         audio_filename = None
@@ -659,6 +677,9 @@ async def query_tts_direct(request: QueryRequest):
         response_text = response_text.strip()
 
         # Generate audio and visemes
+        # Apply per-session voice before generating audio
+        with sessions.SessionLocal() as db:
+            sessions.apply_session_voice(db, request.user_id, request.session_id)
         audio_path, viseme_data = await run_in_threadpool(text_to_speech, response_text)
         
         audio_filename = None
@@ -705,6 +726,9 @@ async def stt_query_tts_endpoint(
         response_text = await run_rag_agent(query_text, user_id, session_id)
 
         # Generate audio and visemes
+        # Apply per-session voice before generating audio
+        with sessions.SessionLocal() as db:
+            sessions.apply_session_voice(db, user_id, session_id)
         audio_path, viseme_data = await run_in_threadpool(text_to_speech, response_text)
         
         audio_filename = None
@@ -756,6 +780,9 @@ async def stt_query_tts_direct_endpoint(
         response_text = response_text.strip()
 
         # Generate audio and visemes
+        # Apply per-session voice before generating audio
+        with sessions.SessionLocal() as db:
+            sessions.apply_session_voice(db, user_id, session_id)
         audio_path, viseme_data = await run_in_threadpool(text_to_speech, response_text)
         
         audio_filename = None
@@ -857,8 +884,22 @@ async def set_model_endpoint(request: SetModelRequest):
 async def set_voice_endpoint(request: SetVoiceRequest):
     """Set the voice for TTS"""
     try:
+        # Persist per-session voice and update runtime config
         from teacher_agent.config import set_voice
         set_voice(request.voice)
+        # Also persist to the database as session-specific setting
+        with sessions.SessionLocal() as db:
+            settings = db.query(sessions.SessionSettingsDB).filter(
+                sessions.SessionSettingsDB.session_id == request.session_id,
+                sessions.SessionSettingsDB.user_id == request.user_id,
+            ).first()
+            now = datetime.utcnow()
+            if settings:
+                settings.voice = request.voice
+                settings.updated_at = now
+            else:
+                db.add(sessions.SessionSettingsDB(session_id=request.session_id, user_id=request.user_id, voice=request.voice, updated_at=now))
+            db.commit()
         return {"success": True, "message": f"Voice changed to {request.voice}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error setting voice: {str(e)}")
