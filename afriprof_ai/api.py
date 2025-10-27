@@ -1,7 +1,7 @@
 """
 API endpoints for the AI Teacher Assistant application (FastAPI app instance).
 """
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query, Request
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, constr
@@ -21,6 +21,11 @@ import uuid
 from fastapi.responses import FileResponse
 from fastapi.concurrency import run_in_threadpool
 import asyncio
+from datetime import datetime
+import sessions
+
+
+# Sessions persistence moved to sessions.py
 
 
 app = FastAPI(
@@ -43,8 +48,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include sessions router
+app.include_router(sessions.router)
+
 # Registry of active tasks per user/session for cancellation
 active_tasks: Dict[str, asyncio.Task] = {}
+
+# Session models, schemas, and endpoints moved to sessions.py
 
 class LoginRequest(BaseModel):
     username: str
@@ -64,6 +74,9 @@ class TTSRequest(BaseModel):
     user_id: str
     session_id: str
     text: constr(strip_whitespace=True, min_length=1, max_length=2000)
+
+
+# --- Pydantic models for session persistence ---
 
 class SetModelRequest(BaseModel):
     user_id: str

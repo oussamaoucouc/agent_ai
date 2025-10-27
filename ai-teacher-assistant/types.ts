@@ -119,7 +119,27 @@ export interface SetVoiceRequest {
     voice: TTSVoice;
 }
 
+// Cancel active generation/request
 export interface CancelRequest {
     user_id: string;
     session_id: string;
+}
+
+// Server session API types
+export interface CreateSessionRequest {
+    user_id: string;
+}
+
+export interface RenameSessionRequest {
+    user_id: string;
+    name: string;
+}
+
+export interface DeleteSessionRequest {
+    user_id: string;
+}
+
+export interface SaveMessagesRequest {
+    user_id: string;
+    messages: Message[];
 }

@@ -6,7 +6,7 @@ import { InputBar } from './components/InputBar';
 import { AvatarView } from './components/AvatarView';
 import { LoginPage } from './components/LoginPage';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
-import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession } from './services/apiService';
+import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages } from './services/apiService';
 import * as storage from './services/storageService';
 import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice } from './types';
 import { API_BASE_URL } from './constants';
@@ -88,27 +88,34 @@ const App: React.FC = () => {
     // Load sessions when user logs in
     useEffect(() => {
         if (currentUser) {
-            const userSessions = storage.getSessionsForUser(currentUser);
-            if (userSessions.length > 0) {
-                const sortedSessions = [...userSessions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-                setSessions(sortedSessions);
-                handleSelectSession(sortedSessions[0].id, sortedSessions); 
-            } else {
-                handleNewSession();
-            }
+            (async () => {
+                try {
+                    const userSessions = await getSessions(currentUser);
+                    if (userSessions.length > 0) {
+                        const sortedSessions = [...userSessions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                        setSessions(sortedSessions);
+                        handleSelectSession(sortedSessions[0].id, sortedSessions);
+                    } else {
+                        handleNewSession();
+                    }
+                } catch (err) {
+                    console.error('Failed to load sessions:', err);
+                }
+            })();
         }
     }, [currentUser]);
 
     // Save sessions whenever messages change for the active session
     useEffect(() => {
-        if (currentUser && activeSessionId && sessions.length > 0) {
-            const updatedSessions = sessions.map(session =>
-                session.id === activeSessionId ? { ...session, messages } : session
-            );
-            if (JSON.stringify(updatedSessions) !== JSON.stringify(sessions)) {
-                setSessions(updatedSessions);
-                storage.saveSessionsForUser(currentUser, updatedSessions);
-            }
+        if (currentUser && activeSessionId) {
+            (async () => {
+                try {
+                    const saved = await saveSessionMessages(activeSessionId, { user_id: currentUser, messages });
+                    setSessions(prev => prev.map(s => s.id === saved.id ? saved : s));
+                } catch (err) {
+                    console.error('Failed to save messages:', err);
+                }
+            })();
         }
     }, [messages, activeSessionId, currentUser]);
 
@@ -199,15 +206,18 @@ const App: React.FC = () => {
 
     }, [handleStopAudio]);
 
-    const handleNewSession = () => {
+    const handleNewSession = async () => {
         if (!currentUser) return;
         handleStopAudio();
-        const newSession = createNewSession();
-        const updatedSessions = [newSession, ...sessions];
-        setSessions(updatedSessions);
-        setActiveSessionId(newSession.id);
-        setMessages(newSession.messages);
-        storage.saveSessionsForUser(currentUser, updatedSessions);
+        try {
+            const newSession = await createSession({ user_id: currentUser });
+            const updatedSessions = [newSession, ...sessions];
+            setSessions(updatedSessions);
+            setActiveSessionId(newSession.id);
+            setMessages(newSession.messages);
+        } catch (err) {
+            console.error('Failed to create session:', err);
+        }
     };
 
     const handleSelectSession = (sessionId: string, currentSessions: Session[]) => {
@@ -219,31 +229,34 @@ const App: React.FC = () => {
         }
     };
     
-    const handleDeleteSession = (sessionId: string) => {
+    const handleDeleteSession = async (sessionId: string) => {
         if (!currentUser || !window.confirm("Are you sure you want to delete this session? This action cannot be undone.")) return;
-    
-        const remainingSessions = sessions.filter(s => s.id !== sessionId);
-        setSessions(remainingSessions);
-        storage.saveSessionsForUser(currentUser, remainingSessions);
-    
-        if (activeSessionId === sessionId) {
-            if (remainingSessions.length > 0) {
-                const sorted = [...remainingSessions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-                handleSelectSession(sorted[0].id, sorted);
-            } else {
-                handleNewSession();
+        try {
+            await apiDeleteSession(sessionId, { user_id: currentUser });
+            const remainingSessions = sessions.filter(s => s.id !== sessionId);
+            setSessions(remainingSessions);
+            if (activeSessionId === sessionId) {
+                if (remainingSessions.length > 0) {
+                    const sorted = [...remainingSessions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                    handleSelectSession(sorted[0].id, sorted);
+                } else {
+                    handleNewSession();
+                }
             }
+        } catch (err) {
+            console.error('Failed to delete session:', err);
         }
     };
 
-    const handleRenameSession = (sessionId: string, newName: string) => {
+    const handleRenameSession = async (sessionId: string, newName: string) => {
         if (!currentUser || !newName.trim()) return;
-    
-        const updatedSessions = sessions.map(s => 
-            s.id === sessionId ? { ...s, name: newName.trim() } : s
-        );
-        setSessions(updatedSessions);
-        storage.saveSessionsForUser(currentUser, updatedSessions);
+        try {
+            const renamed = await apiRenameSession(sessionId, { user_id: currentUser, name: newName.trim() });
+            const updatedSessions = sessions.map(s => s.id === sessionId ? renamed : s);
+            setSessions(updatedSessions);
+        } catch (err) {
+            console.error('Failed to rename session:', err);
+        }
     };
 
     const handleModelChange = async (model: string) => {

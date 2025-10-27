@@ -9,7 +9,12 @@ import {
     UploadDocumentResponse,
     SetModelRequest,
     SetVoiceRequest,
-    CancelRequest
+    CancelRequest,
+    Session,
+    CreateSessionRequest,
+    RenameSessionRequest,
+    DeleteSessionRequest,
+    SaveMessagesRequest
 } from '../types';
 
 const handleResponse = async <T,>(response: Response): Promise<T> => {
@@ -141,6 +146,54 @@ export const setVoice = async (request: SetVoiceRequest, signal?: AbortSignal): 
         signal,
     });
     return handleResponse<{success: boolean}>(response);
+};
+
+// --- Session persistence API ---
+export const getSessions = async (user_id: string, signal?: AbortSignal): Promise<Session[]> => {
+    const url = new URL(`${API_BASE_URL}/sessions`);
+    url.searchParams.set('user_id', user_id);
+    const response = await fetch(url, { method: 'GET', signal });
+    return handleResponse<Session[]>(response);
+};
+
+export const createSession = async (request: CreateSessionRequest, signal?: AbortSignal): Promise<Session> => {
+    const response = await fetch(`${API_BASE_URL}/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+        signal,
+    });
+    return handleResponse<Session>(response);
+};
+
+export const renameSession = async (sessionId: string, request: RenameSessionRequest, signal?: AbortSignal): Promise<Session> => {
+    const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/rename`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+        signal,
+    });
+    return handleResponse<Session>(response);
+};
+
+export const deleteSession = async (sessionId: string, request: DeleteSessionRequest, signal?: AbortSignal): Promise<{status: string}> => {
+    const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+        signal,
+    });
+    return handleResponse<{status: string}>(response);
+};
+
+export const saveSessionMessages = async (sessionId: string, request: SaveMessagesRequest, signal?: AbortSignal): Promise<Session> => {
+    const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/messages`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+        signal,
+    });
+    return handleResponse<Session>(response);
 };
 
 export const cancelSession = async (request: CancelRequest): Promise<{status: string}> => {
