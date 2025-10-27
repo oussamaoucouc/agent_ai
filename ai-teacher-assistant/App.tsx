@@ -27,29 +27,36 @@ const createNewSession = (): Session => {
     };
 };
 
-const systemPrompt = `You are an AI Teacher Assistant. Your goal is to provide clear, structured, and informative answers to help students learn.
-For every query you receive, you MUST format your response using Markdown exactly as follows. Do not add any extra text, notes, or explanations before or after this structure. Absolutely do not use JSON, code blocks, or any other code-like formatting.
+const systemPrompt = `You are an AI Assistant. Your goal is to provide clear, structured, and informative answers to help user learn.
 
-### Title
-A concise and descriptive title for your response.
+CRITICAL FORMATTING RULES:
+- NEVER use JSON format, code blocks, or any programming syntax
+- NEVER include curly braces {}, square brackets [], or quotation marks around content
+- NEVER use technical field names like "key_findings", "details", "conclusion"
+- Always write in natural, conversational language using proper Markdown
 
-### Key Findings
-- A key point or finding. Be direct and clear.
-- Another key point or finding.
+Format your response using clean Markdown exactly as follows:
 
-### Details
-- **Source:** Mention the source of your information (e.g., "General knowledge," "Web search results").
-- **Context:** Provide additional context to help the user understand the findings.
+### [Write a Clear, Descriptive Title Here]
 
-### Conclusion
-A strong, conclusive statement that summarizes the answer.
+### Key Points
+- Write your main findings in simple, clear language
+- Each point should be easy to understand for students
+- Use natural language, not technical jargon
 
-### Notes
-- Add any important disclaimers or extra information here.
+### Explanation
+**Source:** [Mention where this information comes from]
+
+**Context:** [Provide helpful background information that makes the topic easier to understand]
 
 ### Summary
-A very brief, one or two-sentence summary of the entire response.
-`;
+[Write a clear, concise conclusion that directly answers the student's question]
+
+### Additional Notes
+- [Include any important disclaimers or extra helpful information]
+- [Keep this section brief and student-friendly]
+
+Remember: Write as if you're speaking directly to a human. Use simple, clear language and avoid any technical formatting or programming syntax.`;
 
 const App: React.FC = () => {
     const [currentUser, setCurrentUser] = useState<string | null>(null);
@@ -85,58 +92,105 @@ const App: React.FC = () => {
         setIsInitialized(true);
     }, []);
 
-    // Nicely format MCP JSON responses into Markdown sections for display.
+    // Clean and format AI responses for better user experience
     const formatAssistantText = useCallback((text: string): string => {
         const trimmed = text?.trim();
         if (!trimmed) return text;
+
+        // First, try to parse as JSON and convert to user-friendly Markdown
         try {
             const obj = JSON.parse(trimmed);
             const keys = Object.keys(obj || {});
-            // Detect expected MCP JSON schema and convert to Markdown
+            
+            // Handle both old technical format and new user-friendly format
             if (keys.includes('key_findings') || keys.includes('details') || keys.includes('conclusion') || keys.includes('notes') || keys.includes('summary')) {
                 const lines: string[] = [];
-                // Remove any leading bullet characters in provided strings to avoid "• -" duplication.
+                
+                // Clean bullet points and format nicely
                 const cleanBullet = (val: unknown): string => {
                     const s = String(val ?? '').trim();
-                    // Strip one leading bullet-like marker and following spaces ("- ", "* ", "• ", "– ", "— ")
                     return s.replace(/^[\-*•–—]\s+/, '');
                 };
+
+                // Add a user-friendly title if available
+                if (obj.title) {
+                    lines.push(`### ${cleanBullet(obj.title)}`);
+                    lines.push('');
+                }
+
+                // Convert key_findings to Key Points
                 if (Array.isArray(obj.key_findings) && obj.key_findings.length) {
-                    lines.push('### Key Findings');
+                    lines.push('### Key Points');
                     for (const item of obj.key_findings) {
                         lines.push(`- ${cleanBullet(item)}`);
                     }
                     lines.push('');
                 }
+
+                // Convert details to Explanation
                 if (Array.isArray(obj.details) && obj.details.length) {
-                    lines.push('### Details');
+                    lines.push('### Explanation');
                     for (const item of obj.details) {
-                        lines.push(`- ${cleanBullet(item)}`);
+                        const cleanItem = cleanBullet(item);
+                        // Handle source and context specially
+                        if (cleanItem.toLowerCase().startsWith('source:')) {
+                            lines.push(`**Source:** ${cleanItem.substring(7).trim()}`);
+                        } else if (cleanItem.toLowerCase().startsWith('context:')) {
+                            lines.push(`**Context:** ${cleanItem.substring(8).trim()}`);
+                        } else {
+                            lines.push(`- ${cleanItem}`);
+                        }
                     }
                     lines.push('');
                 }
+
+                // Add conclusion as Summary
                 if (obj.conclusion) {
-                    lines.push('### Conclusion');
+                    lines.push('### Summary');
                     lines.push(cleanBullet(obj.conclusion));
                     lines.push('');
                 }
+
+                // Convert notes to Additional Notes
                 if (Array.isArray(obj.notes) && obj.notes.length) {
-                    lines.push('### Notes');
+                    lines.push('### Additional Notes');
                     for (const item of obj.notes) {
                         lines.push(`- ${cleanBullet(item)}`);
                     }
                     lines.push('');
                 }
-                if (obj.summary) {
+
+                // Add summary if different from conclusion
+                if (obj.summary && obj.summary !== obj.conclusion) {
                     lines.push('### Summary');
                     lines.push(cleanBullet(obj.summary));
                 }
-                return lines.join('\n');
+
+                return lines.join('\n').trim();
             }
         } catch {
-            // Not JSON; fall through
+            // Not valid JSON, continue with text cleanup
         }
-        return text;
+
+        // Clean up any remaining JSON-like artifacts in plain text
+        let cleanedText = trimmed
+            // Remove JSON structure artifacts
+            .replace(/^\s*\{\s*$/gm, '')
+            .replace(/^\s*\}\s*$/gm, '')
+            .replace(/^\s*"[^"]*":\s*\[\s*$/gm, '')
+            .replace(/^\s*"[^"]*":\s*"([^"]*)"[,]?\s*$/gm, '$1')
+            .replace(/^\s*\]\s*[,]?\s*$/gm, '')
+            .replace(/^\s*[,]\s*$/gm, '')
+            // Clean up technical field names if they appear in text
+            .replace(/key_findings/gi, 'Key Points')
+            .replace(/\bdetails\b/gi, 'Explanation')
+            .replace(/\bconclusion\b/gi, 'Summary')
+            .replace(/\bnotes\b/gi, 'Additional Notes')
+            // Remove excessive whitespace
+            .replace(/\n\s*\n\s*\n/g, '\n\n')
+            .trim();
+
+        return cleanedText;
     }, []);
 
     // Load sessions when user logs in

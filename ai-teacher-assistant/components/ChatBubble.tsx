@@ -21,7 +21,17 @@ const parseInlineMarkdown = (text: string): string => {
 };
 
 const parseMarkdown = (text: string): string => {
-    const lines = text.split('\n');
+    // Clean up any JSON-like formatting that might have slipped through
+    let cleanText = text
+        .replace(/^\s*\{\s*$/gm, '') // Remove opening braces
+        .replace(/^\s*\}\s*$/gm, '') // Remove closing braces
+        .replace(/^\s*"[^"]*":\s*\[\s*$/gm, '') // Remove JSON array starts
+        .replace(/^\s*"[^"]*":\s*"([^"]*)"[,]?\s*$/gm, '$1') // Extract quoted values
+        .replace(/^\s*\]\s*[,]?\s*$/gm, '') // Remove array endings
+        .replace(/^\s*[,]\s*$/gm, '') // Remove stray commas
+        .trim();
+
+    const lines = cleanText.split('\n');
     let html = '';
     let currentBlock: string[] = [];
     let blockType: 'p' | 'ul' | 'ol' | null = null;
@@ -30,34 +40,49 @@ const parseMarkdown = (text: string): string => {
         if (currentBlock.length === 0) return;
 
         if (blockType === 'p') {
-            html += `<p>${currentBlock.join('<br />')}</p>`;
+            html += `<div class="mb-3 leading-relaxed">${currentBlock.join('<br />')}</div>`;
         } else if (blockType === 'ul') {
-            html += `<ul class="list-disc list-inside space-y-1.5 pl-2 my-2">${currentBlock.map(li => `<li>${li}</li>`).join('')}</ul>`;
+            html += `<ul class="list-disc list-inside space-y-2 pl-4 my-3 text-gray-200">${currentBlock.map(li => `<li class="leading-relaxed">${li}</li>`).join('')}</ul>`;
         } else if (blockType === 'ol') {
-            html += `<ol class="list-decimal list-inside space-y-1.5 pl-2 my-2">${currentBlock.map(li => `<li>${li}</li>`).join('')}</ol>`;
+            html += `<ol class="list-decimal list-inside space-y-2 pl-4 my-3 text-gray-200">${currentBlock.map(li => `<li class="leading-relaxed">${li}</li>`).join('')}</ol>`;
         }
         currentBlock = [];
         blockType = null;
     };
 
     for (const line of lines) {
-        // H3 heading
-        let match = line.match(/^###\s+(.*)/);
-        if (match) {
+        // Skip empty or whitespace-only lines
+        if (line.trim() === '') {
             flushBlock();
-            html += `<h3 class="text-lg font-semibold text-gray-100 mt-4 mb-2">${parseInlineMarkdown(match[1])}</h3>`;
             continue;
         }
 
-        // Bold heading fallback
+        // H3 heading with enhanced styling
+        let match = line.match(/^###\s+(.*)/);
+        if (match) {
+            flushBlock();
+            const title = parseInlineMarkdown(match[1].replace(/^\[|\]$/g, '')); // Remove brackets if present
+            html += `<h3 class="text-xl font-bold text-white mt-6 mb-3 pb-2 border-b border-gray-600 first:mt-0">${title}</h3>`;
+            continue;
+        }
+
+        // Bold heading fallback with better styling
         match = line.match(/^\*\*(.+?):\*\*$/);
         if (match) {
             flushBlock();
-            html += `<h3 class="text-lg font-semibold text-gray-100 mt-4 mb-2">${parseInlineMarkdown(match[1])}:</h3>`;
+            html += `<h4 class="text-lg font-semibold text-gray-100 mt-4 mb-2">${parseInlineMarkdown(match[1])}:</h4>`;
+            continue;
+        }
+
+        // Enhanced bold inline patterns (Source:, Context:, etc.)
+        match = line.match(/^\*\*([^:]+):\*\*\s*(.*)/);
+        if (match) {
+            flushBlock();
+            html += `<div class="mb-2"><span class="font-semibold text-sky-300">${match[1]}:</span> <span class="text-gray-200">${parseInlineMarkdown(match[2])}</span></div>`;
             continue;
         }
         
-        // Unordered List
+        // Unordered List with better spacing
         match = line.match(/^\s*[-*]\s+(.*)/);
         if (match) {
             if (blockType !== 'ul') flushBlock();
@@ -72,12 +97,6 @@ const parseMarkdown = (text: string): string => {
             if (blockType !== 'ol') flushBlock();
             blockType = 'ol';
             currentBlock.push(parseInlineMarkdown(match[2]));
-            continue;
-        }
-
-        // Empty line
-        if (line.trim() === '') {
-            flushBlock();
             continue;
         }
 
