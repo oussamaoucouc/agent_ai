@@ -47,7 +47,19 @@ def generate_visemes(audio_path, text):
         ]
         
         # Using subprocess.run to execute the command
-        result = subprocess.run(command, check=True, capture_output=True, text=True, encoding='utf-8')
+        # Run Rhubarb and capture raw bytes to avoid Unicode decode issues
+        result = subprocess.run(command, check=True, capture_output=True, text=False)
+        # Best-effort decode for logs; Rhubarb may emit non-UTF8 bytes
+        if result.stdout:
+            try:
+                print(result.stdout.decode('utf-8', errors='replace'), file=sys.stderr)
+            except Exception:
+                pass
+        if result.stderr:
+            try:
+                print(result.stderr.decode('utf-8', errors='replace'), file=sys.stderr)
+            except Exception:
+                pass
         print(f"Successfully generated visemes: {viseme_output_path}", file=sys.stderr)
         return True
 

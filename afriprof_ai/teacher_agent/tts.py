@@ -61,10 +61,15 @@ def run_tts_script(text, tts_script_path):
             current_voice = "af_sky"
         env = os.environ.copy()
         env["KOKORO_VOICE"] = current_voice
-        result = subprocess.run(command, check=True, capture_output=True, text=True, encoding='utf-8', env=env)
+        # Capture raw bytes to avoid UnicodeDecodeError from helper/Rhubarb outputs
+        result = subprocess.run(command, check=True, capture_output=True, text=False, env=env)
         
         if result.stderr:
-            print("TTS Helper STDERR:", result.stderr, file=sys.stderr)
+            try:
+                print("TTS Helper STDERR:", result.stderr.decode('utf-8', errors='replace'), file=sys.stderr)
+            except Exception:
+                # If decoding fails, skip printing raw bytes
+                pass
 
         viseme_file_path = Path(audio_file_path).with_suffix('.json')
 
