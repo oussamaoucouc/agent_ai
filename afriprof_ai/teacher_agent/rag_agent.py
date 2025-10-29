@@ -25,7 +25,7 @@ from agno.tools.reasoning import ReasoningTools
 from agno.tools.thinking import ThinkingTools
 from agno.tools.knowledge import KnowledgeTools
 from agno.storage.sqlite import SqliteStorage
-from .config import DB_URL, DATA_DIR, get_current_model, OLLAMA_BASE_URL
+from .config import DB_URL, DATA_DIR, get_current_model, OLLAMA_BASE_URL, get_user_pdf_dir
 
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -59,7 +59,7 @@ def run_rag_agent(query, user_id, session_id):
         logging.info("Creating new event loop")
         return asyncio.run(run_rag_agent_async(query, user_id, session_id))
 
-async def initialize_knowledge_base():
+async def initialize_knowledge_base(user_id: str):
     """
     Initialize the knowledge base with vector database.
     This function is cached to avoid recreating it on every query.
@@ -74,19 +74,36 @@ async def initialize_knowledge_base():
         host=OLLAMA_BASE_URL  # FIXED: Add host parameter
     )
     
+    # Per-user ChromaDB collection and directory for isolation
+    user_chroma_path = os.path.join("./tmp/chromadb_nomicembedtext", str(user_id))
+    os.makedirs(user_chroma_path, exist_ok=True)
     vector_db = ChromaDb(
-        collection="teacher_test_nomicembedtext",
-        path="./tmp/chromadb_nomicembedtext",
+        collection=f"teacher_{user_id}",
+        path=user_chroma_path,
         persistent_client=True,
         embedder=embedder
     )
+    logging.info(f"Initialized ChromaDB: collection=teacher_{user_id}, path={user_chroma_path}")
+
+    # Use per-user PDF directory
+    user_pdf_dir = get_user_pdf_dir(user_id)
+    logging.info(f"Using user-specific PDF directory: {user_pdf_dir}")
     knowledge_base = PDFKnowledgeBase(
-        path=DATA_DIR,
+        path=user_pdf_dir,
         vector_db=vector_db,
         chunking_strategy=DocumentChunking()
     )
     #new run
     #await knowledge_base.aload(recreate=True, upsert=False)
+    # Log basic ingestion diagnostics: PDF count
+    try:
+        pdf_files = list(Path(user_pdf_dir).glob("*.pdf"))
+        logging.info(f"Knowledge ingestion: found {len(pdf_files)} PDFs for user {user_id}")
+        if len(pdf_files) == 0:
+            logging.warning(f"No PDFs found in {user_pdf_dir} for user {user_id}. Retrieval may return no documents.")
+    except Exception as e:
+        logging.warning(f"Unable to list PDFs in {user_pdf_dir}: {e}")
+
     await knowledge_base.aload(recreate=False, upsert=True)
     
     
@@ -138,7 +155,7 @@ async def run_rag_agent_async(query, user_id, session_id):
     logging.info(f"Starting RAG agent with Ollama at: {OLLAMA_BASE_URL}")
     
     # Get cached knowledge base and memory DBs
-    knowledge_base = await initialize_knowledge_base()
+    knowledge_base = await initialize_knowledge_base(user_id)
     memory_rag, memory_llm, memory_team = await initialize_memory_dbs(user_id, session_id)
     storage_session_id = f"{user_id}_{session_id}"  # For PostgresStorage isolation
 
@@ -147,11 +164,11 @@ async def run_rag_agent_async(query, user_id, session_id):
     #knowledge tools reasoning, search, analyze, few shot, instructions
     knowledge_tools = KnowledgeTools(
     knowledge=knowledge_base,
-    think=True,
+    think=False,
     search=True,
-    analyze=True,
-    add_few_shot=True,
-    add_instructions=True,
+    analyze=False,
+    add_few_shot=False,
+    add_instructions=False,
     )
 
     teacher_agent = Agent(
@@ -287,8 +304,9 @@ async def run_rag_agent_async(query, user_id, session_id):
     )
 
     try:
-        response = await multi_agent_team.arun(query)
+        #response = await multi_agent_team.arun(query)
 
+        response = await teacher_agent.arun(query)
         # --- Robust error checking for response.content ---
         # Explicit check for boolean response
         if isinstance(response, bool):
@@ -334,6 +352,14 @@ async def run_rag_agent_async(query, user_id, session_id):
                 logging.info(f"INFO Document {i}: Title: {title} | Source: {source}")
         else:
             logging.info("INFO No document retrieval details available in response.")
+
+        # --- RETRIEVAL SUCCESS FLAG ---
+        retrieval_success = False
+        try:
+            retrieval_success = (docs is not None) and (len(docs) > 0)
+        except Exception:
+            retrieval_success = docs is not None
+        logging.info(f"RETRIEVER_SUCCESS: {retrieval_success}")
 
         return result_content
 

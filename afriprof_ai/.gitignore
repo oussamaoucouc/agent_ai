@@ -112,3 +112,6 @@ htmlcov/
 logs/
 
 tts_cache/
+
+# Data files
+data/pdfs/

@@ -7,6 +7,7 @@ import {
     QueryResponse, 
     UploadDocumentRequest,
     UploadDocumentResponse,
+    ListDocumentsResponse,
     SetModelRequest,
     SetVoiceRequest,
     CancelRequest,
@@ -126,6 +127,13 @@ export const uploadDocument = async (request: UploadDocumentRequest, signal?: Ab
         signal,
     });
     return handleResponse<UploadDocumentResponse>(response);
+};
+
+export const listDocuments = async (user_id: string, signal?: AbortSignal): Promise<ListDocumentsResponse> => {
+    const url = new URL(`${API_BASE_URL}/list_documents`);
+    url.searchParams.set('user_id', user_id);
+    const response = await fetch(url, { method: 'GET', signal });
+    return handleResponse<ListDocumentsResponse>(response);
 };
 
 export const setModel = async (request: SetModelRequest, signal?: AbortSignal): Promise<{success: boolean}> => {

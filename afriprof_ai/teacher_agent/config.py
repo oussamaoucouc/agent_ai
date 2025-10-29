@@ -64,7 +64,7 @@ __all__ = [
     'KOKORO_TTS_HEADERS', 'KOKORO_TTS_TIMEOUT', 'RHUBARB_PATH',
     'MCP_TRANSPORT', 'MCP_SERVER_URL', 'MCP_STDIO_COMMAND', 'MCP_STDIO_ARGS',
     'get_current_model', 'get_current_model_id', 'set_model_id', 
-    'get_current_voice', 'set_voice'
+    'get_current_voice', 'set_voice', 'get_user_pdf_dir'
 ]
 
 # Database configuration
@@ -85,6 +85,12 @@ else:
 DATA_DIR = BASE_DIR / "data" / "pdfs"
 # Ensure the data directory exists
 os.makedirs(DATA_DIR, exist_ok=True)
+
+def get_user_pdf_dir(user_id: str) -> Path:
+    """Return the per-user PDF directory and ensure it exists."""
+    user_dir = DATA_DIR / str(user_id)
+    os.makedirs(user_dir, exist_ok=True)
+    return user_dir
 
 # STT configuration
 # Use environment variable for Vosk model path, with fallback

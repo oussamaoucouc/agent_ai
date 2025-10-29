@@ -105,6 +105,7 @@ export interface UploadDocumentRequest {
 export interface UploadDocumentResponse {
     message: string;
     filename: string;
+    path?: string;
 }
 
 export interface SetModelRequest {
@@ -142,4 +143,9 @@ export interface DeleteSessionRequest {
 export interface SaveMessagesRequest {
     user_id: string;
     messages: Message[];
+}
+
+// List documents response for persisted user PDFs
+export interface ListDocumentsResponse {
+    documents: { filename: string; path: string }[];
 }

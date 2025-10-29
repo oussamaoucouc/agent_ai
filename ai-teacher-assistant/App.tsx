@@ -6,7 +6,7 @@ import { InputBar } from './components/InputBar';
 import { AvatarView } from './components/AvatarView';
 import { LoginPage } from './components/LoginPage';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
-import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages } from './services/apiService';
+import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments } from './services/apiService';
 import * as storage from './services/storageService';
 import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice } from './types';
 import { API_BASE_URL } from './constants';
@@ -91,6 +91,31 @@ const App: React.FC = () => {
         }
         setIsInitialized(true);
     }, []);
+
+    // Load persisted uploaded documents for the current user
+    useEffect(() => {
+        const controller = new AbortController();
+        const loadDocs = async () => {
+            if (!currentUser) {
+                setUploadedFiles([]);
+                return;
+            }
+            try {
+                const res = await listDocuments(currentUser, controller.signal);
+                const items: UploadedFile[] = (res.documents || []).map((doc) => ({
+                    id: crypto.randomUUID(),
+                    file: new File([""], doc.filename),
+                    status: 'success'
+                }));
+                setUploadedFiles(items);
+            } catch (err) {
+                console.error('Failed to load persisted documents:', err);
+                // Keep existing list if fetch fails
+            }
+        };
+        loadDocs();
+        return () => controller.abort();
+    }, [currentUser]);
 
     // Clean and format AI responses for better user experience
     const formatAssistantText = useCallback((text: string): string => {
@@ -261,6 +286,7 @@ const App: React.FC = () => {
         setActiveSessionId(null);
         setPlayingAudioId(null);
         setActiveAudio(null);
+        setUploadedFiles([]);
     };
     
     const playAudioWithVisemes = useCallback((audioUrl: string, visemeData: VisemeData, messageId: string) => {

@@ -34,10 +34,12 @@ const parseMarkdown = (text: string): string => {
     const lines = cleanText.split('\n');
     let html = '';
     let currentBlock: string[] = [];
-    let blockType: 'p' | 'ul' | 'ol' | null = null;
+    let blockType: 'p' | 'ul' | 'ol' | 'table' | null = null;
+    let tableRows: string[] = [];
+    let isTableHeader = true;
 
     const flushBlock = () => {
-        if (currentBlock.length === 0) return;
+        if (currentBlock.length === 0 && tableRows.length === 0) return;
 
         if (blockType === 'p') {
             html += `<div class="mb-3 leading-relaxed">${currentBlock.join('<br />')}</div>`;
@@ -45,9 +47,29 @@ const parseMarkdown = (text: string): string => {
             html += `<ul class="list-disc list-inside space-y-2 pl-4 my-3 text-gray-200">${currentBlock.map(li => `<li class="leading-relaxed">${li}</li>`).join('')}</ul>`;
         } else if (blockType === 'ol') {
             html += `<ol class="list-decimal list-inside space-y-2 pl-4 my-3 text-gray-200">${currentBlock.map(li => `<li class="leading-relaxed">${li}</li>`).join('')}</ol>`;
+        } else if (blockType === 'table' && tableRows.length > 0) {
+            html += `<div class="overflow-x-auto my-4">
+                <table class="min-w-full border-collapse border border-gray-600 bg-gray-800/50 rounded-lg">
+                    ${tableRows.join('')}
+                </table>
+            </div>`;
+            tableRows = [];
+            isTableHeader = true;
         }
         currentBlock = [];
         blockType = null;
+    };
+
+    const parseTableRow = (line: string, isHeader: boolean = false): string => {
+        const cells = line.split('|').map(cell => cell.trim()).filter(cell => cell !== '');
+        const tag = isHeader ? 'th' : 'td';
+        const cellClass = isHeader 
+            ? 'px-4 py-3 text-left font-semibold text-white bg-gray-700 border border-gray-600' 
+            : 'px-4 py-3 text-gray-200 border border-gray-600 hover:bg-gray-700/30';
+        
+        return `<tr class="${isHeader ? 'bg-gray-700' : 'hover:bg-gray-700/20'}">
+            ${cells.map(cell => `<${tag} class="${cellClass}">${parseInlineMarkdown(cell)}</${tag}>`).join('')}
+        </tr>`;
     };
 
     for (const line of lines) {
@@ -98,6 +120,30 @@ const parseMarkdown = (text: string): string => {
             blockType = 'ol';
             currentBlock.push(parseInlineMarkdown(match[2]));
             continue;
+        }
+
+        // Table detection - check for pipe-separated values
+        if (line.includes('|') && line.trim().split('|').length >= 3) {
+            // Check if it's a separator line (like |---|---|)
+            const isSeparator = /^\s*\|[\s\-:]*\|[\s\-:|]*$/.test(line);
+            
+            if (!isSeparator) {
+                if (blockType !== 'table') {
+                    flushBlock();
+                    blockType = 'table';
+                    isTableHeader = true;
+                }
+                
+                tableRows.push(parseTableRow(line, isTableHeader));
+                isTableHeader = false;
+                continue;
+            } else {
+                // Skip separator lines but continue table processing
+                continue;
+            }
+        } else if (blockType === 'table') {
+            // End of table, flush it
+            flushBlock();
         }
 
         // Paragraph line

@@ -13,6 +13,7 @@ import os
 import datetime
 from pydub import AudioSegment
 from teacher_agent.rag_agent import run_rag_agent
+from teacher_agent.config import get_user_pdf_dir
 from teacher_agent.mcp_agent import run_agent_async as run_mcp_agent
 from teacher_agent.tts import text_to_speech
 from teacher_agent.stt import initialize_stt
@@ -116,17 +117,33 @@ async def upload_document_endpoint(file: UploadFile = File(...), user_id: str = 
         if file_extension != ".pdf":
             raise HTTPException(status_code=400, detail="Only PDF files are allowed")
 
-        # Save the uploaded file to the data/pdfs directory
-        pdfs_dir = os.path.join(os.path.dirname(__file__), 'data', 'pdfs')
-        os.makedirs(pdfs_dir, exist_ok=True)
-        file_path = os.path.join(pdfs_dir, file.filename)
+        # Save the uploaded file to the per-user PDFs directory
+        user_pdfs_dir = str(get_user_pdf_dir(user_id))
+        os.makedirs(user_pdfs_dir, exist_ok=True)
+        file_path = os.path.join(user_pdfs_dir, file.filename)
 
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-
-        return {"message": f"Successfully uploaded {file.filename}", "filename": file.filename}
+        return {"message": f"Successfully uploaded {file.filename}", "filename": file.filename, "path": file_path}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error uploading document: {str(e)}")
+
+# List documents for a user (persisted on disk)
+@app.get("/list_documents", response_model=Dict[str, Any])
+async def list_documents(user_id: str):
+    try:
+        user_pdfs_dir = str(get_user_pdf_dir(user_id))
+        os.makedirs(user_pdfs_dir, exist_ok=True)
+        docs = []
+        for name in os.listdir(user_pdfs_dir):
+            if name.lower().endswith(".pdf"):
+                docs.append({
+                    "filename": name,
+                    "path": os.path.join(user_pdfs_dir, name)
+                })
+        return {"documents": docs}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing documents: {str(e)}")
 
 #LLM QUERY
 @app.post("/query", response_model=QueryResponse)
