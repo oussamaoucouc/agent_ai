@@ -9,8 +9,7 @@ import json
 import os
 import logging
 import pickle
-
-from agno.agent import Agent, AgentMemory
+from agno.agent import Agent
 from agno.team.team import Team
 from agno.embedder.ollama import OllamaEmbedder
 from agno.knowledge.pdf import PDFKnowledgeBase, PDFReader
@@ -78,7 +77,7 @@ async def initialize_knowledge_base(user_id: str):
     user_chroma_path = os.path.join("./tmp/chromadb_nomicembedtext", str(user_id))
     os.makedirs(user_chroma_path, exist_ok=True)
     vector_db = ChromaDb(
-        collection=f"teacher_{user_id}",
+        collection=f"ragdocs{user_id}",
         path=user_chroma_path,
         persistent_client=True,
         embedder=embedder
@@ -164,7 +163,7 @@ async def run_rag_agent_async(query, user_id, session_id):
     #knowledge tools reasoning, search, analyze, few shot, instructions
     knowledge_tools = KnowledgeTools(
     knowledge=knowledge_base,
-    think=False,
+    think=True,
     search=True,
     analyze=False,
     add_few_shot=False,
@@ -173,7 +172,7 @@ async def run_rag_agent_async(query, user_id, session_id):
 
     teacher_agent = Agent(
         model=get_current_model(),
-        reasoning=True,
+        reasoning=False,
         name="teacher_agent_rag",
         session_id=session_id,
         session_state={"user_id":user_id, "session_id":session_id},
@@ -184,7 +183,7 @@ async def run_rag_agent_async(query, user_id, session_id):
             You are an AI teacher named teacher, optimized for low latency, high accuracy, RAG-enabled assistant,and an empathetic teacher-tutor style. 
             Your job is to help elementary school students learn new things in a fun and easy way.
             """),
-        tools=[knowledge_tools],
+        #tools=[knowledge_tools],
         knowledge=knowledge_base,
         search_knowledge=True,
         markdown=True,
