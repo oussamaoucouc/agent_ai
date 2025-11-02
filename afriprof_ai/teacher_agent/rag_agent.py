@@ -34,6 +34,78 @@ CACHE_DIR = os.path.abspath("./cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 
+def _compute_dir_state(dir_path: str):
+    """Return a dict of filename -> {size, mtime} for PDFs in a directory."""
+    state = {}
+    for p in Path(dir_path).glob("*.pdf"):
+        try:
+            stat = p.stat()
+            state[p.name] = {"size": stat.st_size, "mtime": int(stat.st_mtime)}
+        except Exception:
+            # Skip unreadable files
+            continue
+    return state
+
+
+async def sync_knowledge_with_pdf_directory(knowledge_base, user_pdf_dir):
+    """
+    Sync knowledge base with current PDF directory state.
+    Rebuilds the vector store from the current PDF directory to ensure
+    deletions and updates are reflected reliably.
+    """
+    try:
+        # Compute current directory state
+        current_state = _compute_dir_state(user_pdf_dir)
+        current_files = set(current_state.keys())
+        logging.info(f"KB sync: {len(current_files)} PDFs detected in {user_pdf_dir}")
+
+        # Load previous state (per-directory cache key)
+        # Ensure path is serialized as string for hashing (handles WindowsPath)
+        cache_key = hashlib.sha1(str(user_pdf_dir).encode("utf-8")).hexdigest()
+        cache_file = os.path.join(CACHE_DIR, f"kb_state_{cache_key}.json")
+        prev_state = {}
+        if os.path.isfile(cache_file):
+            try:
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    prev_state = json.load(f)
+            except Exception:
+                prev_state = {}
+        prev_files = set(prev_state.keys())
+
+        # Detect changes
+        added = current_files - prev_files
+        deleted = prev_files - current_files
+        modified = set(
+            name for name in (current_files & prev_files)
+            if prev_state.get(name) != current_state.get(name)
+        )
+
+        if not prev_state:
+            logging.info("KB sync: no previous state found; performing initial load")
+            await knowledge_base.aload(recreate=True, upsert=False)
+        elif deleted or modified:
+            logging.info(
+                f"KB sync: changes detected (added={len(added)}, deleted={len(deleted)}, modified={len(modified)}); rebuilding collection"
+            )
+            await knowledge_base.aload(recreate=True, upsert=False)
+        elif added:
+            logging.info(f"KB sync: {len(added)} new PDFs; upserting into existing collection")
+            await knowledge_base.aload(recreate=False, upsert=True)
+        else:
+            logging.info("KB sync: no changes; keeping existing collection")
+
+        # Persist current state
+        try:
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(current_state, f)
+        except Exception:
+            logging.warning("KB sync: failed to write state cache; continuing")
+
+    except Exception as e:
+        logging.error(f"Error syncing knowledge base: {e}")
+        raise
+
+
 def run_rag_agent(query, user_id, session_id):
     """
     Entry point for RAG agent that works in both synchronous and asynchronous contexts.
@@ -103,8 +175,9 @@ async def initialize_knowledge_base(user_id: str):
     except Exception as e:
         logging.warning(f"Unable to list PDFs in {user_pdf_dir}: {e}")
 
-    await knowledge_base.aload(recreate=False, upsert=True)
-    
+    # Sync KB with directory (remove deleted PDFs, then load/update)
+    await sync_knowledge_with_pdf_directory(knowledge_base, user_pdf_dir)
+
     
     logging.info("Knowledge base initialization completed")
     return knowledge_base
@@ -165,7 +238,7 @@ async def run_rag_agent_async(query, user_id, session_id):
     knowledge=knowledge_base,
     think=True,
     search=True,
-    analyze=False,
+    analyze=True,
     add_few_shot=False,
     add_instructions=False,
     )
@@ -183,7 +256,7 @@ async def run_rag_agent_async(query, user_id, session_id):
             You are an AI teacher named teacher, optimized for low latency, high accuracy, RAG-enabled assistant,and an empathetic teacher-tutor style. 
             Your job is to help elementary school students learn new things in a fun and easy way.
             """),
-        #tools=[knowledge_tools],
+        tools=[knowledge_tools],
         knowledge=knowledge_base,
         search_knowledge=True,
         markdown=True,

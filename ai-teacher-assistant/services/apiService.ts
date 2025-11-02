@@ -8,6 +8,8 @@ import {
     UploadDocumentRequest,
     UploadDocumentResponse,
     ListDocumentsResponse,
+    DeleteDocumentRequest,
+    DeleteDocumentResponse,
     SetModelRequest,
     SetVoiceRequest,
     CancelRequest,
@@ -134,6 +136,14 @@ export const listDocuments = async (user_id: string, signal?: AbortSignal): Prom
     url.searchParams.set('user_id', user_id);
     const response = await fetch(url, { method: 'GET', signal });
     return handleResponse<ListDocumentsResponse>(response);
+};
+
+export const deleteDocument = async (request: DeleteDocumentRequest, signal?: AbortSignal): Promise<DeleteDocumentResponse> => {
+    const url = new URL(`${API_BASE_URL}/delete_document`);
+    url.searchParams.set('user_id', request.user_id);
+    url.searchParams.set('filename', request.filename);
+    const response = await fetch(url.toString(), { method: 'DELETE', signal });
+    return handleResponse<DeleteDocumentResponse>(response);
 };
 
 export const setModel = async (request: SetModelRequest, signal?: AbortSignal): Promise<{success: boolean}> => {

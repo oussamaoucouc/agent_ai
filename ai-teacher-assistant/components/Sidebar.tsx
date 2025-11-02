@@ -5,6 +5,7 @@ import { DocumentIcon, UploadIcon, SpinnerIcon, CheckIcon, ErrorIcon, PlusIcon, 
 interface SidebarProps {
     uploadedFiles: UploadedFile[];
     onFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+    onDeleteDocument: (filename: string) => void;
     sessions: Session[];
     activeSessionId: string | null;
     onNewSession: () => void;
@@ -45,6 +46,7 @@ const maleVoiceOptions: { id: TTSVoice }[] = [
 export const Sidebar: React.FC<SidebarProps> = ({ 
     uploadedFiles, 
     onFileChange, 
+    onDeleteDocument,
     sessions, 
     activeSessionId, 
     onNewSession, 
@@ -251,11 +253,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     {uploadedFiles.length > 0 ? (
                         <ul className="space-y-2">
                             {uploadedFiles.map((upload) => (
-                                <li key={upload.id} className="flex items-center p-2 rounded-lg bg-slate-800">
+                                <li key={upload.id} className="group flex items-center p-2 rounded-lg bg-slate-800">
                                     <DocumentIcon className="w-5 h-5 mr-3 text-sky-400 flex-shrink-0" />
                                     <span className="flex-1 text-sm text-gray-300 truncate" title={upload.file.name}>{upload.file.name}</span>
-                                    <div className="ml-2">
+                                    <div className="ml-2 flex items-center gap-2">
                                         <StatusIcon status={upload.status} />
+                                        <button
+                                            onClick={() => onDeleteDocument(upload.file.name)}
+                                            className="p-1.5 text-gray-400 hover:text-red-400 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                                            title="Delete document"
+                                        >
+                                            <TrashIcon className="w-4 h-4" />
+                                        </button>
                                     </div>
                                 </li>
                             ))}

@@ -6,7 +6,7 @@ import { InputBar } from './components/InputBar';
 import { AvatarView } from './components/AvatarView';
 import { LoginPage } from './components/LoginPage';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
-import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments } from './services/apiService';
+import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument } from './services/apiService';
 import * as storage from './services/storageService';
 import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice } from './types';
 import { API_BASE_URL } from './constants';
@@ -579,8 +579,9 @@ const App: React.FC = () => {
     };
 
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        if (event.target.files && activeSessionId && currentUser) {
-            const files = Array.from(event.target.files);
+        const inputEl = event.target;
+        if (inputEl.files && activeSessionId && currentUser) {
+            const files = Array.from(inputEl.files);
             // FIX: Explicitly type `file` as `File` to resolve a TypeScript type inference error.
             const newUploads: UploadedFile[] = files.map((file: File) => ({
                 id: crypto.randomUUID(),
@@ -600,6 +601,20 @@ const App: React.FC = () => {
                         setUploadedFiles(prev => prev.map(f => f.id === upload.id ? { ...f, status: 'error' } : f));
                     });
             });
+            // Allow selecting the same file again by clearing input value
+            try {
+                inputEl.value = '';
+            } catch {}
+        }
+    };
+
+    const handleDeleteDocument = async (filename: string) => {
+        if (!currentUser) return;
+        try {
+            await deleteDocument({ user_id: currentUser, filename });
+            setUploadedFiles(prev => prev.filter(f => f.file.name !== filename));
+        } catch (err) {
+            console.error('Delete document failed:', err);
         }
     };
     
@@ -628,6 +643,7 @@ const App: React.FC = () => {
                 onClose={() => setIsSidebarOpen(false)}
                 uploadedFiles={uploadedFiles} 
                 onFileChange={handleFileChange}
+                onDeleteDocument={handleDeleteDocument}
                 sessions={sessions}
                 activeSessionId={activeSessionId}
                 onNewSession={handleNewSession}

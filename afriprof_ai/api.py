@@ -10,9 +10,10 @@ import json
 import tempfile
 import shutil
 import os
+import time
 import datetime
 from pydub import AudioSegment
-from teacher_agent.rag_agent import run_rag_agent
+from teacher_agent.rag_agent import run_rag_agent, initialize_knowledge_base
 from teacher_agent.config import get_user_pdf_dir
 from teacher_agent.mcp_agent import run_agent_async as run_mcp_agent
 from teacher_agent.tts import text_to_speech
@@ -124,6 +125,8 @@ async def upload_document_endpoint(file: UploadFile = File(...), user_id: str = 
 
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
+        # Immediately sync KB so the newly added document is indexed for the current session
+        await initialize_knowledge_base(user_id)
         return {"message": f"Successfully uploaded {file.filename}", "filename": file.filename, "path": file_path}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error uploading document: {str(e)}")
@@ -144,6 +147,38 @@ async def list_documents(user_id: str):
         return {"documents": docs}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error listing documents: {str(e)}")
+
+# Delete a document for a user and sync KB
+@app.delete("/delete_document", response_model=Dict[str, str])
+async def delete_document(user_id: str, filename: str):
+    try:
+        user_pdfs_dir = str(get_user_pdf_dir(user_id))
+        os.makedirs(user_pdfs_dir, exist_ok=True)
+        file_path = os.path.join(user_pdfs_dir, filename)
+        if not os.path.isfile(file_path):
+            raise HTTPException(status_code=404, detail="File not found")
+        # Robust deletion: retry a few times in case the file is briefly locked (Windows)
+        last_err = None
+        for attempt in range(5):
+            try:
+                os.remove(file_path)
+                last_err = None
+                break
+            except PermissionError as e:
+                last_err = e
+                time.sleep(0.25)
+            except Exception as e:
+                last_err = e
+                break
+        if last_err is not None:
+            raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(last_err)}")
+        # Trigger KB sync (initialize_knowledge_base performs sync internally)
+        await initialize_knowledge_base(user_id)
+        return {"message": "Successfully deleted", "filename": filename}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting document: {str(e)}")
 
 #LLM QUERY
 @app.post("/query", response_model=QueryResponse)

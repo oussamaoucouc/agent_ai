@@ -108,6 +108,16 @@ export interface UploadDocumentResponse {
     path?: string;
 }
 
+export interface DeleteDocumentRequest {
+    user_id: string;
+    filename: string;
+}
+
+export interface DeleteDocumentResponse {
+    message: string;
+    filename: string;
+}
+
 export interface SetModelRequest {
     user_id: string;
     session_id: string;
