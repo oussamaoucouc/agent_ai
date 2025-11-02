@@ -1,8 +1,7 @@
-
 import { Session } from '../types';
 
-const STORAGE_KEY = 'ai_teacher_app_data';
-const CURRENT_USER_KEY = 'ai_teacher_current_user';
+const STORAGE_KEY = 'ai_assistant_app_data';
+const CURRENT_USER_KEY = 'ai_assistant_current_user';
 
 interface AppData {
     [userId: string]: Session[];

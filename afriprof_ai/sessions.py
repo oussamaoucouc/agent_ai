@@ -146,7 +146,7 @@ async def create_session(request: CreateSessionRequest, db: SASession = Depends(
         greet_msg = MessageDB(
             id=str(uuid.uuid4()),
             session_id=session_id,
-            text="Hello! I am your AI Teacher Assistant. How can I help you learn today?",
+            text="Hello! I am your AI Assistant. How can I help you today?",
             sender="assistant",
             created_at=now,
         )

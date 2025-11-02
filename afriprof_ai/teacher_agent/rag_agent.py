@@ -10,7 +10,6 @@ import os
 import logging
 import pickle
 from agno.agent import Agent
-from agno.team.team import Team
 from agno.embedder.ollama import OllamaEmbedder
 from agno.knowledge.pdf import PDFKnowledgeBase, PDFReader
 from agno.vectordb.chroma import ChromaDb
@@ -47,11 +46,16 @@ def _compute_dir_state(dir_path: str):
     return state
 
 
-async def sync_knowledge_with_pdf_directory(knowledge_base, user_pdf_dir):
+async def sync_knowledge_with_pdf_directory(knowledge_base, user_pdf_dir, force_refresh=False):
     """
     Sync knowledge base with current PDF directory state.
     Rebuilds the vector store from the current PDF directory to ensure
     deletions and updates are reflected reliably.
+    
+    Args:
+        knowledge_base: The knowledge base to sync
+        user_pdf_dir: Directory containing PDF files
+        force_refresh: If True, forces a complete refresh regardless of cache state
     """
     try:
         # Compute current directory state
@@ -80,19 +84,23 @@ async def sync_knowledge_with_pdf_directory(knowledge_base, user_pdf_dir):
             if prev_state.get(name) != current_state.get(name)
         )
 
-        if not prev_state:
+        # Force refresh if requested or if any changes detected
+        if force_refresh:
+            logging.info("KB sync: force refresh requested; rebuilding collection")
+            await knowledge_base.aload(recreate=True, upsert=False)
+        elif not prev_state:
             logging.info("KB sync: no previous state found; performing initial load")
             await knowledge_base.aload(recreate=True, upsert=False)
-        elif deleted or modified:
+        elif deleted or modified or added:
+            # Always rebuild when ANY changes are detected to ensure consistency
             logging.info(
                 f"KB sync: changes detected (added={len(added)}, deleted={len(deleted)}, modified={len(modified)}); rebuilding collection"
             )
             await knowledge_base.aload(recreate=True, upsert=False)
-        elif added:
-            logging.info(f"KB sync: {len(added)} new PDFs; upserting into existing collection")
-            await knowledge_base.aload(recreate=False, upsert=True)
         else:
-            logging.info("KB sync: no changes; keeping existing collection")
+            # Even when no changes detected, do a light refresh to catch any missed updates
+            logging.info("KB sync: no file changes detected; performing light refresh")
+            await knowledge_base.aload(recreate=False, upsert=True)
 
         # Persist current state
         try:
@@ -133,9 +141,10 @@ def run_rag_agent(query, user_id, session_id):
 async def initialize_knowledge_base(user_id: str):
     """
     Initialize the knowledge base with vector database.
-    This function is cached to avoid recreating it on every query.
+    No custom caching is used; we rely on AGNO's internals and a fresh
+    sync on each invocation to ensure newly added documents are available.
     """
-    logging.info("Initializing knowledge base (first call or after cache clear)")
+    logging.info("Initializing knowledge base")
     logging.info(f"Using Ollama URL for embedder: {OLLAMA_BASE_URL}")
     
     # Create OllamaEmbedder with the correct host parameter
@@ -164,8 +173,7 @@ async def initialize_knowledge_base(user_id: str):
         vector_db=vector_db,
         chunking_strategy=DocumentChunking()
     )
-    #new run
-    #await knowledge_base.aload(recreate=True, upsert=False)
+    
     # Log basic ingestion diagnostics: PDF count
     try:
         pdf_files = list(Path(user_pdf_dir).glob("*.pdf"))
@@ -175,9 +183,8 @@ async def initialize_knowledge_base(user_id: str):
     except Exception as e:
         logging.warning(f"Unable to list PDFs in {user_pdf_dir}: {e}")
 
-    # Sync KB with directory (remove deleted PDFs, then load/update)
-    await sync_knowledge_with_pdf_directory(knowledge_base, user_pdf_dir)
-
+    # Always force a fresh sync to ensure new documents are indexed
+    await sync_knowledge_with_pdf_directory(knowledge_base, user_pdf_dir, force_refresh=True)
     
     logging.info("Knowledge base initialization completed")
     return knowledge_base
@@ -205,30 +212,18 @@ async def initialize_memory_dbs(user_id, session_id):
     )
     memory_rag = Memory(db=memory_db_rag)
 
-    memory_db_llm = SqliteMemoryDb(
-        table_name="agent_memories_llm",
-        db_file=db_file_path,
-    )
-    memory_llm = Memory(db=memory_db_llm)
-
-    memory_db_team = SqliteMemoryDb(
-        table_name="agent_memories_team",
-        db_file=db_file_path,
-    )
-    memory_team = Memory(db=memory_db_team)
-    
-    return memory_rag, memory_llm, memory_team
+    return memory_rag
 
 async def run_rag_agent_async(query, user_id, session_id):
     """
     AGNO RAG agent using ChromaDB and openhermes embedder.
-    Using cached knowledge base and memory DBs for better performance.
+    Initializes a fresh knowledge base sync on each query.
     """
     logging.info(f"Starting RAG agent with Ollama at: {OLLAMA_BASE_URL}")
     
-    # Get cached knowledge base and memory DBs
+    # Initialize knowledge base (no custom cache) and memory DBs
     knowledge_base = await initialize_knowledge_base(user_id)
-    memory_rag, memory_llm, memory_team = await initialize_memory_dbs(user_id, session_id)
+    memory_rag = await initialize_memory_dbs(user_id, session_id)
     storage_session_id = f"{user_id}_{session_id}"  # For PostgresStorage isolation
 
     # Memory DBs already initialized via the cached function
@@ -238,23 +233,23 @@ async def run_rag_agent_async(query, user_id, session_id):
     knowledge=knowledge_base,
     think=False,
     search=True,
-    analyze=False,
+    analyze=True,
     add_few_shot=False,
     add_instructions=False,
     )
 
-    teacher_agent = Agent(
+    rag_expert_agent = Agent(
         model=get_current_model(),
         reasoning=False,
-        name="teacher_agent_rag",
+        name="rag_expert_agent",
         session_id=session_id,
         session_state={"user_id":user_id, "session_id":session_id},
         add_state_in_messages=True,
-        role="Teacher Agent that uses RAG to answer questions and provide insights for teaching strategies, curriculum design, classroom management, or subject-specific pedagogy",
+        role="AI Expert in Retrieval-Augmented Generation (RAG) systems that provides comprehensive, accurate, and contextually relevant responses by leveraging advanced document retrieval and knowledge synthesis techniques",
         user_id=user_id,
         description=dedent(f"""\
-            You are an AI teacher named teacher, optimized for low latency, high accuracy, RAG-enabled assistant,and an empathetic teacher-tutor style. 
-            Your job is to help elementary school students learn new things in a fun and easy way.
+            You are an AI RAG Expert, optimized for maximum retrieval accuracy, semantic understanding, and knowledge synthesis. 
+            Your expertise lies in intelligently retrieving, analyzing, and synthesizing information from knowledge bases to provide comprehensive, accurate, and contextually relevant responses.
             """),
         tools=[knowledge_tools],
         knowledge=knowledge_base,
@@ -270,49 +265,57 @@ async def run_rag_agent_async(query, user_id, session_id):
         enable_user_memories=True,
         enable_session_summaries=True,
         instructions=dedent("""\
-        Follow these rules for every user interaction:
+        You are an AI RAG Expert. Follow these advanced retrieval and synthesis protocols for optimal performance:
 
-        1. ▶ Greeting & Simple Query Handling  
-        - If the user's message is a greeting or pleasantry (e.g., "hi", "hello", "good evening"), reply immediately with a warm, human greeting such as:  
-            "Hello! How can I assist you today?"  
-            *Skip any retrieval.*  
-        - If the user asks a straightforward, one-step factual question (e.g., "What's 2 + 2?", "When was Python first released?") that you can answer confidently from built‑in knowledge, respond directly in a clear, complete sentence.  
-            *Skip retrieval.*  
+        1. ▶ Intelligent Query Analysis & Retrieval Strategy
+        - Analyze query complexity, domain specificity, and information requirements before deciding on retrieval strategy
+        - For simple factual queries with high confidence: Provide direct answers from built-in knowledge
+        - For complex, domain-specific, or multi-faceted queries: Always invoke retrieval to ensure accuracy and completeness
+        - Use semantic understanding to identify key concepts, entities, and relationships in the query
+        - Formulate multiple retrieval angles when dealing with complex queries to capture comprehensive information
 
-        2. ▶ Retrieval for Complex or Specialized Queries  
-        - If the query involves multi‑step reasoning, in‑depth explanations, domain‑specific terminology, comparisons, how‑to guides, or any information that likely requires consulting external sources or a knowledge base, *invoke retrieval*.  
-        - Let the LLM autonomously decide how and when to fetch relevant documents from the retrieval backend (e.g., ChromaDB).  
+        2. ▶ Advanced Document Retrieval & Ranking
+        - Leverage semantic similarity and contextual relevance for document selection
+        - Prioritize documents with high semantic overlap and factual density
+        - Cross-reference multiple sources when available to validate information consistency
+        - Identify and utilize the most authoritative and recent sources in the knowledge base
+        - Apply relevance thresholds to filter out low-quality or tangentially related content
 
-        3. ▶ Building the Answer  
-        - Use retrieved passages to construct your response—but never just spit back a summary.  
-        - Write in **detailed, flowing paragraphs**, as if you're explaining the concept face‑to‑face.  
-        - Incorporate analogies, real‑world examples, and step‑by‑step reasoning to ensure clarity.  
+        3. ▶ Knowledge Synthesis & Response Construction
+        - Synthesize information from multiple retrieved documents into coherent, comprehensive responses
+        - Maintain factual accuracy while creating natural, flowing explanations
+        - Structure responses hierarchically: overview → detailed explanation → specific examples/applications
+        - Integrate retrieved facts seamlessly without obvious source boundaries
+        - Provide context and background information to enhance understanding
+        - Use evidence-based reasoning to connect concepts and draw insights
 
-        4. ▶ Fallback When Retrieval Fails  
-        - If no retrieved passage meets relevance criteria, say:  
-            "I couldn't find a specific document in the knowledge base, so here's what I know from general understanding."  
-        - Then provide a full, paragraph‑based explanation derived from your built‑in knowledge.  
+        4. ▶ Quality Assurance & Accuracy Protocols
+        - Always ground responses in retrieved content when available
+        - Clearly distinguish between retrieved information and general knowledge
+        - If retrieval yields insufficient or conflicting information, state: "Based on the available documents in the knowledge base, [provide what you found], however, this may not be comprehensive."
+        - Never fabricate or hallucinate information not present in retrieved documents
+        - Maintain consistency across related queries within the same session
 
-        5. ▶ Tone & Persona  
-        - Always adopt a **friendly, supportive tutor** persona.  
-        - Use natural, encouraging language:  
-            - "Let's break that down step by step…"  
-            - "Imagine it like this…"  
-            - "Don't worry if it feels tricky at first…"  
-        - Avoid robot‑like or overly terse phrasing; speak like a real mentor.  
+        5. ▶ Response Optimization & Clarity
+        - Structure responses for maximum comprehension and actionability
+        - Use clear, professional language appropriate for the query's complexity level
+        - Provide specific examples, case studies, or applications when relevant
+        - Include relevant details, methodologies, or step-by-step processes when applicable
+        - Ensure responses are complete and self-contained
 
-        6. ▶ Inference & Quality Settings  
-        - Use **zero‑shot** direct answers only for greetings or trivial queries.  
-        - Maintain a **low temperature (≤ 0.2)** and **deterministic decoding** for consistency.  
-        - Disable summarization heuristics that truncate insights.  
-        - Never hallucinate—ground responses in retrieved content or clearly flagged general knowledge.  
+        6. ▶ Performance & Efficiency Guidelines
+        - Optimize retrieval queries for maximum relevant document recall
+        - Balance comprehensiveness with response conciseness
+        - Prioritize the most critical information first
+        - Use structured formatting (lists, sections) when it enhances clarity
+        - Maintain low latency while ensuring thorough information processing
         
  """),
     )
 
     try:
 
-        response = await teacher_agent.arun(query)
+        response = await rag_expert_agent.arun(query)
         # --- Robust error checking for response.content ---
         # Explicit check for boolean response
         if isinstance(response, bool):
@@ -356,8 +359,6 @@ async def run_rag_agent_async(query, user_id, session_id):
                 title = getattr(doc, 'title', None) or doc.get('title', 'No Title') if isinstance(doc, dict) else 'No Title'
                 source = getattr(doc, 'source', None) or doc.get('source', 'Unknown') if isinstance(doc, dict) else 'Unknown'
                 logging.info(f"INFO Document {i}: Title: {title} | Source: {source}")
-        else:
-            logging.info("INFO No document retrieval details available in response.")
 
         return result_content
 

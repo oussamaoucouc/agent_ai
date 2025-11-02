@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 
 interface LoginPageProps {
@@ -20,7 +19,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
             <div className="w-full max-w-md p-8 space-y-8 bg-gray-800/50 border border-gray-700 rounded-2xl shadow-2xl">
                 <div className="text-center">
                     <h1 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-teal-300 to-sky-500">
-                        AI Teacher Assistant
+                        AI Assistant
                     </h1>
                     <p className="mt-2 text-gray-400">Please enter your name to begin.</p>
                 </div>
@@ -46,7 +45,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                             type="submit"
                             className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-sky-600 hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 focus:ring-offset-gray-900 transition-colors"
                         >
-                            Start Learning
+                            Get Started
                         </button>
                     </div>
                 </form>

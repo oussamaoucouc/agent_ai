@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { MenuIcon } from './icons';
 
@@ -19,7 +18,7 @@ export const Header: React.FC<HeaderProps> = ({ user, onToggleSidebar }) => {
                     <MenuIcon className="w-6 h-6" />
                 </button>
                 <h1 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-teal-300 to-sky-500">
-                    AI Teacher Assistant
+                    AI Assistant
                 </h1>
             </div>
             <div className="flex items-center gap-4">
