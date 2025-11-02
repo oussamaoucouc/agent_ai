@@ -10,13 +10,16 @@ import shutil
 import json
 import re
 import hashlib
+import time
 from pathlib import Path
 
 # Assuming config.py has this, otherwise define it
 try:
-    from .config import TTS_CACHE_DIR
+    from .config import TTS_CACHE_DIR, TTS_CACHE_KEEP_RECENT, TTS_CACHE_MAX_AGE_HOURS
 except ImportError:
     TTS_CACHE_DIR = Path(__file__).parent.parent / "cache" / "tts"
+    TTS_CACHE_KEEP_RECENT = 50
+    TTS_CACHE_MAX_AGE_HOURS = 24
 
 # --- Helper functions --- #
 
@@ -40,6 +43,79 @@ def initialize_tts():
     tts_script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tts_helper.py")
     os.makedirs(TTS_CACHE_DIR, exist_ok=True)
     return tts_script_path
+
+# --- Cache Cleanup --- #
+
+def cleanup_tts_cache():
+    """Remove old or excess cached TTS files.
+
+    - Keeps the most recent TTS_CACHE_KEEP_RECENT items (pairs of wav/json).
+    - Removes any items older than TTS_CACHE_MAX_AGE_HOURS.
+    - Deletes orphaned files that don't have a matching pair.
+    """
+    try:
+        cache_dir = Path(TTS_CACHE_DIR)
+        if not cache_dir.exists():
+            return
+
+        # Group by stem to treat wav/json as one item
+        items = {}
+        for p in cache_dir.glob('*'):
+            if p.suffix not in {'.wav', '.json'}:
+                continue
+            items.setdefault(p.stem, []).append(p)
+
+        # Sort items by newest mtime
+        sorted_items = sorted(
+            items.items(),
+            key=lambda kv: max(f.stat().st_mtime for f in kv[1]),
+            reverse=True
+        )
+
+        now = time.time()
+        max_age_secs = TTS_CACHE_MAX_AGE_HOURS * 3600
+
+        # Delete items beyond keep-recent threshold
+        for stem, paths in sorted_items[TTS_CACHE_KEEP_RECENT:]:
+            for p in paths:
+                try:
+                    p.unlink(missing_ok=True)
+                except Exception:
+                    pass
+
+        # Delete items older than max age
+        for stem, paths in sorted_items[:TTS_CACHE_KEEP_RECENT]:
+            try:
+                newest_mtime = max(f.stat().st_mtime for f in paths)
+                if now - newest_mtime > max_age_secs:
+                    for p in paths:
+                        try:
+                            p.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+            except Exception:
+                continue
+
+        # Orphan cleanup: json without wav, wav without json
+        for json_file in cache_dir.glob('*.json'):
+            wav_file = json_file.with_suffix('.wav')
+            if not wav_file.exists():
+                try:
+                    json_file.unlink(missing_ok=True)
+                except Exception:
+                    pass
+        for wav_file in cache_dir.glob('*.wav'):
+            json_file = wav_file.with_suffix('.json')
+            if not json_file.exists():
+                # Be conservative: only remove if older than max age
+                try:
+                    if now - wav_file.stat().st_mtime > max_age_secs:
+                        wav_file.unlink(missing_ok=True)
+                except Exception:
+                    pass
+    except Exception:
+        # Never let cleanup errors affect TTS flow
+        pass
 
 # --- Core Subprocess Runner --- #
 
@@ -145,5 +221,8 @@ def text_to_speech(text):
         shutil.copy2(temp_viseme_path, cache_viseme_path)
         print(f"Cached visemes at {cache_viseme_path}", file=sys.stderr)
         os.remove(temp_viseme_path)
-            
+    
+    # Opportunistic cache cleanup after generating output
+    cleanup_tts_cache()
+
     return cache_audio_path, viseme_data

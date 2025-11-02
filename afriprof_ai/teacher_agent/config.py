@@ -100,6 +100,11 @@ VOSK_MODEL_PATH = os.getenv("VOSK_MODEL_PATH", "../model/vosk-model-en-us-0.22")
 TTS_CACHE_DIR = BASE_DIR / "tts_cache"
 os.makedirs(TTS_CACHE_DIR, exist_ok=True)
 
+# TTS cache cleanup policy (tunable via environment)
+TTS_CACHE_KEEP_RECENT = int(os.getenv("TTS_CACHE_KEEP_RECENT", "50"))
+TTS_CACHE_MAX_AGE_HOURS = int(os.getenv("TTS_CACHE_MAX_AGE_HOURS", "24"))
+TTS_DELETE_AFTER_SERVE = os.getenv("TTS_DELETE_AFTER_SERVE", "true").lower() in ("1", "true", "yes", "y")
+TTS_DELETE_DELAY_SECONDS = int(os.getenv("TTS_DELETE_DELAY_SECONDS", "120"))
 # Kokoro TTS configuration
 # Use KOKORO_TTS_URL from environment, default to localhost for non-Docker runs.
 # The Dockerfile sets KOKORO_TTS_URL to http://kokoro-tts:8880

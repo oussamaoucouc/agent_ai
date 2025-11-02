@@ -1,7 +1,7 @@
 """
 API endpoints for the AI Teacher Assistant application (FastAPI app instance).
 """
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, BackgroundTasks
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, constr
@@ -17,6 +17,8 @@ from teacher_agent.rag_agent import run_rag_agent, initialize_knowledge_base
 from teacher_agent.config import get_user_pdf_dir
 from teacher_agent.mcp_agent import run_agent_async as run_mcp_agent
 from teacher_agent.tts import text_to_speech
+from teacher_agent.config import TTS_DELETE_AFTER_SERVE, TTS_DELETE_DELAY_SECONDS
+from typing import Optional
 from teacher_agent.stt import initialize_stt
 import base64
 import uuid
@@ -858,8 +860,35 @@ async def stt_query_tts_direct_endpoint(
         active_tasks.pop(key, None)
 
 #Downloading audio file
+def _delete_tts_pair(file_path: str, delay_seconds: int = 2):
+    """Background task to delete served WAV and its paired JSON (robust)."""
+    try:
+        import time, os
+
+        def _safe_unlink(path: str, attempts: int = 8, initial_delay: float = 0.5) -> bool:
+            delay = initial_delay
+            for _ in range(attempts):
+                try:
+                    if os.path.exists(path):
+                        os.remove(path)
+                        return True
+                    else:
+                        return True
+                except Exception:
+                    time.sleep(delay)
+                    delay = min(delay * 1.5, 5.0)
+            return False
+
+        # wait before attempting deletion (streaming + configured delay)
+        time.sleep(max(0, delay_seconds))
+        json_path = os.path.splitext(file_path)[0] + ".json"
+        _safe_unlink(file_path)
+        _safe_unlink(json_path)
+    except Exception:
+        pass
+
 @app.get("/querytts_audio/{filename}")
-def querytts_audio(filename: str):
+def querytts_audio(filename: str, background_tasks: BackgroundTasks, delete: Optional[bool] = None, delay_seconds: Optional[int] = None):
     """
     Serves the generated TTS audio file for download/playback.
     """
@@ -874,6 +903,11 @@ def querytts_audio(filename: str):
             raise HTTPException(status_code=404, detail=f"Audio file not found at {file_path} or {file_path_temp}.")
         file_path = file_path_temp
 
+    # decide deletion based on query param or config default
+    effective_delete = TTS_DELETE_AFTER_SERVE if delete is None else bool(delete)
+    effective_delay = TTS_DELETE_DELAY_SECONDS if delay_seconds is None else int(delay_seconds)
+    if effective_delete:
+        background_tasks.add_task(_delete_tts_pair, file_path, effective_delay)
     return FileResponse(file_path, media_type="audio/wav", filename=filename)
 
 

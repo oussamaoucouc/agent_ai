@@ -236,9 +236,9 @@ async def run_rag_agent_async(query, user_id, session_id):
     #knowledge tools reasoning, search, analyze, few shot, instructions
     knowledge_tools = KnowledgeTools(
     knowledge=knowledge_base,
-    think=True,
+    think=False,
     search=True,
-    analyze=True,
+    analyze=False,
     add_few_shot=False,
     add_instructions=False,
     )
@@ -258,11 +258,11 @@ async def run_rag_agent_async(query, user_id, session_id):
             """),
         tools=[knowledge_tools],
         knowledge=knowledge_base,
-        search_knowledge=True,
+        #search_knowledge=True, #we alreadu have repetition and avoid confusion for the agent
         markdown=True,
         read_chat_history=True,
         add_history_to_messages=True,
-        num_history_responses=5,
+        num_history_responses=2,
         monitoring=True,
         show_tool_calls=True,
         storage = PostgresStorage(table_name="agent_session", db_url=DB_URL),
@@ -310,73 +310,7 @@ async def run_rag_agent_async(query, user_id, session_id):
  """),
     )
 
-    LLM_agent = Agent(
-        name="general_knowledge_llm_agent",
-        role="Answer general knowledge questions using only your pre-trained knowledge",
-        model=get_current_model(),
-        reasoning=True,
-        session_id=storage_session_id,
-        user_id=user_id,
-        #add state
-        session_state={"user_id":user_id, "session_id":session_id},
-        add_state_in_messages=True,
-        markdown=True,
-        read_chat_history=True,
-        add_history_to_messages=True,
-        num_history_responses=5,
-        monitoring=True,
-        show_tool_calls=True,
-        storage = PostgresStorage(table_name="agent_session", db_url=DB_URL),
-        memory=memory_llm,  # Add memory instance here
-        enable_user_memories=True,
-        enable_session_summaries=True,
-         instructions=[
-        "You answer general knowledge questions (e.g., science, history, culture) using only your internalized training data .",
-        "Avoid external tools, databases, or real-time data retrieval; rely exclusively on your LLM's pre-existing knowledge .",
-        "For ambiguous or uncertain queries, explicitly state limitations and avoid speculative answers .",
-        "Structure responses with clear reasoning steps to demonstrate agentic thinking .",
-        "Defer education-specific questions (e.g., pedagogy, curriculum) to the Teacher Agent ."
-        ],
-    )
-
-    multi_agent_team = Team(
-        name="Multi Language Team",
-        mode="route",
-        model=get_current_model(),
-        share_member_interactions=True, # Share interactions
-        user_id=user_id,
-        session_id=storage_session_id,
-        enable_session_summaries=True,
-        #add state
-        session_state={"user_id":user_id, "session_id":session_id},
-        add_state_in_messages=True,
-        memory=memory_team,
-        enable_team_history=True,
-        num_of_interactions_from_history=5,
-        members=[
-            LLM_agent,
-            teacher_agent
-        ],
-        show_tool_calls=True,
-        markdown=True,
-        storage = PostgresStorage(table_name="agent_session", db_url=DB_URL),
-        instructions=[
-           "You are an education-general knowledge router that directs queries to the appropriate agent.",
-        "Always memorize and recall important user facts (such as names, preferences, and previous answers) using your memory system.",
-        "If the user shares personal information (e.g., their name), store it and use it to personalize future responses.",
-        "When routing, pass relevant user context and memories to the appropriate agent.",
-        "If the user's query relates to teaching strategies, curriculum design, classroom management, or subject-specific pedagogy, route to teacher-agent-rag.",
-        "If the query is unrelated to education (e.g., science facts, historical events, general advice), route to general-knowledge-llm-agent.",
-        "For ambiguous or hybrid queries, prioritize teacher-agent-rag if education relevance is possible, then fall back to general-knowledge-llm-agent.",
-        "For unsupported topics outside both agents' scope, respond in English with: 'I can assist with education-related questions or general knowledge topics. Please clarify or rephrase your query!'",
-        "Always analyze the intent and context before routing, leveraging Agno's multimodal reasoning capabilities for accurate task delegation.",
-        "Always use chat history and user memory to provide contextually relevant and personalized responses.",
-        ],
-        show_members_responses=True,
-    )
-
     try:
-        #response = await multi_agent_team.arun(query)
 
         response = await teacher_agent.arun(query)
         # --- Robust error checking for response.content ---
@@ -424,14 +358,6 @@ async def run_rag_agent_async(query, user_id, session_id):
                 logging.info(f"INFO Document {i}: Title: {title} | Source: {source}")
         else:
             logging.info("INFO No document retrieval details available in response.")
-
-        # --- RETRIEVAL SUCCESS FLAG ---
-        retrieval_success = False
-        try:
-            retrieval_success = (docs is not None) and (len(docs) > 0)
-        except Exception:
-            retrieval_success = docs is not None
-        logging.info(f"RETRIEVER_SUCCESS: {retrieval_success}")
 
         return result_content
 

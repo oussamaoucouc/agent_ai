@@ -191,7 +191,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     onChange={(e) => onModelChange(e.target.value)}
                                     className="w-full appearance-none px-3 py-2 text-sm rounded-lg transition-colors bg-slate-800 text-gray-200 border-2 border-slate-700 focus:outline-none focus:border-sky-500"
                                 >
-                                    <option value="granite4:tiny-h o">granite4:tiny-h</option>
+                                    <option value="granite4:tiny-h">granite4:tiny-h</option>
                                     <option value="qwen3:1.7b">qwen3:1.7b</option>
                                     <option value="qwen2.5:3b">qwen2.5:3b</option>
                                     <option value="phi4-mini:3.8b ">phi4-mini:3.8b </option>

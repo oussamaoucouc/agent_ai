@@ -11,6 +11,9 @@ import * as storage from './services/storageService';
 import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice } from './types';
 import { API_BASE_URL } from './constants';
 
+// Default delete-after-serve delay (seconds) must match backend config unless overridden per request
+const DEFAULT_TTS_DELETE_DELAY_SECONDS = 120;
+
 const createNewSession = (): Session => {
     const now = new Date();
     return {
@@ -338,6 +341,14 @@ const App: React.FC = () => {
             handleStopAudio();
         });
 
+        // Hide play button after configured TTL by clearing audioUrl from the message
+        // This mirrors backend delete-after-serve behavior
+        window.setTimeout(() => {
+            setMessages(prev => prev.map(m =>
+                m.id === messageId ? { ...m, audioUrl: undefined } : m
+            ));
+        }, DEFAULT_TTS_DELETE_DELAY_SECONDS * 1000);
+
     }, [handleStopAudio]);
 
     const handleNewSession = async () => {
@@ -460,7 +471,7 @@ const App: React.FC = () => {
                         id: crypto.randomUUID(),
                         text: formatAssistantText(data.response),
                         sender: User.ASSISTANT,
-                        audioUrl: data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}` : undefined,
+                        audioUrl: data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}` : undefined,
                         visemes: data.visemes,
                     };
                     if (assistantMessage.audioUrl && assistantMessage.visemes) {
@@ -481,7 +492,7 @@ const App: React.FC = () => {
                         id: crypto.randomUUID(),
                         text: formatAssistantText(data.response),
                         sender: User.ASSISTANT,
-                        audioUrl: data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}` : undefined,
+                        audioUrl: data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}` : undefined,
                         visemes: data.visemes,
                     };
                     if (assistantMessage.audioUrl && assistantMessage.visemes) {
@@ -543,7 +554,7 @@ const App: React.FC = () => {
                 id: crypto.randomUUID(),
                 text: formatAssistantText(data.response),
                 sender: User.ASSISTANT,
-                audioUrl: data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}` : undefined,
+                audioUrl: data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}` : undefined,
                 visemes: data.visemes,
             };
 
