@@ -14,6 +14,7 @@ import time
 import datetime
 from pydub import AudioSegment
 from teacher_agent.rag_agent import run_rag_agent, initialize_knowledge_base
+from teacher_agent.ai_agent_assistant import run_assistant_agent
 from teacher_agent.config import get_user_pdf_dir
 from teacher_agent.mcp_agent import run_agent_async as run_mcp_agent
 from teacher_agent.tts import text_to_speech
@@ -57,6 +58,67 @@ app.include_router(sessions.router)
 
 # Registry of active tasks per user/session for cancellation
 active_tasks: Dict[str, asyncio.Task] = {}
+
+# Helper: robustly clean model output to remove internal reasoning and tool traces
+def clean_model_output(text: str) -> str:
+    import re
+    if not text:
+        return ""
+
+    # Remove <think> blocks (case-insensitive, multiline)
+    text = re.sub(r'(?is)<think>.*?</think>', '', text)
+
+    # Remove common chain-of-thought or tool traces enclosed in bracket tags
+    labels = [
+        'TOOL_CALLS', 'ANALYSIS', 'REASONING', 'INTERNAL', 'SYSTEM', 'DEBUG', 'SCRATCHPAD'
+    ]
+    for label in labels:
+        # [LABEL] ... [/LABEL]
+        text = re.sub(rf'(?is)\[{label}\].*?\[/{label}\]', '', text)
+        # [LABEL] ... [LABEL] (duplicate marker style)
+        text = re.sub(rf'(?is)\[{label}\].*?\[{label}\]', '', text)
+        # [LABEL] ... end-of-line
+        text = re.sub(rf'(?is)\[{label}\].*?(?=\n|$)', '', text)
+
+    # Prefer explicit final-response markers if present
+    m = re.search(r'(?is)(Final Response:|Final Answer:|Assistant Response:|User-facing response:)\s*(.*)', text)
+    if m:
+        text = m.group(2)
+    else:
+        m2 = re.search(r'(?is)(Response:|Answer:)\s*(.*)', text)
+        if m2:
+            text = m2.group(2)
+
+    # Remove markdown code fences and language hints
+    text = re.sub(r'```[a-zA-Z]*\s*', '', text)
+    text = re.sub(r'```', '', text)
+
+    # Strip list and step markers from each line
+    lines = text.splitlines()
+    lines = [re.sub(r'^\s*(?:[-*]\s+|\d+[.)]\s+|Step\s*\d+\s*:)', '', line) for line in lines]
+    text = '\n'.join(lines)
+
+    # Collapse excessive blank lines and trim
+    text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
+    text = text.strip()
+
+    # Fallback: choose a sensible paragraph if brackets remain or text is meta-heavy
+    if not text or re.search(r'(?is)\[[A-Z][A-Z_]+\]', text):
+        paragraphs = [p.strip() for p in re.split(r'\n\s*\n', text) if p.strip()]
+        candidates = [p for p in paragraphs if not re.search(r'(?is)\[[A-Z][A-Z_]+\]', p)]
+        if candidates:
+            # Prefer last sentence-like paragraph, else the longest
+            selected = None
+            for p in reversed(candidates):
+                if re.search(r'[.!?]\s*$', p):
+                    selected = p
+                    break
+            text = selected or max(candidates, key=len)
+        else:
+            # As last resort, remove any bracket tags and trim
+            text = re.sub(r'(?is)\[[A-Z][A-Z_]+\]', '', text).strip()
+
+    return text
 
 # Session models, schemas, and endpoints moved to sessions.py
 
@@ -208,6 +270,40 @@ async def query_mcp(request: QueryRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# ASSISTANT LLM QUERY
+@app.post("/query_assistant", response_model=QueryResponse)
+async def query_assistant(request: QueryRequest):
+    try:
+        response = await run_assistant_agent(request.query, request.user_id, request.session_id)
+        return QueryResponse(
+            user_id=request.user_id,
+            session_id=request.session_id,
+            response=response
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ASSISTANT LLM QUERY not displayed Reasoning
+@app.post("/query_assistant_direct", response_model=QueryResponse)
+async def query_assistant_direct(request: QueryRequest):
+    key = f"{request.user_id}:{request.session_id}"
+    active_tasks[key] = asyncio.current_task()
+    try:
+        response = await run_assistant_agent(request.query, request.user_id, request.session_id)
+        response = clean_model_output(response)
+
+        return QueryResponse(
+            user_id=request.user_id,
+            session_id=request.session_id,
+            response=response
+        )
+    except asyncio.CancelledError:
+        raise HTTPException(status_code=499, detail="Request cancelled")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        active_tasks.pop(key, None)
+
 # MCP LLM QUERY not displayed Reasoning
 @app.post("/query_mcp_direct", response_model=QueryResponse)
 async def query_mcp_direct(request: QueryRequest):
@@ -220,11 +316,7 @@ async def query_mcp_direct(request: QueryRequest):
         # Run MCP agent as a cancellable task
         task = asyncio.create_task(run_mcp_agent(request.query, request.user_id, request.session_id))
         response = await task
-        marker = "</think>"
-        marker_pos = response.find(marker)
-        if marker_pos != -1:
-            response = response[marker_pos + len(marker):]
-        response = response.strip()
+        response = clean_model_output(response)
         return QueryResponse(
             user_id=request.user_id,
             session_id=request.session_id,
@@ -268,6 +360,63 @@ async def stt_query_mcp_endpoint(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing audio query: {str(e)}")
 
+# ASSISTANT Speech-to-text then Query
+@app.post("/stt_query_assistant", response_model=Dict[str, str])
+async def stt_query_assistant_endpoint(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    session_id: str = Form(...)
+):
+    try:
+        stt_result = await stt_endpoint(file, user_id, session_id)
+        if stt_result["status"] != "success":
+            return stt_result
+
+        query_text = stt_result["text"]
+        if not query_text:
+            return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
+
+        response = await run_assistant_agent(query_text, user_id, session_id)
+
+        return {
+            "text": query_text,
+            "response": response,
+            "user_id": user_id,
+            "session_id": session_id,
+            "status": "success"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing audio query: {str(e)}")
+
+# ASSISTANT STT then Query, direct (filtered reasoning)
+@app.post("/stt_query_assistant_direct", response_model=Dict[str, str])
+async def stt_query_assistant_direct_endpoint(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    session_id: str = Form(...)
+):
+    try:
+        stt_result = await stt_endpoint(file, user_id, session_id)
+        if stt_result["status"] != "success":
+            return stt_result
+
+        query_text = stt_result["text"]
+        if not query_text:
+            return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
+
+        response = await run_assistant_agent(query_text, user_id, session_id)
+        response = clean_model_output(response)
+
+        return {
+            "text": query_text,
+            "response": response,
+            "user_id": user_id,
+            "session_id": session_id,
+            "status": "success"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing audio query: {str(e)}")
+
 # MCP STT then Query, direct (filtered reasoning)
 @app.post("/stt_query_mcp_direct", response_model=Dict[str, str])
 async def stt_query_mcp_direct_endpoint(
@@ -288,12 +437,7 @@ async def stt_query_mcp_direct_endpoint(
 
         # Process the query using the MCP agent
         response = await run_mcp_agent(query_text, user_id, session_id)
-        # Filter out the thinking process, even if the opening tag is missing.
-        marker = "</think>"
-        marker_pos = response.find(marker)
-        if marker_pos != -1:
-            response = response[marker_pos + len(marker):]
-        response = response.strip()
+        response = clean_model_output(response)
 
         return {
             "text": query_text,
@@ -335,6 +479,69 @@ async def query_mcp_tts_endpoint(request: QueryRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# ASSISTANT Query then TTS
+@app.post("/query_assistant_tts")
+async def query_assistant_tts_endpoint(request: QueryRequest):
+    """
+    Returns a JSON with the assistant text response, audio filename, and viseme data.
+    """
+    try:
+        response_text = await run_assistant_agent(request.query, request.user_id, request.session_id)
+
+        with sessions.SessionLocal() as db:
+            sessions.apply_session_voice(db, request.user_id, request.session_id)
+        audio_path, viseme_data = await run_in_threadpool(text_to_speech, response_text)
+
+        audio_filename = None
+        if audio_path:
+            audio_filename = os.path.basename(audio_path)
+
+        return {
+            "user_id": request.user_id,
+            "session_id": request.session_id,
+            "response": response_text,
+            "audio_filename": audio_filename,
+            "visemes": viseme_data,
+            "status": "success"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ASSISTANT Query direct then TTS (filtered reasoning)
+@app.post("/query_assistant_tts_direct")
+async def query_assistant_tts_direct(request: QueryRequest):
+    """
+    Returns a JSON with the filtered assistant text response, audio filename, and viseme data.
+    """
+    key = f"{request.user_id}:{request.session_id}"
+    active_tasks[key] = asyncio.current_task()
+    try:
+        response_text = await run_assistant_agent(request.query, request.user_id, request.session_id)
+        response_text = clean_model_output(response_text)
+
+        with sessions.SessionLocal() as db:
+            sessions.apply_session_voice(db, request.user_id, request.session_id)
+        audio_path, viseme_data = await run_in_threadpool(text_to_speech, response_text)
+        
+        audio_filename = None
+        if audio_path:
+            audio_filename = os.path.basename(audio_path)
+
+        return {
+            "user_id": request.user_id,
+            "session_id": request.session_id,
+            "response": response_text,
+            "audio_filename": audio_filename,
+            "visemes": viseme_data,
+            "status": "success"
+        }
+    except asyncio.CancelledError:
+        raise HTTPException(status_code=499, detail="Request cancelled")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        active_tasks.pop(key, None)
+
 # MCP Query direct then TTS (filtered reasoning)
 @app.post("/query_mcp_tts_direct")
 async def query_mcp_tts_direct(request: QueryRequest):
@@ -345,12 +552,7 @@ async def query_mcp_tts_direct(request: QueryRequest):
     active_tasks[key] = asyncio.current_task()
     try:
         response_text = await run_mcp_agent(request.query, request.user_id, request.session_id)
-        # Filter out the thinking process, even if the opening tag is missing.
-        marker = "</think>"
-        marker_pos = response_text.find(marker)
-        if marker_pos != -1:
-            response_text = response_text[marker_pos + len(marker):]
-        response_text = response_text.strip()
+        response_text = clean_model_output(response_text)
 
         # Generate audio and visemes
         # Apply per-session voice before generating audio
@@ -423,6 +625,94 @@ async def stt_query_mcp_tts_endpoint(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing audio query with TTS: {str(e)}")
 
+# ASSISTANT Full Agent: STT -> Query -> TTS
+@app.post("/stt_query_assistant_tts", response_model=Dict[str, Any])
+async def stt_query_assistant_tts_endpoint(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    session_id: str = Form(...)
+):
+    """
+    Combined STT, assistant query, and TTS endpoint that returns viseme data and audio filename.
+    """
+    try:
+        stt_result = await stt_endpoint(file, user_id, session_id)
+        if stt_result["status"] != "success":
+            return stt_result
+
+        query_text = stt_result["text"]
+        if not query_text:
+            return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
+
+        response_text = await run_assistant_agent(query_text, user_id, session_id)
+
+        with sessions.SessionLocal() as db:
+            sessions.apply_session_voice(db, user_id, session_id)
+        audio_path, viseme_data = await run_in_threadpool(text_to_speech, response_text)
+        
+        audio_filename = None
+        if audio_path:
+            audio_filename = os.path.basename(audio_path)
+
+        return {
+            "text": query_text,
+            "response": response_text,
+            "audio_filename": audio_filename,
+            "visemes": viseme_data,
+            "user_id": user_id,
+            "session_id": session_id,
+            "status": "success"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing audio query with TTS: {str(e)}")
+
+# ASSISTANT Full Agent direct: STT -> Query (filtered) -> TTS
+@app.post("/stt_query_assistant_tts_direct", response_model=Dict[str, Any])
+async def stt_query_assistant_tts_direct_endpoint(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    session_id: str = Form(...)
+):
+    """
+    Combined STT, filtered assistant query, and TTS endpoint that returns viseme data and audio filename.
+    """
+    key = f"{user_id}:{session_id}"
+    active_tasks[key] = asyncio.current_task()
+    try:
+        stt_result = await stt_endpoint(file, user_id, session_id)
+        if stt_result["status"] != "success":
+            return stt_result
+
+        query_text = stt_result["text"]
+        if not query_text:
+            return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
+
+        response_text = await run_assistant_agent(query_text, user_id, session_id)
+        response_text = clean_model_output(response_text)
+
+        with sessions.SessionLocal() as db:
+            sessions.apply_session_voice(db, user_id, session_id)
+        audio_path, viseme_data = await run_in_threadpool(text_to_speech, response_text)
+        
+        audio_filename = None
+        if audio_path:
+            audio_filename = os.path.basename(audio_path)
+
+        return {
+            "text": query_text,
+            "response": response_text,
+            "audio_filename": audio_filename,
+            "visemes": viseme_data,
+            "user_id": user_id,
+            "session_id": session_id,
+            "status": "success"
+        }
+    except asyncio.CancelledError:
+        raise HTTPException(status_code=499, detail="Request cancelled")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing audio query with TTS: {str(e)}")
+    finally:
+        active_tasks.pop(key, None)
 # MCP Full Agent direct: STT -> Query (filtered) -> TTS
 @app.post("/stt_query_mcp_tts_direct", response_model=Dict[str, Any])
 async def stt_query_mcp_tts_direct_endpoint(
@@ -448,12 +738,7 @@ async def stt_query_mcp_tts_direct_endpoint(
 
         # Process the query using the MCP agent with filtering
         response_text = await run_mcp_agent(query_text, user_id, session_id)
-        # Filter out the thinking process, even if the opening tag is missing.
-        marker = "</think>"
-        marker_pos = response_text.find(marker)
-        if marker_pos != -1:
-            response_text = response_text[marker_pos + len(marker):]
-        response_text = response_text.strip()
+        response_text = clean_model_output(response_text)
 
         # Generate audio and visemes
         # Apply per-session voice before generating audio
@@ -487,12 +772,8 @@ async def query_direct(request: QueryRequest):
     active_tasks[key] = asyncio.current_task()
     try:
         response = await run_rag_agent(request.query, request.user_id, request.session_id)
-        # Filter out the thinking process, even if the opening tag is missing.
-        marker = "</think>"
-        marker_pos = response.find(marker)
-        if marker_pos != -1:
-            response = response[marker_pos + len(marker):]
-        response = response.strip()
+        # Clean model output to remove think/tool traces and formatting
+        response = clean_model_output(response)
 
         return QueryResponse(
             user_id=request.user_id,
@@ -664,14 +945,9 @@ async def stt_query_direct_endpoint(
         if not query_text:
             return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
 
-        # Process the query using the RAG agent with filtering
+        # Process the query using the RAG agent and clean output
         response = await run_rag_agent(query_text, user_id, session_id)
-        # Filter out the thinking process, even if the opening tag is missing.
-        marker = "</think>"
-        marker_pos = response.find(marker)
-        if marker_pos != -1:
-            response = response[marker_pos + len(marker):]
-        response = response.strip()
+        response = clean_model_output(response)
 
         return {
             "text": query_text,
@@ -723,12 +999,8 @@ async def query_tts_direct(request: QueryRequest):
     active_tasks[key] = asyncio.current_task()
     try:
         response_text = await run_rag_agent(request.query, request.user_id, request.session_id)
-        # Filter out the thinking process, even if the opening tag is missing.
-        marker = "</think>"
-        marker_pos = response_text.find(marker)
-        if marker_pos != -1:
-            response_text = response_text[marker_pos + len(marker):]
-        response_text = response_text.strip()
+        # Clean model output to remove think/tool traces and formatting
+        response_text = clean_model_output(response_text)
 
         # Generate audio and visemes
         # Apply per-session voice before generating audio
@@ -826,12 +1098,7 @@ async def stt_query_tts_direct_endpoint(
 
         # Process the query using the RAG agent
         response_text = await run_rag_agent(query_text, user_id, session_id)
-        # Filter out the thinking process, even if the opening tag is missing.
-        marker = "</think>"
-        marker_pos = response_text.find(marker)
-        if marker_pos != -1:
-            response_text = response_text[marker_pos + len(marker):]
-        response_text = response_text.strip()
+        response_text = clean_model_output(response_text)
 
         # Generate audio and visemes
         # Apply per-session voice before generating audio
@@ -907,7 +1174,12 @@ def querytts_audio(filename: str, background_tasks: BackgroundTasks, delete: Opt
     effective_delete = TTS_DELETE_AFTER_SERVE if delete is None else bool(delete)
     effective_delay = TTS_DELETE_DELAY_SECONDS if delay_seconds is None else int(delay_seconds)
     if effective_delete:
-        background_tasks.add_task(_delete_tts_pair, file_path, effective_delay)
+        # Schedule deletion in a daemon thread so server reloads don't wait on BackgroundTasks
+        try:
+            import threading
+            threading.Thread(target=_delete_tts_pair, args=(file_path, effective_delay), daemon=True).start()
+        except Exception:
+            pass
     return FileResponse(file_path, media_type="audio/wav", filename=filename)
 
 

@@ -119,9 +119,18 @@ export const ToolIcon: React.FC<IconProps> = ({ className }) => (
     </svg>
 );
 
-export const BrainIcon: React.FC<IconProps> = ({ className }) => (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19V6.223c0-1.01.616-1.91 1.566-2.313a2.5 2.5 0 012.868 0C14.384 4.313 15 5.213 15 6.223V19M9 19c-1.333 0-2.667-.4-4-1M9 19c1 .5 2.167.833 3.5.833M15 19c1.333 0 2.667-.4-4-1M15 19c-1 .5-2.167.833-3.5.833M5 18c-1.333 0-2.667-.4-4-1M23 17c-1.333.6-2.667 1-4 1m-4-6.777v.001c0 1.01-.616 1.91-1.566 2.313a2.5 2.5 0 01-2.868 0C8.616 12.124 8 11.223 8 10.213v-.001" />
+export const AgentIcon: React.FC<IconProps> = ({ className }) => (
+    <svg className={className} fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="7" cy="12" r="4.5" />
+        <circle cx="14.5" cy="8" r="3" />
+        <circle cx="14" cy="15" r="2.5" />
+        <circle cx="19" cy="11" r="1.5" />
+    </svg>
+);
+
+export const BookIcon: React.FC<IconProps> = ({ className }) => (
+    <svg className={className} fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+      <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 15c1.255 0 2.443-.29 3.5-.804V4.804zM14.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 0014.5 15c1.255 0 2.443-.29 3.5.804v-10A7.968 7.968 0 0014.5 4z"></path>
     </svg>
 );
 

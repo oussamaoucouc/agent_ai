@@ -58,6 +58,18 @@ export const queryMcp = async (request: QueryRequest, signal?: AbortSignal): Pro
     return handleResponse<QueryResponse>(response);
 };
 
+export const queryAgent = async (request: QueryRequest, signal?: AbortSignal): Promise<QueryResponse> => {
+    const response = await fetch(`${API_BASE_URL}/query_assistant_direct`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+        signal,
+    });
+    return handleResponse<QueryResponse>(response);
+};
+
 export const queryTTS = async (request: QueryRequest, signal?: AbortSignal): Promise<QueryTTSResponse> => {
     const response = await fetch(`${API_BASE_URL}/query_tts_direct`, {
         method: 'POST',
@@ -81,6 +93,19 @@ export const queryMcpTTS = async (request: QueryRequest, signal?: AbortSignal): 
     });
     return handleResponse<QueryTTSResponse>(response);
 };
+
+export const queryAgentTTS = async (request: QueryRequest, signal?: AbortSignal): Promise<QueryTTSResponse> => {
+    const response = await fetch(`${API_BASE_URL}/query_assistant_tts_direct`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+        signal,
+    });
+    return handleResponse<QueryTTSResponse>(response);
+};
+
 
 export const fullAgent = async (request: FullAgentRequest, signal?: AbortSignal): Promise<FullAgentResponse> => {
     const formData = new FormData();
@@ -109,6 +134,23 @@ export const fullAgentMcp = async (request: FullAgentRequest, signal?: AbortSign
     }
 
     const response = await fetch(`${API_BASE_URL}/stt_query_mcp_tts_direct`, {
+        method: 'POST',
+        body: formData,
+        signal,
+    });
+    return handleResponse<FullAgentResponse>(response);
+};
+
+export const fullAgentAgent = async (request: FullAgentRequest, signal?: AbortSignal): Promise<FullAgentResponse> => {
+    const formData = new FormData();
+    formData.append('file', request.file, 'recording.wav');
+    formData.append('user_id', request.user_id);
+    formData.append('session_id', request.session_id);
+    if (request.system_prompt) {
+        formData.append('system_prompt', request.system_prompt);
+    }
+
+    const response = await fetch(`${API_BASE_URL}/stt_query_assistant_tts_direct`, {
         method: 'POST',
         body: formData,
         signal,

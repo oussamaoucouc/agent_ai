@@ -1,6 +1,7 @@
 import React, { useState, KeyboardEvent, useRef, useEffect } from 'react';
 import { MicButton } from './MicButton';
-import { SendIcon, ToolIcon, StopIcon } from './icons';
+import { SendIcon, ToolIcon, StopIcon, AgentIcon, BookIcon } from './icons';
+import { QueryMode } from '../types';
 
 interface InputBarProps {
     onSend: (text: string) => void;
@@ -8,12 +9,12 @@ interface InputBarProps {
     onStartRecording: () => void;
     onStopRecording: () => void;
     isLoading: boolean;
-    isToolsActive: boolean;
-    onToggleTools: () => void;
+    queryMode: QueryMode;
+    onQueryModeChange: (mode: QueryMode) => void;
     onCancel: () => void;
 }
 
-export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStartRecording, onStopRecording, isLoading, isToolsActive, onToggleTools, onCancel }) => {
+export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStartRecording, onStopRecording, isLoading, queryMode, onQueryModeChange, onCancel }) => {
     const [text, setText] = useState('');
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -53,12 +54,12 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
                 rows={1}
                 disabled={isLoading || isRecording}
             />
-            <div className="flex items-end gap-3">
+            <div className="flex items-end gap-2">
                  {isLoading ? (
                     <div className="relative group flex flex-col items-center">
                         <button
                             onClick={onCancel}
-                            className="p-2 rounded-full bg-red-600 hover:bg-red-500 transition-colors"
+                            className="p-2.5 rounded-full bg-red-600 hover:bg-red-500 transition-colors"
                             aria-label="Cancel generation"
                         >
                             <StopIcon className="w-5 h-5 text-white" />
@@ -80,25 +81,57 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
                                 Mic
                             </span>
                         </div>
-                        <div className="relative group flex flex-col items-center">
-                            <button
-                                onClick={onToggleTools}
-                                disabled={isLoading || isRecording}
-                                className={`p-2 rounded-full ${isToolsActive ? 'bg-sky-600 hover:bg-sky-500' : 'bg-gray-700 hover:bg-gray-600'} disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors`}
-                                aria-label="Tools"
-                                aria-pressed={isToolsActive}
-                            >
-                                <ToolIcon className="w-5 h-5 text-white" />
-                            </button>
-                            <span className="absolute -bottom-8 whitespace-nowrap text-xs text-white bg-gray-900/80 backdrop-blur-sm px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                                Tools
-                            </span>
+                        
+                        <div className="bg-gray-700/50 p-0.5 rounded-full flex items-center gap-0.5">
+                            <div className="relative group flex flex-col items-center">
+                                <button
+                                    onClick={() => onQueryModeChange('agent')}
+                                    disabled={isLoading || isRecording}
+                                    className={`p-2 rounded-full ${queryMode === 'agent' ? 'bg-sky-600 hover:bg-sky-500' : 'bg-transparent hover:bg-gray-600'} disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors`}
+                                    aria-label="Assistant Agent Mode"
+                                    aria-pressed={queryMode === 'agent'}
+                                >
+                                    <AgentIcon className="w-5 h-5 text-white" />
+                                </button>
+                                <span className="absolute -bottom-8 whitespace-nowrap text-xs text-white bg-gray-900/80 backdrop-blur-sm px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                    Assistant Agent
+                                </span>
+                            </div>
+                            <div className="relative group flex flex-col items-center">
+                                <button
+                                    onClick={() => onQueryModeChange('direct')}
+                                    disabled={isLoading || isRecording}
+                                    className={`p-2 rounded-full ${queryMode === 'direct' ? 'bg-sky-600 hover:bg-sky-500' : 'bg-transparent hover:bg-gray-600'} disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors`}
+                                    aria-label="Direct Query Mode"
+                                    aria-pressed={queryMode === 'direct'}
+                                >
+                                    <BookIcon className="w-5 h-5 text-white" />
+                                </button>
+                                <span className="absolute -bottom-8 whitespace-nowrap text-xs text-white bg-gray-900/80 backdrop-blur-sm px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                    Document Search
+                                </span>
+                            </div>
+                            <div className="relative group flex flex-col items-center">
+                                <button
+                                    onClick={() => onQueryModeChange('tools')}
+                                    disabled={isLoading || isRecording}
+                                    className={`p-2 rounded-full ${queryMode === 'tools' ? 'bg-sky-600 hover:bg-sky-500' : 'bg-transparent hover:bg-gray-600'} disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors`}
+                                    aria-label="Tools Mode"
+                                    aria-pressed={queryMode === 'tools'}
+                                >
+                                    <ToolIcon className="w-5 h-5 text-white" />
+                                </button>
+                                <span className="absolute -bottom-8 whitespace-nowrap text-xs text-white bg-gray-900/80 backdrop-blur-sm px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                    Tools
+                                </span>
+                            </div>
                         </div>
+
                         <div className="relative group flex flex-col items-center">
                             <button
                                 onClick={handleSend}
                                 disabled={isLoading || isRecording || !text.trim()}
-                                className="p-2 rounded-full bg-sky-600 hover:bg-sky-500 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+                                className="p-2.5 rounded-full bg-sky-600 hover:bg-sky-500 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
                                 aria-label="Send message"
                             >
                                 <SendIcon className="w-5 h-5 text-white" />

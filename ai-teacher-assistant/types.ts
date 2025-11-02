@@ -1,3 +1,5 @@
+export type QueryMode = 'agent' | 'direct' | 'tools';
+
 export enum User {
     USER = 'user',
     ASSISTANT = 'assistant',

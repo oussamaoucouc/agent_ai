@@ -6,9 +6,9 @@ import { InputBar } from './components/InputBar';
 import { AvatarView } from './components/AvatarView';
 import { LoginPage } from './components/LoginPage';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
-import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument } from './services/apiService';
+import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent } from './services/apiService';
 import * as storage from './services/storageService';
-import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice } from './types';
+import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice, QueryMode } from './types';
 import { API_BASE_URL } from './constants';
 
 // Default delete-after-serve delay (seconds) must match backend config unless overridden per request
@@ -75,7 +75,7 @@ const App: React.FC = () => {
     const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
     const [spokenResponses, setSpokenResponses] = useState<boolean>(true);
     const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
-    const [isToolsActive, setIsToolsActive] = useState<boolean>(false);
+    const [queryMode, setQueryMode] = useState<QueryMode>('agent');
 
     // New states for model and voice selection
     const [currentModel, setCurrentModel] = useState<string>('gemini-2.5-pro');
@@ -464,48 +464,74 @@ const App: React.FC = () => {
                 system_prompt: systemPrompt
             };
 
-            if (isToolsActive) {
-                if (spokenResponses) {
-                    const data = await queryMcpTTS(requestParams, controller.signal);
-                    assistantMessage = {
-                        id: crypto.randomUUID(),
-                        text: formatAssistantText(data.response),
-                        sender: User.ASSISTANT,
-                        audioUrl: data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}` : undefined,
-                        visemes: data.visemes,
-                    };
-                    if (assistantMessage.audioUrl && assistantMessage.visemes) {
-                        playAudioWithVisemes(assistantMessage.audioUrl, assistantMessage.visemes, assistantMessage.id);
+            switch (queryMode) {
+                case 'agent':
+                    if (spokenResponses) {
+                        const data = await queryAgentTTS(requestParams, controller.signal);
+                        assistantMessage = {
+                            id: crypto.randomUUID(),
+                            text: formatAssistantText(data.response),
+                            sender: User.ASSISTANT,
+                            audioUrl: data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}` : undefined,
+                            visemes: data.visemes,
+                        };
+                        if (assistantMessage.audioUrl && assistantMessage.visemes) {
+                            playAudioWithVisemes(assistantMessage.audioUrl, assistantMessage.visemes, assistantMessage.id);
+                        }
+                    } else {
+                        const data = await queryAgent(requestParams, controller.signal);
+                        assistantMessage = {
+                            id: crypto.randomUUID(),
+                            text: formatAssistantText(data.response),
+                            sender: User.ASSISTANT,
+                        };
                     }
-                } else {
-                    const data = await queryMcp(requestParams, controller.signal);
-                    assistantMessage = {
-                        id: crypto.randomUUID(),
-                        text: formatAssistantText(data.response),
-                        sender: User.ASSISTANT,
-                    };
-                }
-            } else {
-                if (spokenResponses) {
-                    const data = await queryTTS(requestParams, controller.signal);
-                    assistantMessage = {
-                        id: crypto.randomUUID(),
-                        text: formatAssistantText(data.response),
-                        sender: User.ASSISTANT,
-                        audioUrl: data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}` : undefined,
-                        visemes: data.visemes,
-                    };
-                    if (assistantMessage.audioUrl && assistantMessage.visemes) {
-                        playAudioWithVisemes(assistantMessage.audioUrl, assistantMessage.visemes, assistantMessage.id);
+                    break;
+                case 'tools':
+                    if (spokenResponses) {
+                        const data = await queryMcpTTS(requestParams, controller.signal);
+                        assistantMessage = {
+                            id: crypto.randomUUID(),
+                            text: formatAssistantText(data.response),
+                            sender: User.ASSISTANT,
+                            audioUrl: data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}` : undefined,
+                            visemes: data.visemes,
+                        };
+                        if (assistantMessage.audioUrl && assistantMessage.visemes) {
+                            playAudioWithVisemes(assistantMessage.audioUrl, assistantMessage.visemes, assistantMessage.id);
+                        }
+                    } else {
+                        const data = await queryMcp(requestParams, controller.signal);
+                        assistantMessage = {
+                            id: crypto.randomUUID(),
+                            text: formatAssistantText(data.response),
+                            sender: User.ASSISTANT,
+                        };
                     }
-                } else {
-                    const data = await query(requestParams, controller.signal);
-                    assistantMessage = {
-                        id: crypto.randomUUID(),
-                        text: formatAssistantText(data.response),
-                        sender: User.ASSISTANT,
-                    };
-                }
+                    break;
+                case 'direct':
+                default:
+                    if (spokenResponses) {
+                        const data = await queryTTS(requestParams, controller.signal);
+                        assistantMessage = {
+                            id: crypto.randomUUID(),
+                            text: formatAssistantText(data.response),
+                            sender: User.ASSISTANT,
+                            audioUrl: data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}` : undefined,
+                            visemes: data.visemes,
+                        };
+                        if (assistantMessage.audioUrl && assistantMessage.visemes) {
+                            playAudioWithVisemes(assistantMessage.audioUrl, assistantMessage.visemes, assistantMessage.id);
+                        }
+                    } else {
+                        const data = await query(requestParams, controller.signal);
+                        assistantMessage = {
+                            id: crypto.randomUUID(),
+                            text: formatAssistantText(data.response),
+                            sender: User.ASSISTANT,
+                        };
+                    }
+                    break;
             }
             setMessages(prev => [...prev, assistantMessage]);
 
@@ -543,10 +569,17 @@ const App: React.FC = () => {
             };
             let data: FullAgentResponse;
 
-            if (isToolsActive) {
-                data = await fullAgentMcp(requestParams, controller.signal);
-            } else {
-                data = await fullAgent(requestParams, controller.signal);
+            switch (queryMode) {
+                case 'agent':
+                    data = await fullAgentAgent(requestParams, controller.signal);
+                    break;
+                case 'tools':
+                    data = await fullAgentMcp(requestParams, controller.signal);
+                    break;
+                case 'direct':
+                default:
+                    data = await fullAgent(requestParams, controller.signal);
+                    break;
             }
             
             const userMessage: Message = { id: crypto.randomUUID(), text: `🎤: "${data.text}"`, sender: User.USER };
@@ -704,8 +737,8 @@ const App: React.FC = () => {
                             onStartRecording={startRecording} 
                             onStopRecording={handleStopRecording} 
                             isLoading={isLoading}
-                            isToolsActive={isToolsActive}
-                            onToggleTools={() => setIsToolsActive(!isToolsActive)}
+                            queryMode={queryMode}
+                            onQueryModeChange={setQueryMode}
                             onCancel={handleCancelGeneration}
                         />
                     </div>

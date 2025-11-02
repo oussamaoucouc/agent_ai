@@ -1,24 +1,15 @@
 """
-RAG Agent functionality using AGNO framework.
+AI Assistant Agent functionality using AGNO framework.
 """
-from pathlib import Path
 from textwrap import dedent
-import functools
-import hashlib
-import json
 import os
 import logging
-import pickle
 from agno.agent import Agent
-from agno.models.groq import Groq
-from agno.models.ollama import Ollama
 from agno.storage.postgres import PostgresStorage
 from agno.memory.v2.db.sqlite import SqliteMemoryDb
 from agno.memory.v2.memory import Memory
-from agno.storage.sqlite import SqliteStorage
-from .config import DB_URL, DATA_DIR, get_current_model, OLLAMA_BASE_URL, get_user_pdf_dir
+from .config import DB_URL, get_current_model, OLLAMA_BASE_URL
 
-import logging
 logging.basicConfig(level=logging.INFO)
 
 
@@ -39,9 +30,7 @@ async def initialize_memory_dbs(user_id, session_id):
 
     logging.info(f"Initializing memory DBs for user {user_id}, session {session_id} using db: {db_file_path}")
     
-    # Create memory instances
-
-
+    # Create memory instance for the assistant agent
     memory_db_assistant = SqliteMemoryDb(
         table_name="agent_memories_assistant",
         db_file=db_file_path,
@@ -57,14 +46,14 @@ async def run_assistant_agent_async(query, user_id, session_id):
     """
     logging.info(f"Starting AI Assistant agent with Ollama at: {OLLAMA_BASE_URL}")
     
-    # Get cached knowledge base and memory DBs
+    # Get per-user/session memory DB
     memory_assistant = await initialize_memory_dbs(user_id, session_id)
     storage_session_id = f"{user_id}_{session_id}"  # For PostgresStorage isolation
 
     
     assistant_agent = Agent(
         model=get_current_model(),
-        reasoning=True,
+        reasoning=False,
         name="assistant_agent",
         session_id=session_id,
         session_state={"user_id":user_id, "session_id":session_id},
@@ -90,7 +79,7 @@ async def run_assistant_agent_async(query, user_id, session_id):
         monitoring=True,
         show_tool_calls=True,
         storage = PostgresStorage(table_name="agent_session", db_url=DB_URL),
-        memory=memory_rag,  # Add memory instance here
+        memory=memory_assistant,
         enable_user_memories=True,
         enable_session_summaries=True,
         instructions=dedent("""\
@@ -168,3 +157,26 @@ async def run_assistant_agent_async(query, user_id, session_id):
         import traceback
         logging.error(f"Full traceback: {traceback.format_exc()}")
         raise RuntimeError(f"An error occurred while generating a response: {e}")
+
+
+def run_assistant_agent(query, user_id, session_id):
+    """
+    Entry point for Assistant agent that works in both synchronous and asynchronous contexts.
+    """
+    import asyncio
+
+    # Check if we're already in an event loop
+    try:
+        loop = asyncio.get_running_loop()
+        is_in_loop = True
+    except RuntimeError:
+        is_in_loop = False
+
+    if is_in_loop:
+        # Return coroutine that caller can await
+        logging.info("Running assistant in existing event loop")
+        return run_assistant_agent_async(query, user_id, session_id)
+    else:
+        # No event loop running, so create a new one
+        logging.info("Creating new event loop for assistant agent")
+        return asyncio.run(run_assistant_agent_async(query, user_id, session_id))
