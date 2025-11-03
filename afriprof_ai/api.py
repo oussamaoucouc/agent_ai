@@ -189,8 +189,9 @@ async def upload_document_endpoint(file: UploadFile = File(...), user_id: str = 
 
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        # Immediately sync KB so the newly added document is indexed for the current session
-        await initialize_knowledge_base(user_id)
+        # Immediately upsert into KB so the newly added document is indexed
+        kb = await initialize_knowledge_base(user_id)
+        await kb.aload(recreate=False, upsert=True)
         return {"message": f"Successfully uploaded {file.filename}", "filename": file.filename, "path": file_path}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error uploading document: {str(e)}")
@@ -236,8 +237,9 @@ async def delete_document(user_id: str, filename: str):
                 break
         if last_err is not None:
             raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(last_err)}")
-        # Trigger KB sync (initialize_knowledge_base performs sync internally)
-        await initialize_knowledge_base(user_id)
+        # Trigger KB sync (rebuild collection to reflect deletion)
+        kb = await initialize_knowledge_base(user_id)
+        await kb.aload(recreate=True, upsert=False)
         return {"message": "Successfully deleted", "filename": filename}
     except HTTPException:
         raise

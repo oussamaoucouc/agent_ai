@@ -2,10 +2,8 @@
 RAG Agent functionality using AGNO framework.
 """
 from pathlib import Path
+import tempfile
 from textwrap import dedent
-import functools
-import hashlib
-import json
 import os
 import logging
 import pickle
@@ -28,90 +26,10 @@ from .config import DB_URL, DATA_DIR, get_current_model, OLLAMA_BASE_URL, get_us
 import logging
 logging.basicConfig(level=logging.INFO)
 
-# Set up cache directory
-CACHE_DIR = os.path.abspath("./cache")
-os.makedirs(CACHE_DIR, exist_ok=True)
+# Removed custom KB cache directory; rely on AGNO/Chroma persistence.
 
 
-def _compute_dir_state(dir_path: str):
-    """Return a dict of filename -> {size, mtime} for PDFs in a directory."""
-    state = {}
-    for p in Path(dir_path).glob("*.pdf"):
-        try:
-            stat = p.stat()
-            state[p.name] = {"size": stat.st_size, "mtime": int(stat.st_mtime)}
-        except Exception:
-            # Skip unreadable files
-            continue
-    return state
-
-
-async def sync_knowledge_with_pdf_directory(knowledge_base, user_pdf_dir, force_refresh=False):
-    """
-    Sync knowledge base with current PDF directory state.
-    Rebuilds the vector store from the current PDF directory to ensure
-    deletions and updates are reflected reliably.
-    
-    Args:
-        knowledge_base: The knowledge base to sync
-        user_pdf_dir: Directory containing PDF files
-        force_refresh: If True, forces a complete refresh regardless of cache state
-    """
-    try:
-        # Compute current directory state
-        current_state = _compute_dir_state(user_pdf_dir)
-        current_files = set(current_state.keys())
-        logging.info(f"KB sync: {len(current_files)} PDFs detected in {user_pdf_dir}")
-
-        # Load previous state (per-directory cache key)
-        # Ensure path is serialized as string for hashing (handles WindowsPath)
-        cache_key = hashlib.sha1(str(user_pdf_dir).encode("utf-8")).hexdigest()
-        cache_file = os.path.join(CACHE_DIR, f"kb_state_{cache_key}.json")
-        prev_state = {}
-        if os.path.isfile(cache_file):
-            try:
-                with open(cache_file, "r", encoding="utf-8") as f:
-                    prev_state = json.load(f)
-            except Exception:
-                prev_state = {}
-        prev_files = set(prev_state.keys())
-
-        # Detect changes
-        added = current_files - prev_files
-        deleted = prev_files - current_files
-        modified = set(
-            name for name in (current_files & prev_files)
-            if prev_state.get(name) != current_state.get(name)
-        )
-
-        # Force refresh if requested or if any changes detected
-        if force_refresh:
-            logging.info("KB sync: force refresh requested; rebuilding collection")
-            await knowledge_base.aload(recreate=True, upsert=False)
-        elif not prev_state:
-            logging.info("KB sync: no previous state found; performing initial load")
-            await knowledge_base.aload(recreate=True, upsert=False)
-        elif deleted or modified or added:
-            # Always rebuild when ANY changes are detected to ensure consistency
-            logging.info(
-                f"KB sync: changes detected (added={len(added)}, deleted={len(deleted)}, modified={len(modified)}); rebuilding collection"
-            )
-            await knowledge_base.aload(recreate=True, upsert=False)
-        else:
-            # Even when no changes detected, do a light refresh to catch any missed updates
-            logging.info("KB sync: no file changes detected; performing light refresh")
-            await knowledge_base.aload(recreate=False, upsert=True)
-
-        # Persist current state
-        try:
-            with open(cache_file, "w", encoding="utf-8") as f:
-                json.dump(current_state, f)
-        except Exception:
-            logging.warning("KB sync: failed to write state cache; continuing")
-
-    except Exception as e:
-        logging.error(f"Error syncing knowledge base: {e}")
-        raise
+# Removed custom directory state sync; AGNO's knowledge base handles loading/upserts.
 
 
 def run_rag_agent(query, user_id, session_id):
@@ -140,22 +58,20 @@ def run_rag_agent(query, user_id, session_id):
 
 async def initialize_knowledge_base(user_id: str):
     """
-    Initialize the knowledge base with vector database.
-    No custom caching is used; we rely on AGNO's internals and a fresh
-    sync on each invocation to ensure newly added documents are available.
+    Initialize the per-user knowledge base and let AGNO/Chroma manage persistence.
     """
+    user_pdf_dir = get_user_pdf_dir(user_id)
+
     logging.info("Initializing knowledge base")
     logging.info(f"Using Ollama URL for embedder: {OLLAMA_BASE_URL}")
-    
-    # Create OllamaEmbedder with the correct host parameter
+
     embedder = OllamaEmbedder(
         id="nomic-embed-text",
         dimensions=768,
-        host=OLLAMA_BASE_URL  # FIXED: Add host parameter
+        host=OLLAMA_BASE_URL
     )
-    
-    # Per-user ChromaDB collection and directory for isolation
-    user_chroma_path = os.path.join("./tmp/chromadb_nomicembedtext", str(user_id))
+
+    user_chroma_path = os.path.join(tempfile.gettempdir(), "afriprof_ai_chroma", str(user_id))
     os.makedirs(user_chroma_path, exist_ok=True)
     vector_db = ChromaDb(
         collection=f"ragdocs{user_id}",
@@ -165,16 +81,14 @@ async def initialize_knowledge_base(user_id: str):
     )
     logging.info(f"Initialized ChromaDB: collection=teacher_{user_id}, path={user_chroma_path}")
 
-    # Use per-user PDF directory
-    user_pdf_dir = get_user_pdf_dir(user_id)
     logging.info(f"Using user-specific PDF directory: {user_pdf_dir}")
     knowledge_base = PDFKnowledgeBase(
         path=user_pdf_dir,
         vector_db=vector_db,
         chunking_strategy=DocumentChunking()
     )
-    
-    # Log basic ingestion diagnostics: PDF count
+
+    # Log basic ingestion diagnostics
     try:
         pdf_files = list(Path(user_pdf_dir).glob("*.pdf"))
         logging.info(f"Knowledge ingestion: found {len(pdf_files)} PDFs for user {user_id}")
@@ -183,10 +97,8 @@ async def initialize_knowledge_base(user_id: str):
     except Exception as e:
         logging.warning(f"Unable to list PDFs in {user_pdf_dir}: {e}")
 
-    # Always force a fresh sync to ensure new documents are indexed
-    await sync_knowledge_with_pdf_directory(knowledge_base, user_pdf_dir, force_refresh=True)
-    
-    logging.info("Knowledge base initialization completed")
+    # Do not load here; callers will decide recreate/upsert based on context
+    logging.info("Knowledge base object created; loading deferred to caller")
     return knowledge_base
 
 async def initialize_memory_dbs(user_id, session_id):
@@ -221,8 +133,9 @@ async def run_rag_agent_async(query, user_id, session_id):
     """
     logging.info(f"Starting RAG agent with Ollama at: {OLLAMA_BASE_URL}")
     
-    # Initialize knowledge base (no custom cache) and memory DBs
+    # Initialize knowledge base then perform upsert-only load for queries
     knowledge_base = await initialize_knowledge_base(user_id)
+    await knowledge_base.aload(recreate=False, upsert=True)
     memory_rag = await initialize_memory_dbs(user_id, session_id)
     storage_session_id = f"{user_id}_{session_id}"  # For PostgresStorage isolation
 
