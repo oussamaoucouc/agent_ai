@@ -14,6 +14,7 @@ import time
 import datetime
 from pydub import AudioSegment
 from teacher_agent.rag_agent import run_rag_agent, initialize_knowledge_base
+from teacher_agent.locks import get_user_kb_lock
 from teacher_agent.ai_agent_assistant import run_assistant_agent
 from teacher_agent.config import get_user_pdf_dir
 from teacher_agent.mcp_agent import run_agent_async as run_mcp_agent
@@ -28,6 +29,7 @@ from fastapi.concurrency import run_in_threadpool
 import asyncio
 from datetime import datetime
 import sessions
+import logging
 
 
 # Sessions persistence moved to sessions.py
@@ -185,14 +187,30 @@ async def upload_document_endpoint(file: UploadFile = File(...), user_id: str = 
         # Save the uploaded file to the per-user PDFs directory
         user_pdfs_dir = str(get_user_pdf_dir(user_id))
         os.makedirs(user_pdfs_dir, exist_ok=True)
-        file_path = os.path.join(user_pdfs_dir, file.filename)
+        safe_name = os.path.basename(file.filename)
+        file_path = os.path.join(user_pdfs_dir, safe_name)
 
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         # Immediately upsert into KB so the newly added document is indexed
-        kb = await initialize_knowledge_base(user_id)
-        await kb.aload(recreate=False, upsert=True)
-        return {"message": f"Successfully uploaded {file.filename}", "filename": file.filename, "path": file_path}
+        lock = get_user_kb_lock(user_id)
+        logging.info(f"Waiting for KB lock for user {user_id} (upload)")
+        async with lock:
+            logging.info(f"Entered KB lock for user {user_id} (upload)")
+            kb = await initialize_knowledge_base(user_id)
+            try:
+                await kb.aload(recreate=False, upsert=True)
+                logging.info(f"KB upsert load complete for user {user_id} (upload)")
+            except Exception as e:
+                # Fallback: first-time collection creation or backend hiccup
+                msg = str(e).lower()
+                if "not found" in msg or "does not exist" in msg or "no such" in msg:
+                    logging.info(f"Upsert failed; recreating collection for user {user_id} (upload)")
+                    await kb.aload(recreate=True, upsert=False)
+                    logging.info(f"KB recreate load complete for user {user_id} (upload)")
+                else:
+                    raise
+        return {"message": f"Successfully uploaded {safe_name}", "filename": safe_name, "path": file_path}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error uploading document: {str(e)}")
 
@@ -219,7 +237,8 @@ async def delete_document(user_id: str, filename: str):
     try:
         user_pdfs_dir = str(get_user_pdf_dir(user_id))
         os.makedirs(user_pdfs_dir, exist_ok=True)
-        file_path = os.path.join(user_pdfs_dir, filename)
+        safe_name = os.path.basename(filename)
+        file_path = os.path.join(user_pdfs_dir, safe_name)
         if not os.path.isfile(file_path):
             raise HTTPException(status_code=404, detail="File not found")
         # Robust deletion: retry a few times in case the file is briefly locked (Windows)
@@ -238,9 +257,14 @@ async def delete_document(user_id: str, filename: str):
         if last_err is not None:
             raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(last_err)}")
         # Trigger KB sync (rebuild collection to reflect deletion)
-        kb = await initialize_knowledge_base(user_id)
-        await kb.aload(recreate=True, upsert=False)
-        return {"message": "Successfully deleted", "filename": filename}
+        lock = get_user_kb_lock(user_id)
+        logging.info(f"Waiting for KB lock for user {user_id} (delete)")
+        async with lock:
+            logging.info(f"Entered KB lock for user {user_id} (delete)")
+            kb = await initialize_knowledge_base(user_id)
+            await kb.aload(recreate=True, upsert=False)
+            logging.info(f"KB recreate load complete for user {user_id} (delete)")
+        return {"message": "Successfully deleted", "filename": safe_name}
     except HTTPException:
         raise
     except Exception as e:

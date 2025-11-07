@@ -22,6 +22,7 @@ from agno.tools.thinking import ThinkingTools
 from agno.tools.knowledge import KnowledgeTools
 from agno.storage.sqlite import SqliteStorage
 from .config import DB_URL, DATA_DIR, get_current_model, OLLAMA_BASE_URL, get_user_pdf_dir
+from .locks import get_user_kb_lock
 
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -79,7 +80,7 @@ async def initialize_knowledge_base(user_id: str):
         persistent_client=True,
         embedder=embedder
     )
-    logging.info(f"Initialized ChromaDB: collection=teacher_{user_id}, path={user_chroma_path}")
+    logging.info(f"Initialized ChromaDB: collection=ragdocs{user_id}, path={user_chroma_path}")
 
     logging.info(f"Using user-specific PDF directory: {user_pdf_dir}")
     knowledge_base = PDFKnowledgeBase(
@@ -135,7 +136,13 @@ async def run_rag_agent_async(query, user_id, session_id):
     
     # Initialize knowledge base then perform upsert-only load for queries
     knowledge_base = await initialize_knowledge_base(user_id)
-    await knowledge_base.aload(recreate=False, upsert=True)
+    # Serialize KB loads per user to avoid races with upload/delete
+    lock = get_user_kb_lock(user_id)
+    logging.info(f"Waiting for KB lock for user {user_id} (query)")
+    async with lock:
+        logging.info(f"Entered KB lock for user {user_id} (query)")
+        await knowledge_base.aload(recreate=False, upsert=True)
+        logging.info(f"KB upsert load complete for user {user_id} (query)")
     memory_rag = await initialize_memory_dbs(user_id, session_id)
     storage_session_id = f"{user_id}_{session_id}"  # For PostgresStorage isolation
 
