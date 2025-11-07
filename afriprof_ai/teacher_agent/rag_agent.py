@@ -154,7 +154,7 @@ async def run_rag_agent_async(query, user_id, session_id):
     think=False,
     search=True,
     analyze=True,
-    add_few_shot=False,
+    add_few_shot=True,
     add_instructions=False,
     )
 
@@ -173,7 +173,7 @@ async def run_rag_agent_async(query, user_id, session_id):
             """),
         tools=[knowledge_tools],
         knowledge=knowledge_base,
-        #search_knowledge=True, #we alreadu have repetition and avoid confusion for the agent
+        #search_knowledge=True,
         markdown=True,
         read_chat_history=True,
         add_history_to_messages=True,
@@ -229,6 +229,12 @@ async def run_rag_agent_async(query, user_id, session_id):
         - Prioritize the most critical information first
         - Use structured formatting (lists, sections) when it enhances clarity
         - Maintain low latency while ensuring thorough information processing
+        
+        7. ▶ Knowledge Base Priority Over Memory
+        - Prefer retrieved knowledge base content over chat history and user/session memory.
+        - After a document upload or deletion in the same session, treat prior memory as secondary; only use it if corroborated by retrieved documents.
+        - If no relevant documents are retrieved, do not answer from memory about user-uploaded files; reply that no relevant KB documents were found.
+        - When memory conflicts with the current knowledge base, resolve in favor of the KB.
         
  """),
     )
