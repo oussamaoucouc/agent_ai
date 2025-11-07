@@ -177,7 +177,8 @@ export const uploadDocument = async (request: UploadDocumentRequest, signal?: Ab
 export const listDocuments = async (user_id: string, signal?: AbortSignal): Promise<ListDocumentsResponse> => {
     const url = new URL(`${API_BASE_URL}/list_documents`);
     url.searchParams.set('user_id', user_id);
-    const response = await fetch(url, { method: 'GET', signal });
+    url.searchParams.set('ts', Date.now().toString());
+    const response = await fetch(url, { method: 'GET', signal, cache: 'no-store' });
     return handleResponse<ListDocumentsResponse>(response);
 };
 
@@ -213,7 +214,8 @@ export const setVoice = async (request: SetVoiceRequest, signal?: AbortSignal): 
 export const getSessions = async (user_id: string, signal?: AbortSignal): Promise<Session[]> => {
     const url = new URL(`${API_BASE_URL}/sessions`);
     url.searchParams.set('user_id', user_id);
-    const response = await fetch(url, { method: 'GET', signal });
+    url.searchParams.set('ts', Date.now().toString());
+    const response = await fetch(url, { method: 'GET', signal, cache: 'no-store' });
     return handleResponse<Session[]>(response);
 };
 
@@ -268,7 +270,10 @@ export const cancelSession = async (request: CancelRequest): Promise<{status: st
 
 // --- User management API ---
 export const listUserStats = async (signal?: AbortSignal): Promise<Array<{ id: string; username: string; role: string; sessions: number; documents: number; createdAt: string }>> => {
-    const response = await fetch(`${API_BASE_URL}/users/stats`, { method: 'GET', signal });
+    const url = new URL(`${API_BASE_URL}/users/stats`);
+    // Add cache-busting param to avoid stale data across browsers
+    url.searchParams.set('ts', Date.now().toString());
+    const response = await fetch(url, { method: 'GET', signal, cache: 'no-store' });
     return handleResponse<Array<{ id: string; username: string; role: string; sessions: number; documents: number; createdAt: string }>>(response);
 };
 

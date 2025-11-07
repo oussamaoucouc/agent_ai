@@ -228,24 +228,10 @@ def user_login(request: LoginRequest, db: SASession = Depends(get_db)):
         if not u or u.password_hash != _hash_password(request.password):
             raise HTTPException(status_code=401, detail="Invalid username or password")
 
-        # Create a fresh session for the user similar to sessions.create_session
-        session_id = str(uuid.uuid4())
-        now = datetime.utcnow()
-        s = session_mod.SessionDB(id=session_id, user_id=u.id, name=f"Session - {datetime.now().isoformat()}", created_at=now)
-        db.add(s)
-        greet_msg = session_mod.MessageDB(
-            id=str(uuid.uuid4()),
-            session_id=session_id,
-            text="Hello! I am your AI Assistant. How can I help you today?",
-            sender="assistant",
-            created_at=now,
-        )
-        db.add(greet_msg)
-        default_voice = session_mod.get_current_voice()
-        settings = session_mod.SessionSettingsDB(session_id=session_id, user_id=u.id, voice=default_voice, updated_at=now)
-        db.add(settings)
-        db.commit()
-        return LoginResponse(user_id=u.id, session_id=session_id, username=u.username, role=u.role)
+        # Do NOT auto-create a session on login.
+        # Frontend will load sessions and create one only if needed.
+        # For admins, this prevents inflating session counts when viewing the dashboard.
+        return LoginResponse(user_id=u.id, session_id="", username=u.username, role=u.role)
     except HTTPException:
         raise
     except Exception as e:
