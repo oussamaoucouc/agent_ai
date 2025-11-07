@@ -1,49 +1,47 @@
 import { Session } from '../types';
 
-const STORAGE_KEY = 'ai_assistant_app_data';
-const CURRENT_USER_KEY = 'ai_assistant_current_user';
+// In-memory, non-persistent storage. All persistence is handled by the backend DB.
+// This module now only keeps ephemeral UI state for the current runtime.
 
-interface AppData {
-    [userId: string]: Session[];
-}
-
-const getAllData = (): AppData => {
-    try {
-        const data = localStorage.getItem(STORAGE_KEY);
-        return data ? JSON.parse(data) : {};
-    } catch (error) {
-        console.error("Failed to parse storage data:", error);
-        return {};
-    }
-};
-
-const saveAllData = (data: AppData) => {
-    try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    } catch (error) {
-        console.error("Failed to save data to storage:", error);
-    }
-};
+let memorySessions: Record<string, Session[]> = {};
+let memoryCurrentUser: string | null = null;
+let memoryCurrentUsername: string | null = null;
+let memoryCurrentUserRole: 'admin' | 'user' | null = null;
 
 export const getSessionsForUser = (userId: string): Session[] => {
-    const data = getAllData();
-    return data[userId] || [];
+    return memorySessions[userId] || [];
 };
 
 export const saveSessionsForUser = (userId: string, sessions: Session[]) => {
-    const data = getAllData();
-    data[userId] = sessions;
-    saveAllData(data);
+    memorySessions[userId] = sessions;
 };
 
 export const getCurrentUser = (): string | null => {
-    return localStorage.getItem(CURRENT_USER_KEY);
+    return memoryCurrentUser;
 };
 
 export const setCurrentUser = (userId: string) => {
-    localStorage.setItem(CURRENT_USER_KEY, userId);
+    memoryCurrentUser = userId;
 };
 
 export const clearCurrentUser = () => {
-    localStorage.removeItem(CURRENT_USER_KEY);
+    memoryCurrentUser = null;
+    memoryCurrentUsername = null;
+    memoryCurrentUserRole = null;
+};
+
+export const getCurrentUserRole = (): 'admin' | 'user' | null => {
+    return memoryCurrentUserRole;
+};
+
+export const setCurrentUserRole = (role: 'admin' | 'user') => {
+    memoryCurrentUserRole = role;
+};
+
+export const getCurrentUsername = (): string | null => {
+    return memoryCurrentUsername;
+};
+
+export const setCurrentUsername = (username: string) => {
+    memoryCurrentUsername = username;
 };

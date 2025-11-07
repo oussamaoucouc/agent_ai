@@ -17,7 +17,8 @@ import {
     CreateSessionRequest,
     RenameSessionRequest,
     DeleteSessionRequest,
-    SaveMessagesRequest
+    SaveMessagesRequest,
+    AdminUser
 } from '../types';
 
 const handleResponse = async <T,>(response: Response): Promise<T> => {
@@ -263,4 +264,49 @@ export const cancelSession = async (request: CancelRequest): Promise<{status: st
         body: JSON.stringify(request),
     });
     return handleResponse<{status: string}>(response);
+};
+
+// --- User management API ---
+export const listUserStats = async (signal?: AbortSignal): Promise<Array<{ id: string; username: string; role: string; sessions: number; documents: number; createdAt: string }>> => {
+    const response = await fetch(`${API_BASE_URL}/users/stats`, { method: 'GET', signal });
+    return handleResponse<Array<{ id: string; username: string; role: string; sessions: number; documents: number; createdAt: string }>>(response);
+};
+
+export const createUser = async (username: string, password: string, role: 'admin' | 'user', signal?: AbortSignal): Promise<AdminUser> => {
+    const response = await fetch(`${API_BASE_URL}/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password, role }),
+        signal,
+    });
+    const u = await handleResponse<{ id: string; username: string; role: string; createdAt: string }>(response);
+    // New users have zero sessions/documents initially
+    return { id: u.id, name: u.username, role: u.role as 'admin' | 'user', sessions: 0, documents: 0, createdAt: u.createdAt };
+};
+
+export const updateUser = async (user_id: string, payload: { password?: string; role?: 'admin' | 'user' }, signal?: AbortSignal): Promise<AdminUser> => {
+    const response = await fetch(`${API_BASE_URL}/users/${user_id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal,
+    });
+    const u = await handleResponse<{ id: string; username: string; role: string; createdAt: string }>(response);
+    // Caller should refresh stats afterward to get counts
+    return { id: u.id, name: u.username, role: u.role as 'admin' | 'user', sessions: 0, documents: 0, createdAt: u.createdAt };
+};
+
+export const deleteUser = async (user_id: string, signal?: AbortSignal): Promise<{status: string}> => {
+    const response = await fetch(`${API_BASE_URL}/users/${user_id}`, { method: 'DELETE', signal });
+    return handleResponse<{status: string}>(response);
+};
+
+export const loginUser = async (username: string, password: string, signal?: AbortSignal): Promise<{ user_id: string; session_id: string; username: string; role: string }> => {
+    const response = await fetch(`${API_BASE_URL}/users/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+        signal,
+    });
+    return handleResponse<{ user_id: string; session_id: string; username: string; role: string }>(response);
 };

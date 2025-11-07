@@ -46,6 +46,7 @@ export interface Session {
 export interface AdminUser {
     id: string;
     name: string;
+    role: 'admin' | 'user';
     sessions: number;
     documents: number;
     createdAt: string;
@@ -117,6 +118,7 @@ export interface UploadDocumentResponse {
     message: string;
     filename: string;
     path?: string;
+    duplicate?: boolean;
 }
 
 export interface DeleteDocumentRequest {

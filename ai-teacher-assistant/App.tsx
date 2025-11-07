@@ -5,31 +5,20 @@ import { ChatWindow } from './components/ChatWindow';
 import { InputBar } from './components/InputBar';
 import { AvatarView } from './components/AvatarView';
 import { LoginPage } from './components/LoginPage';
-import { DashboardPage } from './components/DashboardPage'
+import { DashboardPage } from './components/DashboardPage';
+import { AddUserPage } from './components/AddUserPage';
+import { EditUserPage } from './components/EditUserPage';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
-import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent } from './services/apiService';
+import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, listUserStats, createUser, deleteUser, loginUser, updateUser } from './services/apiService';
 import * as storage from './services/storageService';
-import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice, QueryMode } from './types';
+import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice, QueryMode, AdminUser } from './types';
 import { API_BASE_URL } from './constants';
 
 // Default delete-after-serve delay (seconds) must match backend config unless overridden per request
 const DEFAULT_TTS_DELETE_DELAY_SECONDS = 120;
 
-const createNewSession = (): Session => {
-    const now = new Date();
-    return {
-        id: crypto.randomUUID(),
-        name: `Session - ${now.toLocaleString()}`,
-        createdAt: now.toISOString(),
-        messages: [
-            {
-                id: crypto.randomUUID(),
-                text: "Hello! I am your AI Assistant. How can I help you today?",
-                sender: User.ASSISTANT,
-            },
-        ],
-    };
-};
+// Admin dashboard users will be loaded from backend stats
+
 
 const systemPrompt = `You are an AI Assistant. Your goal is to provide clear, structured, and informative answers.
 
@@ -64,8 +53,12 @@ Remember: Write as if you're speaking directly to a human. Use simple, clear lan
 
 const App: React.FC = () => {
     const [currentUser, setCurrentUser] = useState<string | null>(null);
+    const [currentUsername, setCurrentUsername] = useState<string | null>(null);
     const [isAdmin, setIsAdmin] = useState<boolean>(false);
     const [isInitialized, setIsInitialized] = useState<boolean>(false);
+const [adminView, setAdminView] = useState<'dashboard' | 'addUser' | 'editUser'>('dashboard');
+const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
+const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
 
     const [sessions, setSessions] = useState<Session[]>([]);
     const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -90,17 +83,32 @@ const App: React.FC = () => {
     const abortControllerRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
-        const user = storage.getCurrentUser();
-        if (user) {
-            if (user === 'admin') {
-                setCurrentUser('admin');
-                setIsAdmin(true);
-            } else {
-                setCurrentUser(user);
-                setIsAdmin(false);
-            }
+        const userId = storage.getCurrentUser();
+        const username = storage.getCurrentUsername();
+        const role = storage.getCurrentUserRole();
+        if (userId) {
+            setCurrentUser(userId);
+            if (username) setCurrentUsername(username);
+            setIsAdmin(role === 'admin');
         }
         setIsInitialized(true);
+    }, []);
+
+    const refreshAdminUsers = useCallback(async () => {
+        try {
+            const stats = await listUserStats();
+            const mapped: AdminUser[] = stats.map((u: any) => ({
+                id: u.id,
+                name: u.username,
+                role: u.role === 'admin' ? 'admin' : 'user',
+                sessions: u.sessions ?? 0,
+                documents: u.documents ?? 0,
+                createdAt: u.createdAt,
+            }));
+            setAdminUsers(mapped);
+        } catch (err) {
+            console.error('Failed to load user stats:', err);
+        }
     }, []);
 
     // Load persisted uploaded documents for the current user
@@ -127,6 +135,12 @@ const App: React.FC = () => {
         loadDocs();
         return () => controller.abort();
     }, [currentUser, isAdmin]);
+
+    useEffect(() => {
+        if (isAdmin) {
+            refreshAdminUsers();
+        }
+    }, [isAdmin, refreshAdminUsers]);
 
     // Clean and format AI responses for better user experience
     const formatAssistantText = useCallback((text: string): string => {
@@ -264,18 +278,25 @@ const App: React.FC = () => {
     }, [messages, activeSessionId, currentUser, isAdmin]);
 
 
-    const handleLogin = (username: string, password?: string) => {
-        if (username.trim().toLowerCase() === 'admin' && password === 'admin') {
-            storage.setCurrentUser('admin');
-            setCurrentUser('admin');
-            setIsAdmin(true);
-        } else {
-            const sanitizedUsername = username.trim();
-            if (sanitizedUsername) {
-                storage.setCurrentUser(sanitizedUsername);
-                setCurrentUser(sanitizedUsername);
-                setIsAdmin(false);
+    const handleLogin = async (username: string, password?: string) => {
+        const name = username.trim();
+        if (!name || !password) return;
+        try {
+            const res = await loginUser(name, password);
+            storage.setCurrentUser(res.user_id);
+            storage.setCurrentUsername(res.username);
+            storage.setCurrentUserRole(res.role === 'admin' ? 'admin' : 'user');
+            setCurrentUser(res.user_id);
+            setCurrentUsername(res.username);
+            setIsAdmin(res.role === 'admin');
+            setActiveSessionId(res.session_id || null);
+            if (res.role === 'admin') {
+                await refreshAdminUsers();
+                setAdminView('dashboard');
             }
+        } catch (err) {
+            alert('Login failed. Please check your credentials.');
+            console.error('Login failed:', err);
         }
     };
     
@@ -299,6 +320,7 @@ const App: React.FC = () => {
         handleStopAudio();
         storage.clearCurrentUser();
         setCurrentUser(null);
+        setCurrentUsername(null);
         setIsAdmin(false);
         setSessions([]);
         setMessages([]);
@@ -306,6 +328,8 @@ const App: React.FC = () => {
         setPlayingAudioId(null);
         setActiveAudio(null);
         setUploadedFiles([]);
+        setAdminView('dashboard'); // Reset admin view on logout
+        setEditingUser(null);
     };
     
     const playAudioWithVisemes = useCallback((audioUrl: string, visemeData: VisemeData, messageId: string) => {
@@ -677,6 +701,52 @@ const App: React.FC = () => {
             console.error('Delete document failed:', err);
         }
     };
+
+    const handleAddAdminUser = async (newUser: { name: string; password: string; role: 'user' | 'admin' }) => {
+        try {
+            await createUser(newUser.name.trim(), newUser.password, newUser.role);
+            await refreshAdminUsers();
+            setAdminView('dashboard');
+        } catch (err) {
+            alert('Failed to create user.');
+            console.error('Create user failed:', err);
+        }
+    };
+
+    // Edit admin user flow
+    const handleEditAdminUser = (user: AdminUser) => {
+        setEditingUser(user);
+        setAdminView('editUser');
+    };
+
+    const handleSaveEditedUser = async (payload: { password: string; role?: 'user' | 'admin' }) => {
+        try {
+            if (!editingUser) return;
+            await updateUser(editingUser.id, payload);
+            await refreshAdminUsers();
+            setEditingUser(null);
+            setAdminView('dashboard');
+        } catch (err) {
+            alert('Failed to update user.');
+            console.error('Update user failed:', err);
+        }
+    };
+
+    const handleCancelEditUser = () => {
+        setEditingUser(null);
+        setAdminView('dashboard');
+    };
+
+    const handleDeleteAdminUser = async (userId: string) => {
+        if (!window.confirm('Delete this user and all their data?')) return;
+        try {
+            await deleteUser(userId);
+            await refreshAdminUsers();
+        } catch (err) {
+            alert('Failed to delete user.');
+            console.error('Delete user failed:', err);
+        }
+    };
     
     const isSpeaking = !!activeAudio || isRecording;
     const isConversationStarted = messages.length > 1;
@@ -690,7 +760,29 @@ const App: React.FC = () => {
     }
 
     if (isAdmin) {
-        return <DashboardPage onLogout={handleLogout} />;
+        if (adminView === 'addUser') {
+            return <AddUserPage onAddUser={handleAddAdminUser} onCancel={() => setAdminView('dashboard')} />;
+        }
+        if (adminView === 'editUser' && editingUser) {
+            return (
+                <EditUserPage
+                    userId={editingUser.id}
+                    username={editingUser.name}
+                    currentRole={editingUser.role}
+                    onSave={handleSaveEditedUser}
+                    onCancel={handleCancelEditUser}
+                />
+            );
+        }
+        return (
+            <DashboardPage 
+                users={adminUsers} 
+                onLogout={handleLogout}
+                onNavigateToAddUser={() => setAdminView('addUser')}
+                onDeleteUser={handleDeleteAdminUser}
+                onEditUser={handleEditAdminUser}
+            />
+        );
     }
 
     return (
@@ -722,7 +814,7 @@ const App: React.FC = () => {
             />
             <main className="flex flex-col flex-1 h-screen overflow-hidden">
                 <Header 
-                    user={currentUser} 
+                    user={currentUsername ?? currentUser ?? ''} 
                     onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
                 />
                 <div className="flex-1 flex flex-col p-4 md:p-6 lg:p-8 overflow-hidden">

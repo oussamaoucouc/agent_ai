@@ -29,6 +29,7 @@ from fastapi.concurrency import run_in_threadpool
 import asyncio
 from datetime import datetime
 import sessions
+import users
 import logging
 
 
@@ -57,6 +58,16 @@ app.add_middleware(
 
 # Include sessions router
 app.include_router(sessions.router)
+# Include users router (admin/user management)
+app.include_router(users.router)
+
+# Seed default admin on startup
+@app.on_event("startup")
+def _seed_default_admin():
+    try:
+        users.ensure_admin_seed()
+    except Exception as e:
+        logging.warning(f"Admin seeding skipped/failed: {e}")
 
 # Registry of active tasks per user/session for cancellation
 active_tasks: Dict[str, asyncio.Task] = {}
@@ -177,7 +188,7 @@ async def login(request: LoginRequest):
     session_id = str(uuid.uuid4())
     return {"user_id": user_id, "session_id": session_id}
 
-@app.post("/upload_document", response_model=Dict[str, str])
+@app.post("/upload_document", response_model=Dict[str, Any])
 async def upload_document_endpoint(file: UploadFile = File(...), user_id: str = Form(...), session_id: str = Form(...)):
     try:
         file_extension = os.path.splitext(file.filename)[1].lower()
@@ -190,9 +201,61 @@ async def upload_document_endpoint(file: UploadFile = File(...), user_id: str = 
         safe_name = os.path.basename(file.filename)
         file_path = os.path.join(user_pdfs_dir, safe_name)
 
-        with open(file_path, "wb") as buffer:
+        # Write upload to a temporary file first
+        tmp_name = f".tmp_{uuid.uuid4().hex}.pdf"
+        tmp_path = os.path.join(user_pdfs_dir, tmp_name)
+        with open(tmp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        # Immediately upsert into KB so the newly added document is indexed
+
+        def _sha256(path: str) -> str:
+            import hashlib
+            h = hashlib.sha256()
+            with open(path, "rb") as f:
+                for chunk in iter(lambda: f.read(8192), b""):
+                    h.update(chunk)
+            return h.hexdigest()
+
+        # If a file with the same name already exists, check for content duplicates
+        if os.path.isfile(file_path):
+            try:
+                if _sha256(file_path) == _sha256(tmp_path):
+                    # Exact duplicate: remove temp and skip KB upsert
+                    try:
+                        os.remove(tmp_path)
+                    except Exception:
+                        pass
+                    return {"message": "Already uploaded", "filename": safe_name, "path": file_path, "duplicate": True}
+                else:
+                    # Same name but different content: generate a unique filename to avoid overwrite
+                    base, ext = os.path.splitext(safe_name)
+                    counter = 2
+                    new_name = f"{base} ({counter}){ext}"
+                    new_path = os.path.join(user_pdfs_dir, new_name)
+                    while os.path.exists(new_path):
+                        counter += 1
+                        new_name = f"{base} ({counter}){ext}"
+                        new_path = os.path.join(user_pdfs_dir, new_name)
+                    os.replace(tmp_path, new_path)
+                    safe_name = new_name
+                    file_path = new_path
+            except Exception:
+                # On any error during hashing, fall back to renaming to avoid overwrite
+                base, ext = os.path.splitext(safe_name)
+                counter = 2
+                new_name = f"{base} ({counter}){ext}"
+                new_path = os.path.join(user_pdfs_dir, new_name)
+                while os.path.exists(new_path):
+                    counter += 1
+                    new_name = f"{base} ({counter}){ext}"
+                    new_path = os.path.join(user_pdfs_dir, new_name)
+                os.replace(tmp_path, new_path)
+                safe_name = new_name
+                file_path = new_path
+        else:
+            # No conflict: finalize temp file to target path
+            os.replace(tmp_path, file_path)
+
+        # Immediately upsert into KB so the newly added/updated document is indexed
         lock = get_user_kb_lock(user_id)
         logging.info(f"Waiting for KB lock for user {user_id} (upload)")
         async with lock:
