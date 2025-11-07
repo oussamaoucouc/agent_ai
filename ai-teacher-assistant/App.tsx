@@ -5,6 +5,7 @@ import { ChatWindow } from './components/ChatWindow';
 import { InputBar } from './components/InputBar';
 import { AvatarView } from './components/AvatarView';
 import { LoginPage } from './components/LoginPage';
+import { DashboardPage } from './components/DashboardPage'
 import { useAudioRecorder } from './hooks/useAudioRecorder';
 import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent } from './services/apiService';
 import * as storage from './services/storageService';
@@ -63,6 +64,7 @@ Remember: Write as if you're speaking directly to a human. Use simple, clear lan
 
 const App: React.FC = () => {
     const [currentUser, setCurrentUser] = useState<string | null>(null);
+    const [isAdmin, setIsAdmin] = useState<boolean>(false);
     const [isInitialized, setIsInitialized] = useState<boolean>(false);
 
     const [sessions, setSessions] = useState<Session[]>([]);
@@ -90,7 +92,13 @@ const App: React.FC = () => {
     useEffect(() => {
         const user = storage.getCurrentUser();
         if (user) {
-            setCurrentUser(user);
+            if (user === 'admin') {
+                setCurrentUser('admin');
+                setIsAdmin(true);
+            } else {
+                setCurrentUser(user);
+                setIsAdmin(false);
+            }
         }
         setIsInitialized(true);
     }, []);
@@ -99,7 +107,7 @@ const App: React.FC = () => {
     useEffect(() => {
         const controller = new AbortController();
         const loadDocs = async () => {
-            if (!currentUser) {
+            if (!currentUser || isAdmin) {
                 setUploadedFiles([]);
                 return;
             }
@@ -118,7 +126,7 @@ const App: React.FC = () => {
         };
         loadDocs();
         return () => controller.abort();
-    }, [currentUser]);
+    }, [currentUser, isAdmin]);
 
     // Clean and format AI responses for better user experience
     const formatAssistantText = useCallback((text: string): string => {
@@ -223,7 +231,7 @@ const App: React.FC = () => {
 
     // Load sessions when user logs in
     useEffect(() => {
-        if (currentUser) {
+        if (currentUser && !isAdmin) {
             (async () => {
                 try {
                     const userSessions = await getSessions(currentUser);
@@ -239,11 +247,11 @@ const App: React.FC = () => {
                 }
             })();
         }
-    }, [currentUser]);
+    }, [currentUser, isAdmin]);
 
     // Save sessions whenever messages change for the active session
     useEffect(() => {
-        if (currentUser && activeSessionId) {
+        if (currentUser && !isAdmin && activeSessionId) {
             (async () => {
                 try {
                     const saved = await saveSessionMessages(activeSessionId, { user_id: currentUser, messages });
@@ -253,14 +261,21 @@ const App: React.FC = () => {
                 }
             })();
         }
-    }, [messages, activeSessionId, currentUser]);
+    }, [messages, activeSessionId, currentUser, isAdmin]);
 
 
-    const handleLogin = (username: string) => {
-        const sanitizedUsername = username.trim();
-        if (sanitizedUsername) {
-            storage.setCurrentUser(sanitizedUsername);
-            setCurrentUser(sanitizedUsername);
+    const handleLogin = (username: string, password?: string) => {
+        if (username.trim().toLowerCase() === 'admin' && password === 'admin') {
+            storage.setCurrentUser('admin');
+            setCurrentUser('admin');
+            setIsAdmin(true);
+        } else {
+            const sanitizedUsername = username.trim();
+            if (sanitizedUsername) {
+                storage.setCurrentUser(sanitizedUsername);
+                setCurrentUser(sanitizedUsername);
+                setIsAdmin(false);
+            }
         }
     };
     
@@ -284,6 +299,7 @@ const App: React.FC = () => {
         handleStopAudio();
         storage.clearCurrentUser();
         setCurrentUser(null);
+        setIsAdmin(false);
         setSessions([]);
         setMessages([]);
         setActiveSessionId(null);
@@ -671,6 +687,10 @@ const App: React.FC = () => {
     
     if (!currentUser) {
         return <LoginPage onLogin={handleLogin} />;
+    }
+
+    if (isAdmin) {
+        return <DashboardPage onLogout={handleLogout} />;
     }
 
     return (

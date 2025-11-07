@@ -153,8 +153,8 @@ async def run_rag_agent_async(query, user_id, session_id):
     knowledge=knowledge_base,
     think=False,
     search=True,
-    analyze=True,
-    add_few_shot=True,
+    analyze=False,
+    add_few_shot=False,
     add_instructions=False,
     )
 

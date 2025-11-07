@@ -42,6 +42,15 @@ export interface Session {
     createdAt: string; 
 }
 
+// Data type for the admin dashboard user list
+export interface AdminUser {
+    id: string;
+    name: string;
+    sessions: number;
+    documents: number;
+    createdAt: string;
+}
+
 // Updated voices from Kokoro TTS documentation
 export enum TTSVoice {
     AF_BELLA = 'af_bella',

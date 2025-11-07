@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
 
 interface LoginPageProps {
-    onLogin: (username: string) => void;
+    onLogin: (username: string, password?: string) => void;
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
     const [username, setUsername] = useState('');
+    const [password, setPassword] = useState('');
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (username.trim()) {
-            onLogin(username);
+            onLogin(username.trim(), password);
         }
     };
 
@@ -24,7 +25,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                     <p className="mt-2 text-gray-400">Please enter your name to begin.</p>
                 </div>
                 <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-                    <div className="rounded-md shadow-sm -space-y-px">
+                    <div className="rounded-md shadow-sm space-y-4">
                         <div>
                             <label htmlFor="username" className="sr-only">Username</label>
                             <input
@@ -36,6 +37,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                                 onChange={(e) => setUsername(e.target.value)}
                                 className="appearance-none rounded-lg relative block w-full px-3 py-3 border border-gray-600 bg-gray-900 placeholder-gray-500 text-white focus:outline-none focus:ring-sky-500 focus:border-sky-500 focus:z-10 sm:text-sm"
                                 placeholder="Your Name"
+                            />
+                        </div>
+                        <div>
+                            <label htmlFor="password-login" className="sr-only">Password</label>
+                             <input
+                                id="password-login"
+                                name="password"
+                                type="password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                className="appearance-none rounded-lg relative block w-full px-3 py-3 border border-gray-600 bg-gray-900 placeholder-gray-500 text-white focus:outline-none focus:ring-sky-500 focus:border-sky-500 focus:z-10 sm:text-sm"
+                                placeholder="Password (required for admin)"
                             />
                         </div>
                     </div>
