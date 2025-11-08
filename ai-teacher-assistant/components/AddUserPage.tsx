@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { AdminUser } from '../types';
 
 interface AddUserPageProps {
-    onAddUser: (newUser: { name: string; password: string; role: 'user' | 'admin' }) => void;
+    onAddUser: (newUser: Omit<AdminUser, 'id' | 'createdAt' | 'sessions' | 'documents'>) => void;
     onCancel: () => void;
 }
 
@@ -14,7 +14,7 @@ export const AddUserPage: React.FC<AddUserPageProps> = ({ onAddUser, onCancel })
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (username.trim() && password.trim()) {
-            onAddUser({ name: username.trim(), password: password.trim(), role });
+            onAddUser({ name: username.trim(), role });
         } else {
             alert('Username and password cannot be empty.');
         }

@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { AdminUser } from '../types';
-import { LogoutIcon, UsersIcon, ChatIcon, FolderOpenIcon, PlusIcon, TrashIcon, SearchIcon, EditIcon } from './icons';
+import { LogoutIcon, UsersIcon, ChatIcon, FolderOpenIcon, PlusIcon, TrashIcon, SearchIcon, EditIcon, SettingsIcon } from './icons';
 
 interface DashboardPageProps {
     users: AdminUser[];
     onLogout: () => void;
     onNavigateToAddUser: () => void;
+    onNavigateToConfig: () => void;
     onDeleteUser: (userId: string) => void;
     onEditUser: (user: AdminUser) => void;
 }
@@ -20,7 +21,7 @@ const StatCard: React.FC<{ title: string; value: string | number; icon: React.Re
     </div>
 );
 
-export const DashboardPage: React.FC<DashboardPageProps> = ({ users, onLogout, onNavigateToAddUser, onDeleteUser, onEditUser }) => {
+export const DashboardPage: React.FC<DashboardPageProps> = ({ users, onLogout, onNavigateToAddUser, onNavigateToConfig, onDeleteUser, onEditUser }) => {
     const [searchQuery, setSearchQuery] = useState('');
 
     const stats = useMemo(() => ({
@@ -53,13 +54,23 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ users, onLogout, o
                     <h1 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-teal-300 to-sky-500">
                         Admin Dashboard
                     </h1>
-                    <button
-                        onClick={onLogout}
-                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-300 bg-slate-800 hover:bg-red-800/50 hover:text-red-300 rounded-lg transition-colors"
-                    >
-                        <LogoutIcon className="w-5 h-5" />
-                        Logout
-                    </button>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={onNavigateToConfig}
+                            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-300 bg-slate-800 hover:bg-sky-800/50 hover:text-sky-300 rounded-lg transition-colors"
+                            title="Configuration"
+                        >
+                            <SettingsIcon className="w-5 h-5" />
+                            Configuration
+                        </button>
+                        <button
+                            onClick={onLogout}
+                            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-300 bg-slate-800 hover:bg-red-800/50 hover:text-red-300 rounded-lg transition-colors"
+                        >
+                            <LogoutIcon className="w-5 h-5" />
+                            Logout
+                        </button>
+                    </div>
                 </header>
 
                 {/* Main Content */}

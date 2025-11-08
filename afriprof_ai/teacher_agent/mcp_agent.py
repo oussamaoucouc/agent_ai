@@ -11,12 +11,10 @@ from agno.agent import Agent
 from agno.storage.postgres import PostgresStorage
 from agno.memory.v2.db.sqlite import SqliteMemoryDb
 from agno.memory.v2.memory import Memory
-from .config import (
-    DB_URL, get_current_model, OLLAMA_BASE_URL,
-    MCP_TRANSPORT, MCP_SERVER_URL, MCP_STDIO_COMMAND, MCP_STDIO_ARGS,
-)
+from . import config as cfg
 from agno.tools.mcp import MCPTools
 from mcp.shared.exceptions import McpError
+from contextlib import AsyncExitStack
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -78,7 +76,7 @@ async def run_agent_async(query, user_id, session_id):
     AGNO MCP agent using MCP server tools.
     Using cached knowledge base and memory DBs for better performance.
     """
-    logger.info(f"Starting MCP agent with Ollama at: {OLLAMA_BASE_URL}")
+    logger.info(f"Starting MCP agent with Ollama at: {cfg.OLLAMA_BASE_URL}")
     
     # Get cached knowledge base and memory DBs
     memory_mcp = await initialize_memory_dbs(user_id, session_id)
@@ -87,7 +85,7 @@ async def run_agent_async(query, user_id, session_id):
     # Memory DBs already initialized via the cached function
     # Common Agent configuration to avoid duplication across transports
     agent_common_kwargs = dict(
-        model=get_current_model(),
+        model=cfg.get_current_model(),
         name="mcp_llm_agent",
         instructions=dedent("""\
             You are an AI assistant that MUST use MCP tools to answer.
@@ -122,7 +120,7 @@ async def run_agent_async(query, user_id, session_id):
         add_history_to_messages=False,
         num_history_responses=2,
         monitoring=True,
-        storage=PostgresStorage(table_name="agent_session", db_url=DB_URL),
+        storage=PostgresStorage(table_name="agent_session", db_url=cfg.DB_URL),
         memory=memory_mcp,
         enable_user_memories=True,
         enable_session_summaries=True,
@@ -130,24 +128,47 @@ async def run_agent_async(query, user_id, session_id):
     
     # Connect to MCP server via configured transport
     try:
-        if MCP_TRANSPORT == "streamable-http":
-            if not MCP_SERVER_URL:
-                raise RuntimeError("MCP_SERVER_URL is required when MCP_TRANSPORT='streamable-http'")
-            logger.info(f"Connecting to MCP server at {MCP_SERVER_URL} via streamable-http...")
-            async with MCPTools(url=MCP_SERVER_URL, transport="streamable-http") as mcp_tools:
-                logger.info("Connected to MCP server")
+        if cfg.MCP_TRANSPORT == "streamable-http":
+            # Build list of MCP servers from runtime config
+            runtime_cfg = cfg.get_runtime_config()
+            servers = runtime_cfg.get("mcp_servers", []) or []
+            urls = [str(s.get("url", "")).strip() for s in servers if isinstance(s, dict) and str(s.get("url", "")).strip()]
+            labels = [str(s.get("label", "Server")) for s in servers if isinstance(s, dict) and str(s.get("url", "")).strip()]
 
-                MCP_agent = Agent(tools=[mcp_tools], **agent_common_kwargs)
+            # Fallback to single MCP_SERVER_URL if no list is provided
+            if not urls and cfg.MCP_SERVER_URL:
+                urls = [cfg.MCP_SERVER_URL]
+                labels = ["Active MCP Server"]
 
-                # Run the agent while MCP connection is open
+            if not urls:
+                raise RuntimeError("No MCP servers configured. Add at least one URL in the dashboard.")
+
+            logger.info(f"Connecting to {len(urls)} MCP server(s) via streamable-http...")
+            for i, u in enumerate(urls):
+                logger.info(f"MCP server [{i+1}/{len(urls)}]: {labels[i] if i < len(labels) else 'Server'} -> {u}")
+
+            # Open all MCP tool connections and create the agent with all tools
+            async with AsyncExitStack() as stack:
+                tools = []
+                for u in urls:
+                    try:
+                        t = await stack.enter_async_context(MCPTools(url=u, transport="streamable-http"))
+                        tools.append(t)
+                    except Exception as e:
+                        logger.error(f"Failed to connect MCP server {u}: {e}")
+                if not tools:
+                    raise RuntimeError("Failed to connect to any MCP servers.")
+
+                logger.info("Connected to MCP servers")
+                MCP_agent = Agent(tools=tools, **agent_common_kwargs)
                 response = await MCP_agent.arun(query)
-        elif MCP_TRANSPORT == "stdio":
-            if not MCP_STDIO_COMMAND:
+        elif cfg.MCP_TRANSPORT == "stdio":
+            if not cfg.MCP_STDIO_COMMAND:
                 raise RuntimeError("MCP_STDIO_COMMAND is required when MCP_TRANSPORT='stdio'")
             # Build a single command string, which is the recommended pattern in Agno docs
-            cmd = MCP_STDIO_COMMAND
-            if MCP_STDIO_ARGS:
-                cmd = " ".join([MCP_STDIO_COMMAND] + MCP_STDIO_ARGS)
+            cmd = cfg.MCP_STDIO_COMMAND
+            if cfg.MCP_STDIO_ARGS:
+                cmd = " ".join([cfg.MCP_STDIO_COMMAND] + cfg.MCP_STDIO_ARGS)
             logger.info(f"Starting MCP server via stdio: {cmd}")
             async with MCPTools(command=cmd, transport="stdio") as mcp_tools:
                 logger.info("Connected to MCP server (stdio)")

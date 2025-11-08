@@ -18,7 +18,11 @@ import {
     RenameSessionRequest,
     DeleteSessionRequest,
     SaveMessagesRequest,
-    AdminUser
+    AdminUser,
+    ConfigResponse,
+    ConfigUpdateRequest,
+    ModelsCatalogResponse,
+    ConfigPathResponse
 } from '../types';
 
 const handleResponse = async <T,>(response: Response): Promise<T> => {
@@ -314,4 +318,45 @@ export const loginUser = async (username: string, password: string, signal?: Abo
         signal,
     });
     return handleResponse<{ user_id: string; session_id: string; username: string; role: string }>(response);
+};
+
+// --- Admin Configuration API ---
+export const getConfig = async (user_id: string, signal?: AbortSignal): Promise<ConfigResponse> => {
+    const url = new URL(`${API_BASE_URL}/config`);
+    url.searchParams.set('user_id', user_id);
+    url.searchParams.set('ts', Date.now().toString());
+    const response = await fetch(url, { method: 'GET', signal, cache: 'no-store' });
+    return handleResponse<ConfigResponse>(response);
+};
+
+export const updateConfig = async (payload: ConfigUpdateRequest, signal?: AbortSignal): Promise<ConfigResponse> => {
+    const response = await fetch(`${API_BASE_URL}/config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal,
+    });
+    return handleResponse<ConfigResponse>(response);
+};
+
+export const getModelsCatalog = async (user_id: string, signal?: AbortSignal): Promise<ModelsCatalogResponse> => {
+    const url = new URL(`${API_BASE_URL}/models`);
+    url.searchParams.set('user_id', user_id);
+    url.searchParams.set('ts', Date.now().toString());
+    const response = await fetch(url, { method: 'GET', signal, cache: 'no-store' });
+    // Backend returns { models: string[] }; normalize to { available_models: string[] }
+    const raw = await response.json();
+    if (!response.ok) {
+        throw new Error(raw?.detail || `Failed to fetch models catalog: ${response.status}`);
+    }
+    const models = Array.isArray(raw?.models) ? raw.models : [];
+    return { available_models: models };
+};
+
+export const getConfigPath = async (user_id: string, signal?: AbortSignal): Promise<ConfigPathResponse> => {
+    const url = new URL(`${API_BASE_URL}/config_path`);
+    url.searchParams.set('user_id', user_id);
+    url.searchParams.set('ts', Date.now().toString());
+    const response = await fetch(url, { method: 'GET', signal, cache: 'no-store' });
+    return handleResponse<ConfigPathResponse>(response);
 };

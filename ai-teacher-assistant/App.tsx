@@ -6,10 +6,12 @@ import { InputBar } from './components/InputBar';
 import { AvatarView } from './components/AvatarView';
 import { LoginPage } from './components/LoginPage';
 import { DashboardPage } from './components/DashboardPage';
+import { ConfigPage } from './components/ConfigPage';
 import { AddUserPage } from './components/AddUserPage';
 import { EditUserPage } from './components/EditUserPage';
+import { Modal } from './components/Modal';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
-import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, listUserStats, createUser, deleteUser, loginUser, updateUser } from './services/apiService';
+import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, listUserStats, createUser, deleteUser, loginUser, updateUser, getModelsCatalog } from './services/apiService';
 import * as storage from './services/storageService';
 import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice, QueryMode, AdminUser } from './types';
 import { API_BASE_URL } from './constants';
@@ -56,7 +58,7 @@ const App: React.FC = () => {
     const [currentUsername, setCurrentUsername] = useState<string | null>(null);
     const [isAdmin, setIsAdmin] = useState<boolean>(false);
     const [isInitialized, setIsInitialized] = useState<boolean>(false);
-const [adminView, setAdminView] = useState<'dashboard' | 'addUser' | 'editUser'>('dashboard');
+const [adminView, setAdminView] = useState<'dashboard' | 'addUser' | 'editUser' | 'config'>('dashboard');
 const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
 const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
 
@@ -74,13 +76,56 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
 
     // New states for model and voice selection
     const [currentModel, setCurrentModel] = useState<string>('gemini-2.5-pro');
+    const [availableModels, setAvailableModels] = useState<string[]>([]);
     const [currentVoice, setCurrentVoice] = useState<TTSVoice>(TTSVoice.BF_EMMA);
+
+    const [modalConfig, setModalConfig] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        onCancel?: () => void;
+        confirmText?: string;
+        cancelText?: string;
+        showCancel?: boolean;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        onConfirm: () => {},
+    });
 
 
     const { isRecording, startRecording, stopRecording } = useAudioRecorder();
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const animationFrameIdRef = useRef<number | null>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
+
+    const showAlert = (title: string, message: string) => {
+        setModalConfig({
+            isOpen: true,
+            title,
+            message,
+            onConfirm: () => setModalConfig({ ...modalConfig, isOpen: false }),
+            showCancel: false,
+        });
+    };
+
+    const showConfirmation = (title: string, message: string, onConfirmAction: () => void) => {
+        setModalConfig({
+            isOpen: true,
+            title,
+            message,
+            onConfirm: () => {
+                onConfirmAction();
+                setModalConfig({ ...modalConfig, isOpen: false });
+            },
+            onCancel: () => setModalConfig({ ...modalConfig, isOpen: false }),
+            showCancel: true,
+            confirmText: 'OK',
+            cancelText: 'Annuler',
+        });
+    };
 
     useEffect(() => {
         const userId = storage.getCurrentUser();
@@ -93,6 +138,26 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
         }
         setIsInitialized(true);
     }, []);
+
+    // Fetch public model catalog so admin-added models are visible to all users
+    useEffect(() => {
+        const controller = new AbortController();
+        const loadModels = async () => {
+            if (!currentUser) return;
+            try {
+                const { available_models } = await getModelsCatalog(currentUser, controller.signal);
+                const list = Array.isArray(available_models) ? available_models : [];
+                setAvailableModels(list);
+                if (list.length > 0 && !list.includes(currentModel)) {
+                    setCurrentModel(list[0]);
+                }
+            } catch (err) {
+                console.error('Failed to load models catalog:', err);
+            }
+        };
+        loadModels();
+        return () => controller.abort();
+    }, [currentUser]);
 
     const refreshAdminUsers = useCallback(async () => {
         try {
@@ -295,7 +360,7 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                 setAdminView('dashboard');
             }
         } catch (err) {
-            alert('Login failed. Please check your credentials.');
+            showAlert('Login Failed', 'Please check your credentials.');
             console.error('Login failed:', err);
         }
     };
@@ -415,22 +480,30 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
     };
     
     const handleDeleteSession = async (sessionId: string) => {
-        if (!currentUser || !window.confirm("Are you sure you want to delete this session? This action cannot be undone.")) return;
-        try {
-            await apiDeleteSession(sessionId, { user_id: currentUser });
-            const remainingSessions = sessions.filter(s => s.id !== sessionId);
-            setSessions(remainingSessions);
-            if (activeSessionId === sessionId) {
-                if (remainingSessions.length > 0) {
-                    const sorted = [...remainingSessions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-                    handleSelectSession(sorted[0].id, sorted);
-                } else {
-                    handleNewSession();
+        if (!currentUser) return;
+        
+        showConfirmation(
+            'Delete Session',
+            'Are you sure you want to delete this session? This action cannot be undone.',
+            async () => {
+                try {
+                    await apiDeleteSession(sessionId, { user_id: currentUser });
+                    const remainingSessions = sessions.filter(s => s.id !== sessionId);
+                    setSessions(remainingSessions);
+                    if (activeSessionId === sessionId) {
+                        if (remainingSessions.length > 0) {
+                            const sorted = [...remainingSessions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                            handleSelectSession(sorted[0].id, sorted);
+                        } else {
+                            handleNewSession();
+                        }
+                    }
+                } catch (err) {
+                    console.error('Failed to delete session:', err);
+                    showAlert('Error', 'Failed to delete the session. Please try again.');
                 }
             }
-        } catch (err) {
-            console.error('Failed to delete session:', err);
-        }
+        );
     };
 
     const handleRenameSession = async (sessionId: string, newName: string) => {
@@ -708,7 +781,7 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
             await refreshAdminUsers();
             setAdminView('dashboard');
         } catch (err) {
-            alert('Failed to create user.');
+            showAlert('Error', 'Failed to create user.');
             console.error('Create user failed:', err);
         }
     };
@@ -727,7 +800,7 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
             setEditingUser(null);
             setAdminView('dashboard');
         } catch (err) {
-            alert('Failed to update user.');
+            showAlert('Error', 'Failed to update user.');
             console.error('Update user failed:', err);
         }
     };
@@ -738,135 +811,170 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
     };
 
     const handleDeleteAdminUser = async (userId: string) => {
-        if (!window.confirm('Delete this user and all their data?')) return;
-        try {
-            await deleteUser(userId);
-            await refreshAdminUsers();
-        } catch (err) {
-            alert('Failed to delete user.');
-            console.error('Delete user failed:', err);
-        }
+        showConfirmation(
+            'Delete User',
+            'Are you sure you want to delete this user and all their data? This is irreversible.',
+            async () => {
+                try {
+                    await deleteUser(userId);
+                    await refreshAdminUsers();
+                } catch (err) {
+                    showAlert('Error', 'Failed to delete user.');
+                    console.error('Delete user failed:', err);
+                }
+            }
+        );
     };
     
     const isSpeaking = !!activeAudio || isRecording;
     const isConversationStarted = messages.length > 1;
 
-    if (!isInitialized) {
-        return null; // Or a loading spinner
-    }
+    const renderPage = () => {
+        if (!isInitialized) {
+            return null; // Or a loading spinner
+        }
+        
+        if (!currentUser) {
+            return <LoginPage onLogin={handleLogin} />;
+        }
     
-    if (!currentUser) {
-        return <LoginPage onLogin={handleLogin} />;
-    }
-
-    if (isAdmin) {
-        if (adminView === 'addUser') {
-            return <AddUserPage onAddUser={handleAddAdminUser} onCancel={() => setAdminView('dashboard')} />;
+        if (isAdmin) {
+            switch (adminView) {
+                case 'addUser':
+                    return <AddUserPage onAddUser={handleAddAdminUser} onCancel={() => setAdminView('dashboard')} />;
+                case 'editUser':
+                    return editingUser ? (
+                        <EditUserPage
+                            userId={editingUser.id}
+                            username={editingUser.name}
+                            currentRole={editingUser.role}
+                            onSave={handleSaveEditedUser}
+                            onCancel={handleCancelEditUser}
+                        />
+                    ) : <DashboardPage 
+                            users={adminUsers} 
+                            onLogout={handleLogout}
+                            onNavigateToAddUser={() => setAdminView('addUser')}
+                            onNavigateToConfig={() => setAdminView('config')}
+                            onDeleteUser={handleDeleteAdminUser}
+                            onEditUser={handleEditAdminUser}
+                        />;
+                case 'config':
+                    return <ConfigPage onCancel={() => setAdminView('dashboard')} onShowAlert={(message, title) => showAlert(title, message)} />;
+                default:
+                    return (
+                        <DashboardPage 
+                            users={adminUsers} 
+                            onLogout={handleLogout}
+                            onNavigateToAddUser={() => setAdminView('addUser')}
+                            onNavigateToConfig={() => setAdminView('config')}
+                            onDeleteUser={handleDeleteAdminUser}
+                            onEditUser={handleEditAdminUser}
+                        />
+                    );
+            }
         }
-        if (adminView === 'editUser' && editingUser) {
-            return (
-                <EditUserPage
-                    userId={editingUser.id}
-                    username={editingUser.name}
-                    currentRole={editingUser.role}
-                    onSave={handleSaveEditedUser}
-                    onCancel={handleCancelEditUser}
-                />
-            );
-        }
+    
         return (
-            <DashboardPage 
-                users={adminUsers} 
-                onLogout={handleLogout}
-                onNavigateToAddUser={() => setAdminView('addUser')}
-                onDeleteUser={handleDeleteAdminUser}
-                onEditUser={handleEditAdminUser}
-            />
-        );
-    }
-
-    return (
-        <div className="flex h-screen w-full font-sans bg-gradient-to-br from-gray-900 to-gray-800 relative overflow-hidden">
-            {isSidebarOpen && (
-                <div 
-                    className="absolute inset-0 bg-black/60 z-30"
-                    onClick={() => setIsSidebarOpen(false)}
-                    aria-hidden="true"
-                ></div>
-            )}
-            <Sidebar 
-                isSidebarOpen={isSidebarOpen}
-                onClose={() => setIsSidebarOpen(false)}
-                uploadedFiles={uploadedFiles} 
-                onFileChange={handleFileChange}
-                onDeleteDocument={handleDeleteDocument}
-                sessions={sessions}
-                activeSessionId={activeSessionId}
-                onNewSession={handleNewSession}
-                onSelectSession={(id) => handleSelectSession(id, sessions)}
-                onRenameSession={handleRenameSession}
-                onDeleteSession={handleDeleteSession}
-                onLogout={handleLogout}
-                currentModel={currentModel}
-                currentVoice={currentVoice}
-                onModelChange={handleModelChange}
-                onVoiceChange={handleVoiceChange}
-            />
-            <main className="flex flex-col flex-1 h-screen overflow-hidden">
-                <Header 
-                    user={currentUsername ?? currentUser ?? ''} 
-                    onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
+            <div className="flex h-screen w-full font-sans bg-gradient-to-br from-gray-900 to-gray-800 relative overflow-hidden">
+                {isSidebarOpen && (
+                    <div 
+                        className="absolute inset-0 bg-black/60 z-30"
+                        onClick={() => setIsSidebarOpen(false)}
+                        aria-hidden="true"
+                    ></div>
+                )}
+                <Sidebar 
+                    isSidebarOpen={isSidebarOpen}
+                    onClose={() => setIsSidebarOpen(false)}
+                    uploadedFiles={uploadedFiles} 
+                    onFileChange={handleFileChange}
+                    onDeleteDocument={handleDeleteDocument}
+                    sessions={sessions}
+                    activeSessionId={activeSessionId}
+                    onNewSession={handleNewSession}
+                    onSelectSession={(id) => handleSelectSession(id, sessions)}
+                    onRenameSession={handleRenameSession}
+                    onDeleteSession={handleDeleteSession}
+                    onLogout={handleLogout}
+                    currentModel={currentModel}
+                    currentVoice={currentVoice}
+                    onModelChange={handleModelChange}
+                    onVoiceChange={handleVoiceChange}
+                    availableModels={availableModels}
                 />
-                <div className="flex-1 flex flex-col p-4 md:p-6 lg:p-8 overflow-hidden">
-                    <ChatWindow 
-                        messages={messages} 
-                        isLoading={isLoading}
-                        playingAudioId={playingAudioId}
-                        onPlayAudio={handlePlayAudio}
-                        onStopAudio={handleStopAudio}
+                <main className="flex flex-col flex-1 h-screen overflow-hidden">
+                    <Header 
+                        user={currentUsername ?? currentUser ?? ''} 
+                        onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
                     />
-                    <div className="pt-4 flex-shrink-0">
-                        <div className="flex items-center justify-end gap-3 mb-3">
-                            <span className="text-sm font-medium text-gray-400">Spoken Responses</span>
-                            <button
-                                onClick={() => setSpokenResponses(!spokenResponses)}
-                                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${
-                                    spokenResponses ? 'bg-sky-600' : 'bg-gray-600'
-                                }`}
-                                aria-pressed={spokenResponses}
-                            >
-                                <span
-                                    aria-hidden="true"
-                                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                                        spokenResponses ? 'translate-x-5' : 'translate-x-0'
-                                    }`}
-                                />
-                            </button>
-                        </div>
-                        <InputBar 
-                            onSend={handleSendText} 
-                            isRecording={isRecording} 
-                            onStartRecording={startRecording} 
-                            onStopRecording={handleStopRecording} 
+                    <div className="flex-1 flex flex-col p-4 md:p-6 lg:p-8 overflow-hidden">
+                        <ChatWindow 
+                            messages={messages} 
                             isLoading={isLoading}
-                            queryMode={queryMode}
-                            onQueryModeChange={setQueryMode}
-                            onCancel={handleCancelGeneration}
+                            playingAudioId={playingAudioId}
+                            onPlayAudio={handlePlayAudio}
+                            onStopAudio={handleStopAudio}
+                        />
+                        <div className="pt-4 flex-shrink-0">
+                            <div className="flex items-center justify-end gap-3 mb-3">
+                                <span className="text-sm font-medium text-gray-400">Spoken Responses</span>
+                                <button
+                                    onClick={() => setSpokenResponses(!spokenResponses)}
+                                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${
+                                        spokenResponses ? 'bg-sky-600' : 'bg-gray-600'
+                                    }`}
+                                    aria-pressed={spokenResponses}
+                                >
+                                    <span
+                                        aria-hidden="true"
+                                        className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                            spokenResponses ? 'translate-x-5' : 'translate-x-0'
+                                        }`}
+                                    />
+                                </button>
+                            </div>
+                            <InputBar 
+                                onSend={handleSendText} 
+                                isRecording={isRecording} 
+                                onStartRecording={startRecording} 
+                                onStopRecording={handleStopRecording} 
+                                isLoading={isLoading}
+                                queryMode={queryMode}
+                                onQueryModeChange={setQueryMode}
+                                onCancel={handleCancelGeneration}
+                            />
+                        </div>
+                    </div>
+                </main>
+                <aside className="w-96 flex-shrink-0 bg-gray-800/30 border-l border-gray-700 hidden lg:flex flex-col p-6">
+                    <div className="flex-1 flex items-center justify-center">
+                        <AvatarView 
+                            isSpeaking={isSpeaking} 
+                            currentViseme={currentViseme} 
+                            isLoading={isLoading}
+                            isConversationStarted={isConversationStarted}
                         />
                     </div>
-                </div>
-            </main>
-            <aside className="w-96 flex-shrink-0 bg-gray-800/30 border-l border-gray-700 hidden lg:flex flex-col p-6">
-                <div className="flex-1 flex items-center justify-center">
-                    <AvatarView 
-                        isSpeaking={isSpeaking} 
-                        currentViseme={currentViseme} 
-                        isLoading={isLoading}
-                        isConversationStarted={isConversationStarted}
-                    />
-                </div>
-            </aside>
-        </div>
+                </aside>
+            </div>
+        );
+    };
+
+    return (
+        <>
+            {renderPage()}
+            <Modal
+                isOpen={modalConfig.isOpen}
+                title={modalConfig.title}
+                message={modalConfig.message}
+                onConfirm={modalConfig.onConfirm}
+                onCancel={modalConfig.onCancel}
+                confirmText={modalConfig.confirmText}
+                cancelText={modalConfig.cancelText}
+                showCancel={modalConfig.showCancel}
+            />
+        </>
     );
 };
 

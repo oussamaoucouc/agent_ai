@@ -35,6 +35,7 @@ dependencies = [
     "torchaudio>=2.6.0",
     "transformers>=4.51.3",
     "tts>=0.22.0",
-    "uvicorn>=0.34.2",
+    "uvicorn[standard]>=0.34.2",
     "vosk>=0.3.45",
+    "websockets>=15.0.1",
 ]

@@ -172,3 +172,38 @@ export interface SaveMessagesRequest {
 export interface ListDocumentsResponse {
     documents: { filename: string; path: string }[];
 }
+
+// --- Admin Configuration types ---
+export interface ConfigResponse {
+    model: string;
+    voice: string;
+    ollama_base_url: string;
+    mcp_transport: string;
+    mcp_server_url?: string | null;
+    mcp_stdio_command?: string | null;
+    mcp_stdio_args: string[];
+    available_models: string[];
+    mcp_servers: { label: string; url: string }[];
+}
+
+export interface ConfigUpdateRequest {
+    user_id: string;
+    model?: string;
+    voice?: string;
+    ollama_base_url?: string;
+    mcp_transport?: string;
+    mcp_server_url?: string | null;
+    mcp_stdio_command?: string | null;
+    mcp_stdio_args?: string[];
+    available_models?: string[];
+    mcp_servers?: { label: string; url: string }[];
+}
+
+export interface ModelsCatalogResponse {
+    available_models: string[];
+}
+
+export interface ConfigPathResponse {
+    config_state_path: string;
+    exists: boolean;
+}

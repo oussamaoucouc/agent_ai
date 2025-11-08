@@ -2,7 +2,7 @@
 API endpoints for the AI Teacher Assistant application (FastAPI app instance).
 """
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, BackgroundTasks
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, constr
 from typing import Optional, Dict, Any
@@ -166,6 +166,34 @@ class SetVoiceRequest(BaseModel):
     user_id: str
     session_id: str
     voice: str
+
+# Configuration models
+class ConfigResponse(BaseModel):
+    model: str
+    voice: str
+    ollama_base_url: str
+    mcp_transport: str
+    mcp_server_url: Optional[str] = None
+    mcp_stdio_command: Optional[str] = None
+    mcp_stdio_args: list[str] = []
+    available_models: list[str] = []
+    mcp_servers: list[Dict[str, str]] = []
+
+class ConfigUpdateRequest(BaseModel):
+    user_id: str
+    model: Optional[str] = None
+    voice: Optional[str] = None
+    ollama_base_url: Optional[str] = None
+    mcp_transport: Optional[str] = None
+    mcp_server_url: Optional[str] = None
+    mcp_stdio_command: Optional[str] = None
+    mcp_stdio_args: Optional[list[str]] = None
+    available_models: Optional[list[str]] = None
+    mcp_servers: Optional[list[Dict[str, str]]] = None
+
+class ConfigPathResponse(BaseModel):
+    config_state_path: str
+    exists: bool
 
 class CancelRequest(BaseModel):
     user_id: str
@@ -1351,6 +1379,67 @@ async def set_voice_endpoint(request: SetVoiceRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error setting voice: {str(e)}")
 
+@app.get("/config", response_model=ConfigResponse)
+async def get_config(user_id: str):
+    """Return current runtime configuration (admin-only)."""
+    try:
+        # Verify admin
+        with users.SessionLocal() as db:
+            u = db.query(users.UserDB).filter(users.UserDB.id == user_id).first()
+            if not u or u.role != "admin":
+                raise HTTPException(status_code=403, detail="Admin access required")
+        from teacher_agent.config import get_runtime_config
+        cfg = get_runtime_config()
+        return ConfigResponse(**cfg)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching config: {str(e)}")
+
+@app.put("/config", response_model=ConfigResponse)
+async def update_config(request: ConfigUpdateRequest):
+    """Update runtime configuration (admin-only)."""
+    try:
+        # Verify admin
+        with users.SessionLocal() as db:
+            u = db.query(users.UserDB).filter(users.UserDB.id == request.user_id).first()
+            if not u or u.role != "admin":
+                raise HTTPException(status_code=403, detail="Admin access required")
+        from teacher_agent.config import update_runtime_config
+        cfg = update_runtime_config({
+            "model": request.model,
+            "voice": request.voice,
+            "ollama_base_url": request.ollama_base_url,
+            "mcp_transport": request.mcp_transport,
+            "mcp_server_url": request.mcp_server_url,
+            "mcp_stdio_command": request.mcp_stdio_command,
+            "mcp_stdio_args": request.mcp_stdio_args,
+            "available_models": request.available_models,
+            "mcp_servers": request.mcp_servers,
+        })
+        return ConfigResponse(**cfg)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating config: {str(e)}")
+
+@app.get("/config_path", response_model=ConfigPathResponse)
+async def get_config_path(user_id: str):
+    """Return the absolute path to the persisted runtime config (admin-only)."""
+    try:
+        # Verify admin
+        with users.SessionLocal() as db:
+            u = db.query(users.UserDB).filter(users.UserDB.id == user_id).first()
+            if not u or u.role != "admin":
+                raise HTTPException(status_code=403, detail="Admin access required")
+        from teacher_agent.config import CONFIG_STATE_PATH
+        path_str = str(CONFIG_STATE_PATH.resolve())
+        return ConfigPathResponse(config_state_path=path_str, exists=os.path.exists(CONFIG_STATE_PATH))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching config path: {str(e)}")
+
 # Health and monitoring endpoints
 @app.get("/")
 async def root():
@@ -1361,6 +1450,20 @@ async def root():
         "timestamp": datetime.datetime.now().isoformat(),
         "docs": "/docs"
     }
+
+# Fallback to neutralize unwanted WebSocket requests hitting `/ws/config`.
+# We do not support WebSocket-based config updates. Returning 410 clearly
+# communicates that the endpoint is intentionally disabled and stops retry loops.
+@app.get("/ws/config")
+async def ws_config_fallback():
+    return JSONResponse(
+        status_code=410,
+        content={
+            "status": "disabled",
+            "message": "WebSocket config updates are disabled; use HTTP /config",
+        },
+    )
+
 
 @app.get("/health")
 async def health_check():
@@ -1389,3 +1492,22 @@ async def deployment_status():
         "environment": "production",
         "version": "1.0.0"
     }
+class ModelsCatalogResponse(BaseModel):
+    models: list[str]
+
+@app.get("/models", response_model=ModelsCatalogResponse)
+async def get_models(user_id: str):
+    """Return available models catalog to any authenticated user."""
+    try:
+        # Verify user exists (any role)
+        with users.SessionLocal() as db:
+            u = db.query(users.UserDB).filter(users.UserDB.id == user_id).first()
+            if not u:
+                raise HTTPException(status_code=401, detail="Invalid user")
+        from teacher_agent.config import get_runtime_config
+        cfg = get_runtime_config()
+        return ModelsCatalogResponse(models=cfg.get("available_models", []))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching models: {str(e)}")
