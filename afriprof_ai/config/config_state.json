@@ -9,7 +9,6 @@
   "available_models": [
     "granite4:tiny-h",
     "mistral:7b",
-    "phi4-mini:3.8b",
     "ai_teacher_qwen"
   ],
   "available_voices": [
@@ -35,6 +34,10 @@
     {
       "label": "Fetch web",
       "url": "https://server.smithery.ai/@smithery-ai/fetch/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1"
+    },
+    {
+      "label": "financial search",
+      "url": "https://server.smithery.ai/@hollaugo/financial-research-mcp-server/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1"
     }
   ]
 }
