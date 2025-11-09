@@ -1,6 +1,6 @@
 {
   "model_id": "granite4:tiny-h",
-  "voice": "bf_isabella",
+  "voice": "af_sky",
   "ollama_base_url": "http://localhost:11434",
   "mcp_transport": "streamable-http",
   "mcp_server_url": "https://server.smithery.ai/@Aas-ee/open-websearch/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1",
@@ -14,7 +14,10 @@
   ],
   "available_voices": [
     "af_sky",
-    "af_nicole"
+    "af_nicole",
+    "bf_emma",
+    "bf_isabella",
+    "am_adam"
   ],
   "mcp_servers": [
     {
@@ -22,12 +25,12 @@
       "url": "https://server.smithery.ai/@Aas-ee/open-websearch/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1"
     },
     {
-      "label": "code documentation",
-      "url": "https://server.smithery.ai/@docfork/mcp/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1"
-    },
-    {
       "label": "google scholar search",
       "url": "https://server.smithery.ai/@mochow13/google-scholar-mcp/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1"
+    },
+    {
+      "label": "weather",
+      "url": "https://server.smithery.ai/@isdaniel/mcp_weather_server/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1"
     }
   ]
 }

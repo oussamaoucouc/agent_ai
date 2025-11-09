@@ -13,6 +13,12 @@ from agno.memory.v2.db.sqlite import SqliteMemoryDb
 from agno.memory.v2.memory import Memory
 from . import config as cfg
 from agno.tools.mcp import MCPTools
+try:
+    # Optional advanced params for streamable-http to increase timeouts
+    from agno.tools.mcp import StreamableHTTPClientParams  # available in Agno >=1.8
+    HAS_STREAMABLE_PARAMS = True
+except Exception:
+    HAS_STREAMABLE_PARAMS = False
 from mcp.shared.exceptions import McpError
 from contextlib import AsyncExitStack
 from agno.models.ollama import Ollama
@@ -100,30 +106,23 @@ async def run_agent_async(query, user_id, session_id):
         model=session_model,
         name="mcp_llm_agent",
         instructions=dedent("""\
-            You are an AI assistant that MUST use MCP tools to answer.
-            Presentation requirements:
-            - Always choose and invoke the most relevant MCP tool(s).
-            - Do not speculate; rely only on tool outputs.
-            - If tools are insufficient, reply exactly:
+            You are an AI assistant that uses MCP tools to produce accurate, helpful answers.
+            Requirements:
+            - Select and invoke the most relevant MCP tool(s) for the query.
+            - Do not invent facts; rely strictly on tool outputs.
+            - If tools are insufficient or unavailable, reply exactly:
               "Unable to answer with available MCP tools."
-            - When tools provide sources, include concise citations or identifiers.
+            - When tools provide sources, include brief citations (title + link or identifier).
 
-            Format every response using Markdown with these sections:
-            - **Title**: one line summarizing the request.
-            - **Key Findings**: numbered list of 2–6 high-impact points.
-            - **Details**: short bullets grouped logically; avoid redundancy.
-            - **Conclusion**: crisp takeaway or recommended next step.
-            - **Notes**: caveats, data gaps, or limitations.
-            - **Summary**: one-paragraph recap in plain language.
-
-            Style guidelines:
-            - Use bold section headers and short sentences.
-            - Prefer facts, numbers, and clear attributions.
-            - Keep answers concise and factual based on tool results.
+            Response style (user-friendly):
+            - Start with a direct, one‑sentence answer.
+            - Follow with 3–6 concise bullets for key details, steps, or context.
+            - Use plain language; avoid heavy templates and unnecessary headings.
+            - Keep it short; prefer clarity over exhaustiveness.
         """),
         markdown=True,
-        show_tool_calls=True,
-        reasoning=True,
+        show_tool_calls=False,
+        reasoning=False,
         session_id=storage_session_id,
         user_id=user_id,
         session_state={"user_id": user_id, "session_id": session_id},
@@ -159,19 +158,52 @@ async def run_agent_async(query, user_id, session_id):
             for i, u in enumerate(urls):
                 logger.info(f"MCP server [{i+1}/{len(urls)}]: {labels[i] if i < len(labels) else 'Server'} -> {u}")
 
+            # Helper: robust connect with retry and longer timeouts while keeping streamable-http
+            async def _connect_streamable_http(u: str, stack: AsyncExitStack):
+                last_err = None
+                # Attempt simple pattern first, then advanced params with longer timeouts
+                for attempt in range(2):
+                    try:
+                        if attempt == 0:
+                            t = await stack.enter_async_context(
+                                MCPTools(transport="streamable-http", url=u)
+                            )
+                        else:
+                            if HAS_STREAMABLE_PARAMS:
+                                params = StreamableHTTPClientParams(
+                                    url=u,
+                                    timeout=30,
+                                    sse_read_timeout=30,
+                                    terminate_on_close=True,
+                                )
+                                t = await stack.enter_async_context(
+                                    MCPTools(transport="streamable-http", server_params=params)
+                                )
+                            else:
+                                # If advanced params are unavailable, repeat simple attempt
+                                t = await stack.enter_async_context(
+                                    MCPTools(transport="streamable-http", url=u)
+                                )
+                        logger.info(f"Connected MCP server: {u} (attempt {attempt+1})")
+                        return t
+                    except Exception as e:
+                        last_err = e
+                        logger.warning(f"MCP connect attempt {attempt+1} failed for {u}: {e}")
+                        await asyncio.sleep(0.5)
+                logger.error(f"Failed to connect MCP server {u}: {last_err}")
+                return None
+
             # Open all MCP tool connections and create the agent with all tools
             async with AsyncExitStack() as stack:
                 tools = []
                 for u in urls:
-                    try:
-                        t = await stack.enter_async_context(MCPTools(url=u, transport="streamable-http"))
+                    t = await _connect_streamable_http(u, stack)
+                    if t is not None:
                         tools.append(t)
-                    except Exception as e:
-                        logger.error(f"Failed to connect MCP server {u}: {e}")
                 if not tools:
-                    raise RuntimeError("Failed to connect to any MCP servers.")
+                    logger.warning("No MCP servers connected. Returning fallback message.")
+                    return "Unable to answer with available MCP tools."
 
-                logger.info("Connected to MCP servers")
                 MCP_agent = Agent(tools=tools, **agent_common_kwargs)
                 response = await MCP_agent.arun(query)
         elif cfg.MCP_TRANSPORT == "stdio":
