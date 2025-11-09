@@ -359,6 +359,9 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
         if (!name || !password) return;
         try {
             const res = await loginUser(name, password);
+            if (res.token) {
+                storage.setAuthToken(res.token);
+            }
             storage.setCurrentUser(res.user_id);
             storage.setCurrentUsername(res.username);
             storage.setCurrentUserRole(res.role === 'admin' ? 'admin' : 'user');

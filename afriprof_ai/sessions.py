@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, constr
 from typing import Optional
 from sqlalchemy import create_engine, Column, String, Text, DateTime, ForeignKey, inspect
@@ -7,6 +7,7 @@ from datetime import datetime
 from teacher_agent.config import DB_URL, get_current_voice, set_voice
 import uuid
 import logging
+from auth import get_user_from_auth_header
 
 # SQLAlchemy base and engine
 Base = declarative_base()
@@ -203,21 +204,30 @@ router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
 @router.get("", response_model=list[SessionModel])
-async def list_sessions(user_id: str = Query(..., min_length=1), db: SASession = Depends(get_db)):
+async def list_sessions(user_id: str = Query(None), request: Request = None, db: SASession = Depends(get_db)):
     try:
-        sessions = db.query(SessionDB).filter(SessionDB.user_id == user_id).order_by(SessionDB.created_at.desc()).all()
+        # Derive identity from bearer token if present
+        token_payload = get_user_from_auth_header(request.headers.get("Authorization")) if request else None
+        uid = user_id or (token_payload.get("uid") if token_payload else None)
+        if not uid:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        sessions = db.query(SessionDB).filter(SessionDB.user_id == uid).order_by(SessionDB.created_at.desc()).all()
         return [_db_to_session_model(s) for s in sessions]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching sessions: {str(e)}")
 
 
 @router.post("", response_model=SessionModel)
-async def create_session(request: CreateSessionRequest, db: SASession = Depends(get_db)):
+async def create_session(request: CreateSessionRequest, http_request: Request = None, db: SASession = Depends(get_db)):
     try:
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization")) if http_request else None
+        uid = (token_payload.get("uid") if token_payload else request.user_id)
+        if not uid:
+            raise HTTPException(status_code=401, detail="Unauthorized")
         session_id = str(uuid.uuid4())
         now = datetime.utcnow()
         name = f"Session - {datetime.now().isoformat()}"
-        s = SessionDB(id=session_id, user_id=request.user_id, name=name, created_at=now)
+        s = SessionDB(id=session_id, user_id=uid, name=name, created_at=now)
         db.add(s)
         greet_msg = MessageDB(
             id=str(uuid.uuid4()),
@@ -228,10 +238,10 @@ async def create_session(request: CreateSessionRequest, db: SASession = Depends(
         )
         db.add(greet_msg)
         # Ensure user-level settings exist once; do not duplicate per session
-        if not db.query(SessionSettingsDB).filter(SessionSettingsDB.user_id == request.user_id).first():
+        if not db.query(SessionSettingsDB).filter(SessionSettingsDB.user_id == uid).first():
             default_voice = get_current_voice()
             default_model = get_current_model_id()
-            db.add(SessionSettingsDB(user_id=request.user_id, voice=default_voice, model_id=default_model, updated_at=now))
+            db.add(SessionSettingsDB(user_id=uid, voice=default_voice, model_id=default_model, updated_at=now))
         db.commit()
         db.refresh(s)
         db.refresh(greet_msg)
@@ -242,9 +252,13 @@ async def create_session(request: CreateSessionRequest, db: SASession = Depends(
 
 
 @router.put("/{session_id}/rename", response_model=SessionModel)
-async def rename_session(session_id: str, request: RenameSessionRequest, db: SASession = Depends(get_db)):
+async def rename_session(session_id: str, request: RenameSessionRequest, http_request: Request = None, db: SASession = Depends(get_db)):
     try:
-        s = db.query(SessionDB).filter(SessionDB.id == session_id, SessionDB.user_id == request.user_id).first()
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization")) if http_request else None
+        uid = (token_payload.get("uid") if token_payload else request.user_id)
+        if not uid:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        s = db.query(SessionDB).filter(SessionDB.id == session_id, SessionDB.user_id == uid).first()
         if not s:
             raise HTTPException(status_code=404, detail="Session not found")
         s.name = request.name
@@ -259,9 +273,13 @@ async def rename_session(session_id: str, request: RenameSessionRequest, db: SAS
 
 
 @router.delete("/{session_id}")
-async def delete_session(session_id: str, request: DeleteSessionRequest, db: SASession = Depends(get_db)):
+async def delete_session(session_id: str, request: DeleteSessionRequest, http_request: Request = None, db: SASession = Depends(get_db)):
     try:
-        s = db.query(SessionDB).filter(SessionDB.id == session_id, SessionDB.user_id == request.user_id).first()
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization")) if http_request else None
+        uid = (token_payload.get("uid") if token_payload else request.user_id)
+        if not uid:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        s = db.query(SessionDB).filter(SessionDB.id == session_id, SessionDB.user_id == uid).first()
         if not s:
             raise HTTPException(status_code=404, detail="Session not found")
         db.delete(s)
@@ -281,17 +299,21 @@ class SessionSettingsResponse(BaseModel):
 
 
 @router.get("/{session_id}/settings", response_model=SessionSettingsResponse)
-async def get_session_settings(session_id: str, user_id: str = Query(..., min_length=1), db: SASession = Depends(get_db)):
+async def get_session_settings(session_id: str, user_id: str = Query(None), request: Request = None, db: SASession = Depends(get_db)):
     """Return per-session settings (model and voice), falling back to global defaults if unset."""
     try:
-        settings = db.query(SessionSettingsDB).filter(SessionSettingsDB.user_id == user_id).first()
+        token_payload = get_user_from_auth_header(request.headers.get("Authorization")) if request else None
+        uid = user_id or (token_payload.get("uid") if token_payload else None)
+        if not uid:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        settings = db.query(SessionSettingsDB).filter(SessionSettingsDB.user_id == uid).first()
 
         # Resolve with fallbacks
-        resolved_model = get_session_model_id(db, user_id, session_id)
-        resolved_voice = get_session_voice(db, user_id, session_id)
+        resolved_model = get_session_model_id(db, uid, session_id)
+        resolved_voice = get_session_voice(db, uid, session_id)
 
         logging.info(
-            f"Settings resolve: user={user_id}, session={session_id}, "
+            f"Settings resolve: user={uid}, session={session_id}, "
             f"model_id={resolved_model}, voice={resolved_voice}, exists={bool(settings)} (user-level)"
         )
 
@@ -301,9 +323,13 @@ async def get_session_settings(session_id: str, user_id: str = Query(..., min_le
 
 
 @router.put("/{session_id}/messages", response_model=SessionModel)
-async def save_session_messages(session_id: str, request: SaveMessagesRequest, db: SASession = Depends(get_db)):
+async def save_session_messages(session_id: str, request: SaveMessagesRequest, http_request: Request = None, db: SASession = Depends(get_db)):
     try:
-        s = db.query(SessionDB).filter(SessionDB.id == session_id, SessionDB.user_id == request.user_id).first()
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization")) if http_request else None
+        uid = (token_payload.get("uid") if token_payload else request.user_id)
+        if not uid:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        s = db.query(SessionDB).filter(SessionDB.id == session_id, SessionDB.user_id == uid).first()
         if not s:
             raise HTTPException(status_code=404, detail="Session not found")
 

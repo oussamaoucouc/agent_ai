@@ -31,6 +31,7 @@ from datetime import datetime
 import sessions
 import users
 import logging
+from auth import get_user_from_auth_header
 
 
 # Sessions persistence moved to sessions.py
@@ -309,8 +310,14 @@ async def upload_document_endpoint(file: UploadFile = File(...), user_id: str = 
 
 # List documents for a user (persisted on disk)
 @app.get("/list_documents", response_model=Dict[str, Any])
-async def list_documents(user_id: str):
+async def list_documents(user_id: Optional[str] = None, request: Request = None):
     try:
+        # Prefer token user_id if Authorization present
+        token_payload = get_user_from_auth_header(request.headers.get("Authorization")) if request else None
+        if token_payload:
+            user_id = token_payload.get("uid")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
         user_pdfs_dir = str(get_user_pdf_dir(user_id))
         os.makedirs(user_pdfs_dir, exist_ok=True)
         docs = []
@@ -326,8 +333,13 @@ async def list_documents(user_id: str):
 
 # Delete a document for a user and sync KB
 @app.delete("/delete_document", response_model=Dict[str, str])
-async def delete_document(user_id: str, filename: str):
+async def delete_document(user_id: Optional[str] = None, filename: str = "", request: Request = None):
     try:
+        token_payload = get_user_from_auth_header(request.headers.get("Authorization")) if request else None
+        if token_payload:
+            user_id = token_payload.get("uid")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
         user_pdfs_dir = str(get_user_pdf_dir(user_id))
         os.makedirs(user_pdfs_dir, exist_ok=True)
         safe_name = os.path.basename(filename)
@@ -1404,13 +1416,19 @@ async def set_voice_endpoint(request: SetVoiceRequest):
         raise HTTPException(status_code=500, detail=f"Error setting voice: {str(e)}")
 
 @app.get("/config", response_model=ConfigResponse)
-async def get_config(user_id: str):
+async def get_config(user_id: Optional[str] = None, request: Request = None):
     """Return current runtime configuration (admin-only)."""
     try:
-        # Verify admin
+        # Verify admin via token if present
+        token_payload = get_user_from_auth_header(request.headers.get("Authorization")) if request else None
+        uid = user_id
+        role = None
         with users.SessionLocal() as db:
-            u = db.query(users.UserDB).filter(users.UserDB.id == user_id).first()
-            if not u or u.role != "admin":
+            if token_payload:
+                uid = token_payload.get("uid")
+                role = token_payload.get("role")
+            u = db.query(users.UserDB).filter(users.UserDB.id == uid).first()
+            if not u or (u.role != "admin"):
                 raise HTTPException(status_code=403, detail="Admin access required")
         from teacher_agent.config import get_runtime_config
         cfg = get_runtime_config()
@@ -1421,12 +1439,16 @@ async def get_config(user_id: str):
         raise HTTPException(status_code=500, detail=f"Error fetching config: {str(e)}")
 
 @app.put("/config", response_model=ConfigResponse)
-async def update_config(request: ConfigUpdateRequest):
+async def update_config(request: ConfigUpdateRequest, http_request: Request = None):
     """Update runtime configuration (admin-only)."""
     try:
-        # Verify admin
+        # Verify admin via token if present
         with users.SessionLocal() as db:
-            u = db.query(users.UserDB).filter(users.UserDB.id == request.user_id).first()
+            uid = request.user_id
+            token_payload = get_user_from_auth_header(http_request.headers.get("Authorization")) if http_request else None
+            if token_payload:
+                uid = token_payload.get("uid")
+            u = db.query(users.UserDB).filter(users.UserDB.id == uid).first()
             if not u or u.role != "admin":
                 raise HTTPException(status_code=403, detail="Admin access required")
         from teacher_agent.config import update_runtime_config
@@ -1449,12 +1471,16 @@ async def update_config(request: ConfigUpdateRequest):
         raise HTTPException(status_code=500, detail=f"Error updating config: {str(e)}")
 
 @app.get("/config_path", response_model=ConfigPathResponse)
-async def get_config_path(user_id: str):
+async def get_config_path(user_id: Optional[str] = None, request: Request = None):
     """Return the absolute path to the persisted runtime config (admin-only)."""
     try:
-        # Verify admin
+        # Verify admin via token if present
         with users.SessionLocal() as db:
-            u = db.query(users.UserDB).filter(users.UserDB.id == user_id).first()
+            uid = user_id
+            token_payload = get_user_from_auth_header(request.headers.get("Authorization")) if request else None
+            if token_payload:
+                uid = token_payload.get("uid")
+            u = db.query(users.UserDB).filter(users.UserDB.id == uid).first()
             if not u or u.role != "admin":
                 raise HTTPException(status_code=403, detail="Admin access required")
         from teacher_agent.config import CONFIG_STATE_PATH
@@ -1524,12 +1550,16 @@ class VoicesCatalogResponse(BaseModel):
     voices: list[str]
 
 @app.get("/models", response_model=ModelsCatalogResponse)
-async def get_models(user_id: str):
+async def get_models(user_id: Optional[str] = None, request: Request = None):
     """Return available models catalog to any authenticated user."""
     try:
-        # Verify user exists (any role)
+        # Verify user via token if present (any role)
         with users.SessionLocal() as db:
-            u = db.query(users.UserDB).filter(users.UserDB.id == user_id).first()
+            uid = user_id
+            token_payload = get_user_from_auth_header(request.headers.get("Authorization")) if request else None
+            if token_payload:
+                uid = token_payload.get("uid")
+            u = db.query(users.UserDB).filter(users.UserDB.id == uid).first()
             if not u:
                 raise HTTPException(status_code=401, detail="Invalid user")
         from teacher_agent.config import get_runtime_config
@@ -1542,12 +1572,16 @@ async def get_models(user_id: str):
 
 # Voices catalog for any authenticated user
 @app.get("/voices", response_model=VoicesCatalogResponse)
-async def get_voices(user_id: str):
+async def get_voices(user_id: Optional[str] = None, request: Request = None):
     """Return available voices catalog to any authenticated user."""
     try:
-        # Verify user exists (any role)
+        # Verify user via token if present (any role)
         with users.SessionLocal() as db:
-            u = db.query(users.UserDB).filter(users.UserDB.id == user_id).first()
+            uid = user_id
+            token_payload = get_user_from_auth_header(request.headers.get("Authorization")) if request else None
+            if token_payload:
+                uid = token_payload.get("uid")
+            u = db.query(users.UserDB).filter(users.UserDB.id == uid).first()
             if not u:
                 raise HTTPException(status_code=401, detail="Invalid user")
         from teacher_agent.config import get_runtime_config

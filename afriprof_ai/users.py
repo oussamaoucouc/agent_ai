@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, constr
 from sqlalchemy import create_engine, Column, String, DateTime, Integer, UniqueConstraint
 from sqlalchemy.orm import sessionmaker, declarative_base, Session as SASession
@@ -9,6 +9,8 @@ import os
 
 from teacher_agent.config import DB_URL, get_user_pdf_dir
 import sessions as session_mod
+from fastapi import Request
+from auth import issue_token, get_user_from_auth_header
 
 
 # Local SQLAlchemy base separate from sessions.py to avoid circular import
@@ -70,6 +72,7 @@ class LoginResponse(BaseModel):
     session_id: str
     username: str
     role: str
+    token: str | None = None
 
 
 class UserStatsModel(BaseModel):
@@ -151,8 +154,17 @@ def list_users(db: SASession = Depends(get_db)):
 
 
 @router.post("", response_model=UserModel)
-def create_user(request: UserCreateRequest, db: SASession = Depends(get_db)):
+def create_user(request: UserCreateRequest, http_request: Request, db: SASession = Depends(get_db)):
     try:
+        # Admin-only
+        payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+        if not payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = payload.get("uid")
+        role = payload.get("role")
+        u_admin = db.query(UserDB).filter(UserDB.id == uid).first()
+        if not u_admin or role != "admin" or u_admin.role != "admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
         existing = db.query(UserDB).filter(UserDB.username == request.username).first()
         if existing:
             raise HTTPException(status_code=409, detail="Username already exists")
@@ -196,8 +208,17 @@ def create_user(request: UserCreateRequest, db: SASession = Depends(get_db)):
 
 
 @router.put("/{user_id}", response_model=UserModel)
-def update_user(user_id: str, request: UserUpdateRequest, db: SASession = Depends(get_db)):
+def update_user(user_id: str, request: UserUpdateRequest, http_request: Request, db: SASession = Depends(get_db)):
     try:
+        # Admin-only
+        payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+        if not payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = payload.get("uid")
+        role = payload.get("role")
+        u_admin = db.query(UserDB).filter(UserDB.id == uid).first()
+        if not u_admin or role != "admin" or u_admin.role != "admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
         u = db.query(UserDB).filter(UserDB.id == user_id).first()
         if not u:
             raise HTTPException(status_code=404, detail="User not found")
@@ -216,8 +237,17 @@ def update_user(user_id: str, request: UserUpdateRequest, db: SASession = Depend
 
 
 @router.delete("/{user_id}")
-def delete_user(user_id: str, db: SASession = Depends(get_db)):
+def delete_user(user_id: str, http_request: Request, db: SASession = Depends(get_db)):
     try:
+        # Admin-only
+        payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+        if not payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = payload.get("uid")
+        role = payload.get("role")
+        u_admin = db.query(UserDB).filter(UserDB.id == uid).first()
+        if not u_admin or role != "admin" or u_admin.role != "admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
         u = db.query(UserDB).filter(UserDB.id == user_id).first()
         if not u:
             raise HTTPException(status_code=404, detail="User not found")
@@ -257,7 +287,8 @@ def user_login(request: LoginRequest, db: SASession = Depends(get_db)):
         # Do NOT auto-create a session on login.
         # Frontend will load sessions and create one only if needed.
         # For admins, this prevents inflating session counts when viewing the dashboard.
-        return LoginResponse(user_id=u.id, session_id="", username=u.username, role=u.role)
+        token = issue_token(u.id, u.role)
+        return LoginResponse(user_id=u.id, session_id="", username=u.username, role=u.role, token=token)
     except HTTPException:
         raise
     except Exception as e:
@@ -266,13 +297,22 @@ def user_login(request: LoginRequest, db: SASession = Depends(get_db)):
 
 
 @router.get("/stats", response_model=list[UserStatsModel])
-def user_stats(db: SASession = Depends(get_db)):
+def user_stats(request: Request, db: SASession = Depends(get_db)):
     """
     Returns dashboard-ready statistics for each user:
     - total sessions per user
     - number of uploaded documents found in the user's PDF directory
     """
     try:
+        # Admin-only
+        payload = get_user_from_auth_header(request.headers.get("Authorization"))
+        if not payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        admin_id = payload.get("uid")
+        role = payload.get("role")
+        u_admin = db.query(UserDB).filter(UserDB.id == admin_id).first()
+        if not u_admin or role != "admin" or u_admin.role != "admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
         users = db.query(UserDB).order_by(UserDB.created_at.desc()).all()
         stats: list[UserStatsModel] = []
         # Build a per-user sessions count

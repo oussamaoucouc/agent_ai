@@ -1,5 +1,6 @@
 import { API_BASE_URL } from '../constants';
 import { VoicesCatalogResponse } from '../types';
+import { getAuthToken } from './storageService';
 import { 
     QueryRequest, 
     QueryTTSResponse, 
@@ -27,6 +28,11 @@ import {
     SessionSettingsResponse
 } from '../types';
 
+const authHeaders = (): Record<string, string> => {
+    const token = getAuthToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
 const handleResponse = async <T,>(response: Response): Promise<T> => {
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({ detail: 'Unknown error occurred' }));
@@ -44,9 +50,7 @@ const handleResponse = async <T,>(response: Response): Promise<T> => {
 export const query = async (request: QueryRequest, signal?: AbortSignal): Promise<QueryResponse> => {
     const response = await fetch(`${API_BASE_URL}/query_direct`, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
         signal,
     });
@@ -56,9 +60,7 @@ export const query = async (request: QueryRequest, signal?: AbortSignal): Promis
 export const queryMcp = async (request: QueryRequest, signal?: AbortSignal): Promise<QueryResponse> => {
     const response = await fetch(`${API_BASE_URL}/query_mcp_direct`, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
         signal,
     });
@@ -68,9 +70,7 @@ export const queryMcp = async (request: QueryRequest, signal?: AbortSignal): Pro
 export const queryAgent = async (request: QueryRequest, signal?: AbortSignal): Promise<QueryResponse> => {
     const response = await fetch(`${API_BASE_URL}/query_assistant_direct`, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
         signal,
     });
@@ -80,9 +80,7 @@ export const queryAgent = async (request: QueryRequest, signal?: AbortSignal): P
 export const queryTTS = async (request: QueryRequest, signal?: AbortSignal): Promise<QueryTTSResponse> => {
     const response = await fetch(`${API_BASE_URL}/query_tts_direct`, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
         signal,
     });
@@ -92,9 +90,7 @@ export const queryTTS = async (request: QueryRequest, signal?: AbortSignal): Pro
 export const queryMcpTTS = async (request: QueryRequest, signal?: AbortSignal): Promise<QueryTTSResponse> => {
     const response = await fetch(`${API_BASE_URL}/query_mcp_tts_direct`, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
         signal,
     });
@@ -104,9 +100,7 @@ export const queryMcpTTS = async (request: QueryRequest, signal?: AbortSignal): 
 export const queryAgentTTS = async (request: QueryRequest, signal?: AbortSignal): Promise<QueryTTSResponse> => {
     const response = await fetch(`${API_BASE_URL}/query_assistant_tts_direct`, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
         signal,
     });
@@ -126,6 +120,7 @@ export const fullAgent = async (request: FullAgentRequest, signal?: AbortSignal)
     const response = await fetch(`${API_BASE_URL}/stt_query_tts_direct`, {
         method: 'POST',
         body: formData,
+        headers: authHeaders(),
         signal,
     });
     return handleResponse<FullAgentResponse>(response);
@@ -143,6 +138,7 @@ export const fullAgentMcp = async (request: FullAgentRequest, signal?: AbortSign
     const response = await fetch(`${API_BASE_URL}/stt_query_mcp_tts_direct`, {
         method: 'POST',
         body: formData,
+        headers: authHeaders(),
         signal,
     });
     return handleResponse<FullAgentResponse>(response);
@@ -160,6 +156,7 @@ export const fullAgentAgent = async (request: FullAgentRequest, signal?: AbortSi
     const response = await fetch(`${API_BASE_URL}/stt_query_assistant_tts_direct`, {
         method: 'POST',
         body: formData,
+        headers: authHeaders(),
         signal,
     });
     return handleResponse<FullAgentResponse>(response);
@@ -175,6 +172,7 @@ export const uploadDocument = async (request: UploadDocumentRequest, signal?: Ab
     const response = await fetch(`${API_BASE_URL}/upload_document`, {
         method: 'POST',
         body: formData,
+        headers: authHeaders(),
         signal,
     });
     return handleResponse<UploadDocumentResponse>(response);
@@ -184,7 +182,7 @@ export const listDocuments = async (user_id: string, signal?: AbortSignal): Prom
     const url = new URL(`${API_BASE_URL}/list_documents`);
     url.searchParams.set('user_id', user_id);
     url.searchParams.set('ts', Date.now().toString());
-    const response = await fetch(url, { method: 'GET', signal, cache: 'no-store' });
+    const response = await fetch(url, { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
     return handleResponse<ListDocumentsResponse>(response);
 };
 
@@ -192,14 +190,14 @@ export const deleteDocument = async (request: DeleteDocumentRequest, signal?: Ab
     const url = new URL(`${API_BASE_URL}/delete_document`);
     url.searchParams.set('user_id', request.user_id);
     url.searchParams.set('filename', request.filename);
-    const response = await fetch(url.toString(), { method: 'DELETE', signal });
+    const response = await fetch(url.toString(), { method: 'DELETE', headers: authHeaders(), signal });
     return handleResponse<DeleteDocumentResponse>(response);
 };
 
 export const setModel = async (request: SetModelRequest, signal?: AbortSignal): Promise<{success: boolean}> => {
     const response = await fetch(`${API_BASE_URL}/set_model`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
         signal,
     });
@@ -209,7 +207,7 @@ export const setModel = async (request: SetModelRequest, signal?: AbortSignal): 
 export const setVoice = async (request: SetVoiceRequest, signal?: AbortSignal): Promise<{success: boolean}> => {
     const response = await fetch(`${API_BASE_URL}/set_voice`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
         signal,
     });
@@ -221,14 +219,14 @@ export const getSessions = async (user_id: string, signal?: AbortSignal): Promis
     const url = new URL(`${API_BASE_URL}/sessions`);
     url.searchParams.set('user_id', user_id);
     url.searchParams.set('ts', Date.now().toString());
-    const response = await fetch(url, { method: 'GET', signal, cache: 'no-store' });
+    const response = await fetch(url, { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
     return handleResponse<Session[]>(response);
 };
 
 export const createSession = async (request: CreateSessionRequest, signal?: AbortSignal): Promise<Session> => {
     const response = await fetch(`${API_BASE_URL}/sessions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
         signal,
     });
@@ -238,7 +236,7 @@ export const createSession = async (request: CreateSessionRequest, signal?: Abor
 export const renameSession = async (sessionId: string, request: RenameSessionRequest, signal?: AbortSignal): Promise<Session> => {
     const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/rename`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
         signal,
     });
@@ -248,7 +246,7 @@ export const renameSession = async (sessionId: string, request: RenameSessionReq
 export const deleteSession = async (sessionId: string, request: DeleteSessionRequest, signal?: AbortSignal): Promise<{status: string}> => {
     const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
         signal,
     });
@@ -258,7 +256,7 @@ export const deleteSession = async (sessionId: string, request: DeleteSessionReq
 export const saveSessionMessages = async (sessionId: string, request: SaveMessagesRequest, signal?: AbortSignal): Promise<Session> => {
     const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/messages`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
         signal,
     });
@@ -268,7 +266,7 @@ export const saveSessionMessages = async (sessionId: string, request: SaveMessag
 export const cancelSession = async (request: CancelRequest): Promise<{status: string}> => {
     const response = await fetch(`${API_BASE_URL}/cancel`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
     });
     return handleResponse<{status: string}>(response);
@@ -279,14 +277,14 @@ export const listUserStats = async (signal?: AbortSignal): Promise<Array<{ id: s
     const url = new URL(`${API_BASE_URL}/users/stats`);
     // Add cache-busting param to avoid stale data across browsers
     url.searchParams.set('ts', Date.now().toString());
-    const response = await fetch(url, { method: 'GET', signal, cache: 'no-store' });
+    const response = await fetch(url, { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
     return handleResponse<Array<{ id: string; username: string; role: string; sessions: number; documents: number; createdAt: string }>>(response);
 };
 
 export const createUser = async (username: string, password: string, role: 'admin' | 'user', signal?: AbortSignal): Promise<AdminUser> => {
     const response = await fetch(`${API_BASE_URL}/users`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ username, password, role }),
         signal,
     });
@@ -298,7 +296,7 @@ export const createUser = async (username: string, password: string, role: 'admi
 export const updateUser = async (user_id: string, payload: { password?: string; role?: 'admin' | 'user' }, signal?: AbortSignal): Promise<AdminUser> => {
     const response = await fetch(`${API_BASE_URL}/users/${user_id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(payload),
         signal,
     });
@@ -308,18 +306,18 @@ export const updateUser = async (user_id: string, payload: { password?: string; 
 };
 
 export const deleteUser = async (user_id: string, signal?: AbortSignal): Promise<{status: string}> => {
-    const response = await fetch(`${API_BASE_URL}/users/${user_id}`, { method: 'DELETE', signal });
+    const response = await fetch(`${API_BASE_URL}/users/${user_id}`, { method: 'DELETE', headers: authHeaders(), signal });
     return handleResponse<{status: string}>(response);
 };
 
-export const loginUser = async (username: string, password: string, signal?: AbortSignal): Promise<{ user_id: string; session_id: string; username: string; role: string }> => {
+export const loginUser = async (username: string, password: string, signal?: AbortSignal): Promise<{ user_id: string; session_id: string; username: string; role: string; token?: string }> => {
     const response = await fetch(`${API_BASE_URL}/users/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
         signal,
     });
-    return handleResponse<{ user_id: string; session_id: string; username: string; role: string }>(response);
+    return handleResponse<{ user_id: string; session_id: string; username: string; role: string; token?: string }>(response);
 };
 
 // --- Admin Configuration API ---
@@ -327,14 +325,14 @@ export const getConfig = async (user_id: string, signal?: AbortSignal): Promise<
     const url = new URL(`${API_BASE_URL}/config`);
     url.searchParams.set('user_id', user_id);
     url.searchParams.set('ts', Date.now().toString());
-    const response = await fetch(url, { method: 'GET', signal, cache: 'no-store' });
+    const response = await fetch(url, { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
     return handleResponse<ConfigResponse>(response);
 };
 
 export const updateConfig = async (payload: ConfigUpdateRequest, signal?: AbortSignal): Promise<ConfigResponse> => {
     const response = await fetch(`${API_BASE_URL}/config`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(payload),
         signal,
     });
@@ -345,7 +343,7 @@ export const getModelsCatalog = async (user_id: string, signal?: AbortSignal): P
     const url = new URL(`${API_BASE_URL}/models`);
     url.searchParams.set('user_id', user_id);
     url.searchParams.set('ts', Date.now().toString());
-    const response = await fetch(url, { method: 'GET', signal, cache: 'no-store' });
+    const response = await fetch(url, { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
     // Backend returns { models: string[] }; normalize to { available_models: string[] }
     const raw = await response.json();
     if (!response.ok) {
@@ -359,7 +357,7 @@ export const getVoicesCatalog = async (user_id: string, signal?: AbortSignal): P
     const url = new URL(`${API_BASE_URL}/voices`);
     url.searchParams.set('user_id', user_id);
     url.searchParams.set('ts', Date.now().toString());
-    const response = await fetch(url, { method: 'GET', signal, cache: 'no-store' });
+    const response = await fetch(url, { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
     const raw = await response.json();
     if (!response.ok) {
         throw new Error(raw?.detail || `Failed to fetch voices catalog: ${response.status}`);

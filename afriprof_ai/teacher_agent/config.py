@@ -169,6 +169,14 @@ if _state.get("available_models"):
             _available_models = [str(x) for x in am if str(x)] or _available_models
     except Exception:
         pass
+# Ensure voices catalog is loaded from persisted state
+if _state.get("available_voices"):
+    try:
+        av = _state.get("available_voices")
+        if isinstance(av, list):
+            _available_voices = [str(v) for v in av if str(v)] or _available_voices
+    except Exception:
+        pass
 if _state.get("mcp_servers"):
     try:
         ms = _state.get("mcp_servers")

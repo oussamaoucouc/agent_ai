@@ -8,6 +8,7 @@ let memorySessions: Record<string, Session[]> = {};
 let memoryCurrentUser: string | null = null;
 let memoryCurrentUsername: string | null = null;
 let memoryCurrentUserRole: 'admin' | 'user' | null = null;
+let memoryAuthToken: string | null = null;
 
 // Keys used in sessionStorage
 const LS_KEYS = {
@@ -16,6 +17,7 @@ const LS_KEYS = {
   role: 'app.currentUserRole',
   activeSession: 'app.activeSessionId',
   adminView: 'app.adminView',
+  token: 'app.authToken',
 };
 
 const hasSessionStorage = (): boolean => {
@@ -79,11 +81,13 @@ export const clearCurrentUser = () => {
   memoryCurrentUser = null;
   memoryCurrentUsername = null;
   memoryCurrentUserRole = null;
+  memoryAuthToken = null;
   lsRemove(LS_KEYS.user);
   lsRemove(LS_KEYS.username);
   lsRemove(LS_KEYS.role);
   lsRemove(LS_KEYS.activeSession);
   lsRemove(LS_KEYS.adminView);
+  lsRemove(LS_KEYS.token);
 };
 
 export const getCurrentUserRole = (): 'admin' | 'user' | null => {
@@ -108,6 +112,18 @@ export const getCurrentUsername = (): string | null => {
 export const setCurrentUsername = (username: string) => {
   memoryCurrentUsername = username;
   lsSet(LS_KEYS.username, username);
+};
+
+export const getAuthToken = (): string | null => {
+  if (memoryAuthToken) return memoryAuthToken;
+  const persisted = lsGet(LS_KEYS.token);
+  memoryAuthToken = persisted;
+  return persisted;
+};
+
+export const setAuthToken = (token: string) => {
+  memoryAuthToken = token;
+  lsSet(LS_KEYS.token, token);
 };
 
 export const getActiveSessionId = (): string | null => {
