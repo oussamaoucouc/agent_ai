@@ -137,10 +137,6 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
               {/* Models & Voice Card */}
               <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 space-y-6">
                 <h2 className="text-xl font-bold">Models & Voice</h2>
-                <label className="block">
-                  <span className="block text-sm font-medium text-gray-400 mb-2">Model ID</span>
-                  <input type="text" value={config.model} onChange={(e) => updateField('model', e.target.value)} className={inputBaseStyle}/>
-                </label>
                 <div>
                   <span className="block text-sm font-medium text-gray-400 mb-2">Available Models</span>
                   <div className="space-y-2">

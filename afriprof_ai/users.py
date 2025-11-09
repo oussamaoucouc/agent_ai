@@ -124,6 +124,19 @@ def ensure_admin_seed():
             os.makedirs(user_dir, exist_ok=True)
         except Exception:
             pass
+        # Create default per-user settings on first user creation
+        try:
+            if not db.query(session_mod.SessionSettingsDB).filter(session_mod.SessionSettingsDB.user_id == user_id).first():
+                db.add(session_mod.SessionSettingsDB(
+                    user_id=user_id,
+                    voice="af_sky",
+                    model_id="granite4:tiny-h",
+                    updated_at=datetime.utcnow(),
+                ))
+                db.commit()
+        except Exception:
+            # Non-fatal: settings can be created later on first session
+            pass
     finally:
         db.close()
 
@@ -160,6 +173,19 @@ def create_user(request: UserCreateRequest, db: SASession = Depends(get_db)):
             os.makedirs(user_dir, exist_ok=True)
         except Exception:
             # Non-fatal
+            pass
+        # Initialize default per-user settings at creation
+        try:
+            if not db.query(session_mod.SessionSettingsDB).filter(session_mod.SessionSettingsDB.user_id == user_id).first():
+                db.add(session_mod.SessionSettingsDB(
+                    user_id=user_id,
+                    voice="af_sky",
+                    model_id="granite4:tiny-h",
+                    updated_at=datetime.utcnow(),
+                ))
+                db.commit()
+        except Exception:
+            # Non-fatal: settings can be created later
             pass
         return _db_to_user_model(u)
     except HTTPException:
