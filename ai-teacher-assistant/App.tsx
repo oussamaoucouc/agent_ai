@@ -139,6 +139,15 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
         setIsInitialized(true);
     }, []);
 
+    useEffect(() => {
+        if (isAdmin) {
+            const persistedView = storage.getAdminView();
+            if (persistedView === 'dashboard' || persistedView === 'addUser' || persistedView === 'editUser' || persistedView === 'config') {
+                setAdminView(persistedView);
+            }
+        }
+    }, [isAdmin]);
+
     // Fetch public model catalog so admin-added models are visible to all users
     useEffect(() => {
         const controller = new AbortController();
@@ -317,7 +326,9 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                     if (userSessions.length > 0) {
                         const sortedSessions = [...userSessions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
                         setSessions(sortedSessions);
-                        handleSelectSession(sortedSessions[0].id, sortedSessions);
+                        const persistedActive = storage.getActiveSessionId();
+                        const match = persistedActive && sortedSessions.find(s => s.id === persistedActive);
+                        handleSelectSession(match ? match.id : sortedSessions[0].id, sortedSessions);
                     } else {
                         handleNewSession();
                     }
@@ -464,6 +475,7 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
             const updatedSessions = [newSession, ...sessions];
             setSessions(updatedSessions);
             setActiveSessionId(newSession.id);
+            storage.setActiveSessionId(newSession.id);
             setMessages(newSession.messages);
             // Load per-session settings to reflect model/voice in sidebar
             try {
@@ -484,6 +496,7 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
         const session = currentSessions.find(s => s.id === sessionId);
         if (session) {
             setActiveSessionId(session.id);
+            storage.setActiveSessionId(session.id);
             setMessages(session.messages);
             // Fetch persisted per-session settings
             if (currentUser) {
@@ -828,6 +841,12 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
         setEditingUser(null);
         setAdminView('dashboard');
     };
+
+    useEffect(() => {
+        if (isAdmin) {
+            storage.setAdminView(adminView);
+        }
+    }, [adminView, isAdmin]);
 
     const handleDeleteAdminUser = async (userId: string) => {
         showConfirmation(
