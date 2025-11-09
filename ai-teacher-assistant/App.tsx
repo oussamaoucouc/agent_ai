@@ -944,6 +944,7 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                     onModelChange={handleModelChange}
                     onVoiceChange={handleVoiceChange}
                     availableModels={availableModels}
+                    queryMode={queryMode}
                 />
                 <main className="flex flex-col flex-1 h-screen overflow-hidden">
                     <Header 

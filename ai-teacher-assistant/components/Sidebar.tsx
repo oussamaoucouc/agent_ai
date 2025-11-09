@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { UploadedFile, Session, TTSVoice } from '../types';
+import { UploadedFile, Session, TTSVoice, QueryMode } from '../types';
 import * as storage from '../services/storageService';
 import { getVoicesCatalog, getMcpToolsCatalog, setMcpTools, getSessionSettings } from '../services/apiService';
 import { McpToolItem } from '../types';
@@ -23,6 +23,7 @@ interface SidebarProps {
     currentVoice: TTSVoice;
     onVoiceChange: (voice: TTSVoice) => void;
     availableModels?: string[];
+    queryMode: QueryMode;
 }
 
 const StatusIcon: React.FC<{ status: UploadedFile['status'] }> = ({ status }) => {
@@ -69,7 +70,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     onModelChange,
     currentVoice,
     onVoiceChange,
-    availableModels
+    availableModels,
+    queryMode
 }) => {
     const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
     const [sessionName, setSessionName] = useState('');
@@ -89,6 +91,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     // MCP tools catalog and per-user selection
     const [mcpTools, setMcpToolsCatalog] = useState<McpToolItem[]>([]);
     const [selectedMcpToolLabels, setSelectedMcpToolLabels] = useState<string[]>([]);
+    const canSelectTools = queryMode === 'tools';
 
     useEffect(() => {
         const controller = new AbortController();
@@ -144,6 +147,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }, [activeSessionId, mcpTools.length]);
 
     const toggleMcpTool = async (label: string) => {
+        if (!canSelectTools) return; // gate selection unless Tools mode is active
         const userId = storage.getCurrentUser() || '';
         const sessionId = activeSessionId || storage.getActiveSessionId() || '';
         if (!userId || !sessionId) return;
@@ -296,16 +300,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         </div>
                         {/* Tools multi-select */}
                         <div>
-                            <h3 className="text-sm font-medium text-gray-400 mb-2">Tool</h3>
+                            <h3 className="text-sm font-medium text-gray-400 mb-2">Tools</h3>
                             <div className="grid grid-cols-2 gap-2">
                                 {mcpTools.map(tool => (
                                     <button
                                         key={tool.label}
                                         onClick={() => toggleMcpTool(tool.label)}
+                                        disabled={!canSelectTools}
                                         className={`px-2 py-1.5 text-xs rounded-lg transition-colors border-2 focus:outline-none focus:border-sky-500 ${
                                             selectedMcpToolLabels.includes(tool.label)
                                                 ? 'bg-sky-500 text-white font-bold border-sky-500'
-                                                : 'bg-slate-800 hover:bg-slate-700 text-gray-300 border-transparent'
+                                                : `${canSelectTools ? 'bg-slate-800 hover:bg-slate-700' : 'bg-slate-800 opacity-50 cursor-not-allowed'} text-gray-300 border-transparent`
                                         }`}
                                         title={tool.url}
                                     >
@@ -313,10 +318,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     </button>
                                 ))}
                             </div>
-                            <p className="mt-2 text-xs text-gray-500">This option is available when calling the Tools Agent</p>
+                            <p className="mt-2 text-xs text-gray-500">
+                                {canSelectTools
+                                    ? 'Select tools to use with the Tools agent.'
+                                    : 'Switch to Tools mode to select tools.'}
+                            </p>
                         </div>
                         <div>
-                             <h3 className="text-sm font-medium text-gray-400 mb-2 flex items-center"><SpeakerIcon className="w-4 h-4 mr-2" />Voice</h3>
+                             <h3 className="text-sm font-medium text-gray-400 mb-2 flex items-center"><SpeakerIcon className="w-4 h-4 mr-2" />Voices</h3>
                              <div className="grid grid-cols-3 gap-2">
                                 {voices.map(v => (
                                     <button

@@ -342,6 +342,32 @@ async def delete_session(session_id: str, request: DeleteSessionRequest, http_re
             # Non-fatal: agent_session may not exist in some deployments
             pass
         db.commit()
+        # Best-effort cleanup of per-user/session SQLite memory DB files under tmp/user_session_dbs
+        try:
+            import os
+            import glob
+            base_mem_dir = os.path.join("tmp", "user_session_dbs")
+            if os.path.isdir(base_mem_dir):
+                patterns = [
+                    os.path.join(base_mem_dir, f"memory_{uid}_{session_id}*"),  # catch .db and sidecars or no ext
+                    os.path.join(base_mem_dir, f"memory_{uid}_{session_id}.db"),
+                    os.path.join(base_mem_dir, f"memory_{uid}_{session_id}.db-wal"),
+                    os.path.join(base_mem_dir, f"memory_{uid}_{session_id}.db-shm"),
+                ]
+                seen = set()
+                for p in patterns:
+                    for f in glob.glob(p):
+                        if f in seen:
+                            continue
+                        seen.add(f)
+                        try:
+                            os.remove(f)
+                        except Exception:
+                            # Ignore file-level errors to keep deletion resilient (Windows locks)
+                            pass
+        except Exception:
+            # Best-effort cleanup; ignore if paths or glob fail
+            pass
         return {"status": "deleted"}
     except HTTPException:
         raise
