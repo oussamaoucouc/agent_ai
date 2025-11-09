@@ -33,6 +33,8 @@ class SessionSettingsDB(Base):
     user_id = Column(String(256), primary_key=True)
     voice = Column(String(128), nullable=False, default="af_sky")
     model_id = Column(String(128), nullable=True)
+    # JSON array of MCP tool URLs selected by the user (stored as text)
+    mcp_tools_urls = Column(Text, nullable=True)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -60,6 +62,12 @@ try:
             conn.exec_driver_sql("ALTER TABLE app_session_settings ADD COLUMN model_id VARCHAR(128)")
             conn.commit()
             logging.info("Added model_id column to app_session_settings (runtime migration)")
+    # Add mcp_tools_urls if missing
+    if 'mcp_tools_urls' not in cols:
+        with engine.connect() as conn:
+            conn.exec_driver_sql("ALTER TABLE app_session_settings ADD COLUMN mcp_tools_urls TEXT")
+            conn.commit()
+            logging.info("Added mcp_tools_urls column to app_session_settings (runtime migration)")
     # Migrate away from session_id if present to user-level PK
     if 'session_id' in cols:
         with engine.connect() as conn:
@@ -180,6 +188,31 @@ def apply_session_model(db: SASession, user_id: str, session_id: str) -> str:
         logging.warning(f"Failed to apply session model; continuing with current config. err={e}")
     return model_id
 
+# --- MCP tools selection helpers ---
+import json as _json
+from teacher_agent.config import get_runtime_config as _get_runtime_config
+
+def get_session_mcp_tools_urls(db: SASession, user_id: str, session_id: str) -> list[str]:
+    """Resolve MCP tool URLs by user-level preference (JSON array in mcp_tools_urls).
+    If the user has not selected any tools, return an empty list (no fallback).
+    """
+    settings = (
+        db.query(SessionSettingsDB)
+        .filter(SessionSettingsDB.user_id == user_id)
+        .order_by(SessionSettingsDB.updated_at.desc())
+        .first()
+    )
+    urls: list[str] = []
+    if settings and settings.mcp_tools_urls:
+        try:
+            parsed = _json.loads(settings.mcp_tools_urls)
+            if isinstance(parsed, list):
+                urls = [str(u) for u in parsed if isinstance(u, str) and u.strip()]
+        except Exception:
+            urls = []
+    # Do not fallback to global config; default to no tools selected
+    return urls
+
 
 class CreateSessionRequest(BaseModel):
     user_id: str
@@ -296,6 +329,7 @@ async def delete_session(session_id: str, request: DeleteSessionRequest, http_re
 class SessionSettingsResponse(BaseModel):
     model_id: str
     voice: str
+    mcp_tools_urls: list[str] = []
 
 
 @router.get("/{session_id}/settings", response_model=SessionSettingsResponse)
@@ -311,13 +345,14 @@ async def get_session_settings(session_id: str, user_id: str = Query(None), requ
         # Resolve with fallbacks
         resolved_model = get_session_model_id(db, uid, session_id)
         resolved_voice = get_session_voice(db, uid, session_id)
+        resolved_tools = get_session_mcp_tools_urls(db, uid, session_id)
 
         logging.info(
             f"Settings resolve: user={uid}, session={session_id}, "
-            f"model_id={resolved_model}, voice={resolved_voice}, exists={bool(settings)} (user-level)"
+            f"model_id={resolved_model}, voice={resolved_voice}, tools={len(resolved_tools)} URLs, exists={bool(settings)} (user-level)"
         )
 
-        return SessionSettingsResponse(model_id=resolved_model, voice=resolved_voice)
+        return SessionSettingsResponse(model_id=resolved_model, voice=resolved_voice, mcp_tools_urls=resolved_tools)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching session settings: {str(e)}")
 

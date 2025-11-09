@@ -88,6 +88,20 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
     setNewServer({ label: '', url: '' });
   };
 
+  const updateServerLabel = (index: number, label: string) => {
+    setConfig(prev => prev ? {
+      ...prev,
+      mcp_servers: (prev.mcp_servers || []).map((srv, i) => i === index ? { ...srv, label } : srv)
+    } : prev);
+  };
+
+  const updateServerUrl = (index: number, url: string) => {
+    setConfig(prev => prev ? {
+      ...prev,
+      mcp_servers: (prev.mcp_servers || []).map((srv, i) => i === index ? { ...srv, url } : srv)
+    } : prev);
+  };
+
   const removeServer = (index: number) => {
     setConfig(prev => prev ? { ...prev, mcp_servers: (prev.mcp_servers || []).filter((_, i) => i !== index) } : prev);
   };
@@ -227,17 +241,17 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                         <div key={`${srv.url}-${idx}`} className="flex items-center gap-3">
                             <input
                               type="text"
-                              readOnly
                               value={srv.label}
-                              className={`w-40 ${readOnlyInputStyle}`}
+                              onChange={(e) => updateServerLabel(idx, e.target.value)}
+                              className={`w-40 ${inputBaseStyle}`}
                               onFocus={(e) => e.currentTarget.select()}
                               onMouseUp={(e) => e.preventDefault()}
                             />
                             <input
                               type="text"
-                              readOnly
                               value={srv.url}
-                              className={readOnlyInputStyle}
+                              onChange={(e) => updateServerUrl(idx, e.target.value)}
+                              className={`flex-1 ${inputBaseStyle}`}
                               onFocus={(e) => e.currentTarget.select()}
                               onMouseUp={(e) => e.preventDefault()}
                             />

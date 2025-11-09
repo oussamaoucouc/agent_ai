@@ -3,6 +3,7 @@ MCP Agent functionality using the AGNO framework.
 Configurable MCP transport (streamable-http or stdio) with clean lifecycle.
 """
 from textwrap import dedent
+import re
 import os
 import logging
 import asyncio
@@ -25,6 +26,48 @@ from agno.models.ollama import Ollama
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+_ARTIFACT_TOKEN_REGEX = re.compile(
+    r"\s*(?:<\|im_end\|>|<\|im_start\|>|<\|eot\|>|<eot>|</s>|<end_of_role>|end_of_role|<end_of_turn>|end_of_turn)\s*",
+    re.IGNORECASE,
+)
+
+def _clean_output_artifacts(text: str) -> str:
+    """Robustly remove chat-template artifact tokens without harming legitimate content.
+
+    Strategy:
+    - Drop lines that are only an artifact token.
+    - Remove tokens anywhere using a compiled regex with surrounding whitespace.
+    - Tidy trailing unmatched angle brackets that can appear due to partial tokens.
+    """
+    if not isinstance(text, str):
+        return text
+
+    # 1) Remove lines that are only an artifact token
+    def _is_artifact_line(line: str) -> bool:
+        return bool(_ARTIFACT_TOKEN_REGEX.fullmatch(line.strip()))
+
+    lines = [ln for ln in text.splitlines() if not _is_artifact_line(ln)]
+    cleaned = "\n".join(lines)
+
+    # 2) Remove artifact tokens appearing inline
+    cleaned = _ARTIFACT_TOKEN_REGEX.sub(" ", cleaned)
+
+    # 3) Normalize spacing and trim
+    cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    cleaned = re.sub(r"\s*\n\s*", "\n", cleaned).strip()
+
+    # 4) Remove stray terminal angle brackets only if not part of a tag
+    if cleaned.endswith(">") and not re.search(r"</?\w+>$", cleaned):
+        cleaned = cleaned[:-1].rstrip()
+    if cleaned.endswith("<"):
+        cleaned = cleaned[:-1].rstrip()
+
+    # 5) Strip common partial artifact tails like "<|" or a lone "|"
+    cleaned = re.sub(r"\s*(?:<\|?|\|)\s*$", "", cleaned).rstrip()
+
+    return cleaned
 
 
 def run_agent(query, user_id, session_id):
@@ -150,6 +193,18 @@ async def run_agent_async(query, user_id, session_id):
             urls = [str(s.get("url", "")).strip() for s in servers if isinstance(s, dict) and str(s.get("url", "")).strip()]
             labels = [str(s.get("label", "Server")) for s in servers if isinstance(s, dict) and str(s.get("url", "")).strip()]
 
+            # Override with per-user selection if present
+            try:
+                import sessions as session_mod
+                with session_mod.SessionLocal() as db:
+                    selected_urls = session_mod.get_session_mcp_tools_urls(db, user_id, session_id)
+                if selected_urls and len(selected_urls) > 0:
+                    urls = selected_urls
+                    labels = [f"User Tool {i+1}" for i in range(len(urls))]
+                    logger.info(f"Using user-selected MCP tools: {len(urls)} URLs")
+            except Exception as e:
+                logger.warning(f"Failed to resolve user-selected MCP tools; using runtime config. err={e}")
+
             # Fallback to single MCP_SERVER_URL if no list is provided
             if not urls and cfg.MCP_SERVER_URL:
                 urls = [cfg.MCP_SERVER_URL]
@@ -206,7 +261,7 @@ async def run_agent_async(query, user_id, session_id):
                         tools.append(t)
                 if not tools:
                     logger.warning("No MCP servers connected. Returning fallback message.")
-                    return "Unable to answer with available MCP tools."
+                    return "Unable to answer with available tools."
 
                 MCP_agent = Agent(tools=tools, **agent_common_kwargs)
                 response = await MCP_agent.arun(query)
@@ -274,7 +329,8 @@ async def run_agent_async(query, user_id, session_id):
         else:
             logging.info("INFO No document retrieval details available in response.")
 
-        return result_content
+        # Sanitize artifact tokens that some models/tools may emit
+        return _clean_output_artifacts(result_content)
 
     except McpError as e:
         logger.error(f"MCP Error: {e}")

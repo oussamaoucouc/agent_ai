@@ -209,6 +209,24 @@ export interface VoicesCatalogResponse {
     available_voices: string[];
 }
 
+// MCP tools catalog types (admin-configured label + URL)
+export interface McpToolItem {
+    label: string;
+    url: string;
+}
+
+export interface McpToolsCatalogResponse {
+    tools: McpToolItem[];
+}
+
+// Set MCP tools selection for a user (multi-select)
+export interface SetMcpToolsRequest {
+    user_id: string;
+    session_id: string;
+    tool_labels?: string[]; // labels to resolve to URLs (backend expects 'tool_labels')
+    tool_urls?: string[];   // explicit URLs if provided
+}
+
 export interface ConfigPathResponse {
     config_state_path: string;
     exists: boolean;
@@ -218,4 +236,5 @@ export interface ConfigPathResponse {
 export interface SessionSettingsResponse {
     model_id: string;
     voice: string; // matches TTSVoice enum string values
+    mcp_tools_urls: string[]; // selected MCP tool URLs for this user/session
 }

@@ -1549,6 +1549,13 @@ class ModelsCatalogResponse(BaseModel):
 class VoicesCatalogResponse(BaseModel):
     voices: list[str]
 
+class McpToolItem(BaseModel):
+    label: str
+    url: str
+
+class McpToolsCatalogResponse(BaseModel):
+    tools: list[McpToolItem]
+
 @app.get("/models", response_model=ModelsCatalogResponse)
 async def get_models(user_id: Optional[str] = None, request: Request = None):
     """Return available models catalog to any authenticated user."""
@@ -1591,3 +1598,81 @@ async def get_voices(user_id: Optional[str] = None, request: Request = None):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching voices: {str(e)}")
+
+# MCP tools catalog for any authenticated user
+@app.get("/mcp_tools", response_model=McpToolsCatalogResponse)
+async def get_mcp_tools(user_id: Optional[str] = None, request: Request = None):
+    """Return available MCP tools (label + url) configured by admin."""
+    try:
+        # Verify user via token if present (any role)
+        with users.SessionLocal() as db:
+            uid = user_id
+            token_payload = get_user_from_auth_header(request.headers.get("Authorization")) if request else None
+            if token_payload:
+                uid = token_payload.get("uid")
+            u = db.query(users.UserDB).filter(users.UserDB.id == uid).first()
+            if not u:
+                raise HTTPException(status_code=401, detail="Invalid user")
+        from teacher_agent.config import get_runtime_config
+        cfg = get_runtime_config()
+        servers = cfg.get("mcp_servers", []) or []
+        items = []
+        for s in servers:
+            if isinstance(s, dict):
+                label = str(s.get("label", "Server"))
+                url = str(s.get("url", ""))
+                if url.strip():
+                    items.append(McpToolItem(label=label, url=url))
+        return McpToolsCatalogResponse(tools=items)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching MCP tools: {str(e)}")
+
+class SetMcpToolsRequest(BaseModel):
+    user_id: str
+    session_id: str
+    tool_labels: Optional[list[str]] = None
+    tool_urls: Optional[list[str]] = None
+
+@app.post("/set_mcp_tools")
+async def set_mcp_tools(request: SetMcpToolsRequest):
+    """Persist per-user MCP tool selection. Accepts labels (preferred) or URLs."""
+    try:
+        # Resolve URLs from labels if provided
+        urls: list[str] = []
+        if request.tool_labels and len(request.tool_labels) > 0:
+            from teacher_agent.config import get_runtime_config
+            cfg = get_runtime_config()
+            servers = cfg.get("mcp_servers", []) or []
+            label_to_url = {str(s.get("label", "")).lower().strip(): str(s.get("url", "")).strip() for s in servers if isinstance(s, dict)}
+            for lbl in request.tool_labels:
+                u = label_to_url.get(str(lbl).lower().strip())
+                if u:
+                    urls.append(u)
+        elif request.tool_urls:
+            urls = [str(u).strip() for u in request.tool_urls if str(u).strip()]
+
+        # Store JSON array in session settings (user-level)
+        import json as _json
+        with sessions.SessionLocal() as db:
+            settings = (
+                db.query(sessions.SessionSettingsDB)
+                .filter(sessions.SessionSettingsDB.user_id == request.user_id)
+                .order_by(sessions.SessionSettingsDB.updated_at.desc())
+                .first()
+            )
+            now = datetime.utcnow()
+            urls_json = _json.dumps(urls or [])
+            if settings:
+                settings.mcp_tools_urls = urls_json
+                settings.updated_at = now
+            else:
+                # Create with defaults for missing fields
+                from teacher_agent.config import get_current_voice, get_current_model_id
+                db.add(sessions.SessionSettingsDB(user_id=request.user_id, voice=get_current_voice(), model_id=get_current_model_id(), mcp_tools_urls=urls_json, updated_at=now))
+            db.commit()
+        logging.info(f"MCP tools selection persisted: user={request.user_id}, urls={len(urls)}")
+        return {"success": True, "count": len(urls)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error setting MCP tools: {str(e)}")

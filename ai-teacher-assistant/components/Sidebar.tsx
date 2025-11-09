@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { UploadedFile, Session, TTSVoice } from '../types';
 import * as storage from '../services/storageService';
-import { getVoicesCatalog } from '../services/apiService';
+import { getVoicesCatalog, getMcpToolsCatalog, setMcpTools, getSessionSettings } from '../services/apiService';
+import { McpToolItem } from '../types';
 import { DocumentIcon, UploadIcon, SpinnerIcon, CheckIcon, ErrorIcon, PlusIcon, LogoutIcon, ChatIcon, CloseIcon, EditIcon, TrashIcon, CubeIcon, SpeakerIcon } from './icons';
 
 interface SidebarProps {
@@ -85,6 +86,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
     // Voice catalog state and loader (single dynamic list)
     const [voices, setVoices] = useState<string[]>(DEFAULT_VOICES);
 
+    // MCP tools catalog and per-user selection
+    const [mcpTools, setMcpToolsCatalog] = useState<McpToolItem[]>([]);
+    const [selectedMcpToolLabels, setSelectedMcpToolLabels] = useState<string[]>([]);
+
     useEffect(() => {
         const controller = new AbortController();
         const loadVoices = async () => {
@@ -99,9 +104,59 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 console.warn('Failed to load voices catalog, using defaults');
             }
         };
+        const loadMcpTools = async () => {
+            try {
+                const userId = storage.getCurrentUser() || '';
+                if (!userId) return;
+                const res = await getMcpToolsCatalog(userId, controller.signal);
+                const items = Array.isArray(res.tools) ? res.tools : [];
+                setMcpToolsCatalog(items);
+            } catch (e) {
+                console.warn('Failed to load MCP tools catalog');
+            }
+        };
         loadVoices();
+        loadMcpTools();
         return () => controller.abort();
     }, []);
+
+    // Load currently selected MCP tools for this user/session
+    useEffect(() => {
+        const controller = new AbortController();
+        const loadSessionSettings = async () => {
+            try {
+                const userId = storage.getCurrentUser() || '';
+                const sessionId = activeSessionId || storage.getActiveSessionId() || '';
+                if (!userId || !sessionId) return;
+                const res = await getSessionSettings(userId, sessionId, controller.signal);
+                const urls = Array.isArray(res.mcp_tools_urls) ? res.mcp_tools_urls : [];
+                // Map URLs to labels for display selection state
+                const byUrl = new Map((mcpTools || []).map(t => [t.url, t.label]));
+                const labels = urls.map(u => byUrl.get(u) || u);
+                setSelectedMcpToolLabels(labels);
+            } catch (e) {
+                // ignore
+            }
+        };
+        loadSessionSettings();
+        return () => controller.abort();
+        // re-run when session changes or catalog fetched
+    }, [activeSessionId, mcpTools.length]);
+
+    const toggleMcpTool = async (label: string) => {
+        const userId = storage.getCurrentUser() || '';
+        const sessionId = activeSessionId || storage.getActiveSessionId() || '';
+        if (!userId || !sessionId) return;
+        const nextLabels = selectedMcpToolLabels.includes(label)
+            ? selectedMcpToolLabels.filter(l => l !== label)
+            : [...selectedMcpToolLabels, label];
+        setSelectedMcpToolLabels(nextLabels);
+        try {
+            await setMcpTools({ user_id: userId, session_id: sessionId, tool_labels: nextLabels });
+        } catch (e) {
+            console.warn('Failed to persist MCP tools selection');
+        }
+    };
 
 
     const handleStartRename = (session: Session) => {
@@ -239,6 +294,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 Choose the AI model to power your assistant. Pro is more capable, while Flash is faster.
                             </p>
                         </div>
+                        {/* Tools multi-select */}
+                        <div>
+                            <h3 className="text-sm font-medium text-gray-400 mb-2">Tool</h3>
+                            <div className="grid grid-cols-2 gap-2">
+                                {mcpTools.map(tool => (
+                                    <button
+                                        key={tool.label}
+                                        onClick={() => toggleMcpTool(tool.label)}
+                                        className={`px-2 py-1.5 text-xs rounded-lg transition-colors border-2 focus:outline-none focus:border-sky-500 ${
+                                            selectedMcpToolLabels.includes(tool.label)
+                                                ? 'bg-sky-500 text-white font-bold border-sky-500'
+                                                : 'bg-slate-800 hover:bg-slate-700 text-gray-300 border-transparent'
+                                        }`}
+                                        title={tool.url}
+                                    >
+                                        {tool.label}
+                                    </button>
+                                ))}
+                            </div>
+                            <p className="mt-2 text-xs text-gray-500">This option is available when calling the Tools Agent</p>
+                        </div>
                         <div>
                              <h3 className="text-sm font-medium text-gray-400 mb-2 flex items-center"><SpeakerIcon className="w-4 h-4 mr-2" />Voice</h3>
                              <div className="grid grid-cols-3 gap-2">
@@ -257,7 +333,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                             .replace('bm_', 'bm-')}
                                     </button>
                                 ))}
-                            </div>
+                             </div>
                         </div>
                     </div>
                 </div>

@@ -1,5 +1,5 @@
 import { API_BASE_URL } from '../constants';
-import { VoicesCatalogResponse } from '../types';
+import { VoicesCatalogResponse, McpToolsCatalogResponse, SetMcpToolsRequest } from '../types';
 import { getAuthToken } from './storageService';
 import { 
     QueryRequest, 
@@ -366,6 +366,14 @@ export const getVoicesCatalog = async (user_id: string, signal?: AbortSignal): P
     return { available_voices: voices };
 };
 
+export const getMcpToolsCatalog = async (user_id: string, signal?: AbortSignal): Promise<McpToolsCatalogResponse> => {
+    const url = new URL(`${API_BASE_URL}/mcp_tools`);
+    url.searchParams.set('user_id', user_id);
+    url.searchParams.set('ts', Date.now().toString());
+    const response = await fetch(url, { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
+    return handleResponse<McpToolsCatalogResponse>(response);
+};
+
 export const getConfigPath = async (user_id: string, signal?: AbortSignal): Promise<ConfigPathResponse> => {
     const url = new URL(`${API_BASE_URL}/config_path`);
     url.searchParams.set('user_id', user_id);
@@ -381,4 +389,15 @@ export const getSessionSettings = async (user_id: string, session_id: string, si
     url.searchParams.set('ts', Date.now().toString());
     const response = await fetch(url, { method: 'GET', signal, cache: 'no-store' });
     return handleResponse<SessionSettingsResponse>(response);
+};
+
+// Persist per-user MCP tools selection (multi-select)
+export const setMcpTools = async (payload: SetMcpToolsRequest, signal?: AbortSignal): Promise<{success: boolean}> => {
+    const response = await fetch(`${API_BASE_URL}/set_mcp_tools`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(payload),
+        signal,
+    });
+    return handleResponse<{success: boolean}>(response);
 };

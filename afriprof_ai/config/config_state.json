@@ -15,20 +15,19 @@
     "af_sky",
     "af_nicole",
     "am_michael",
-    "bm_george",
-    "bf_isabella"
+    "bm_george"
   ],
   "mcp_servers": [
     {
-      "label": "web browsing",
+      "label": "Web Browsing",
       "url": "https://server.smithery.ai/@Aas-ee/open-websearch/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1"
     },
     {
-      "label": "google scholar search",
+      "label": "Google Scholar search",
       "url": "https://server.smithery.ai/@mochow13/google-scholar-mcp/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1"
     },
     {
-      "label": "weather",
+      "label": "Weather",
       "url": "https://server.smithery.ai/@isdaniel/mcp_weather_server/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1"
     },
     {
@@ -36,8 +35,8 @@
       "url": "https://server.smithery.ai/@smithery-ai/fetch/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1"
     },
     {
-      "label": "financial search",
-      "url": "https://server.smithery.ai/@hollaugo/financial-research-mcp-server/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1"
+      "label": "Financial Adviser",
+      "url": "https://server.smithery.ai/@imbenrabi/financial-modeling-prep-mcp-server/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1"
     }
   ]
 }
