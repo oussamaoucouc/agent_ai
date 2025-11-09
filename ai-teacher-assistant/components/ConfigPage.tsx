@@ -13,7 +13,8 @@ interface ConfigPageProps {
 const inputBaseStyle = "w-full px-3 py-2 rounded-md bg-slate-900 text-gray-200 border-2 border-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-colors";
 const buttonAddIconStyle = "p-2 bg-sky-600 hover:bg-sky-700 text-white rounded-md transition-colors disabled:bg-slate-600 disabled:cursor-not-allowed flex-shrink-0";
 const buttonRemoveIconStyle = "p-2 text-gray-400 bg-slate-700 hover:bg-red-600 hover:text-white rounded-md transition-colors flex-shrink-0";
-const readOnlyItemStyle = "flex-1 px-3 py-2 rounded-md bg-slate-900 text-gray-300 border-2 border-slate-700 font-mono text-sm truncate";
+// Read-only input style that supports easy full selection
+const readOnlyInputStyle = `${inputBaseStyle} font-mono text-sm truncate cursor-text`;
 
 
 export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert }) => {
@@ -155,7 +156,14 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                   <div className="space-y-2">
                     {(config.available_models || []).map((m, idx) => (
                       <div key={`${m}-${idx}`} className="flex items-center gap-3">
-                        <div className={readOnlyItemStyle}>{m}</div>
+                        <input
+                          type="text"
+                          readOnly
+                          value={m}
+                          className={readOnlyInputStyle}
+                          onFocus={(e) => e.currentTarget.select()}
+                          onMouseUp={(e) => e.preventDefault()} // keep selection
+                        />
                         <button onClick={() => removeModel(idx)} className={buttonRemoveIconStyle} title="Remove Model">
                             <TrashIcon className="w-5 h-5" />
                         </button>
@@ -174,14 +182,21 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                   <div className="space-y-2">
                     {(config.available_voices || []).map((v, idx) => (
                       <div key={`${v}-${idx}`} className="flex items-center gap-3">
-                        <div className={readOnlyItemStyle}>{v}</div>
+                        <input
+                          type="text"
+                          readOnly
+                          value={v}
+                          className={readOnlyInputStyle}
+                          onFocus={(e) => e.currentTarget.select()}
+                          onMouseUp={(e) => e.preventDefault()}
+                        />
                         <button onClick={() => removeVoice(idx)} className={buttonRemoveIconStyle} title="Remove Voice">
                             <TrashIcon className="w-5 h-5" />
                         </button>
                       </div>
                     ))}
                     <div className="flex items-center gap-3 pt-2">
-                      <input type="text" value={newVoice} onChange={(e) => setNewVoice(e.target.value)} placeholder="Add new voice id" className={`flex-1 ${inputBaseStyle}`} />
+                      <input type="text" value={newVoice} onChange={(e) => setNewVoice(e.target.value)} placeholder="Add new voice id" className={`flex-1 ${inputBaseStyle}`} onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()} />
                       <button onClick={addVoice} className={buttonAddIconStyle} title="Add Voice">
                           <PlusIcon className="w-5 h-5" />
                       </button>
@@ -190,7 +205,7 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                 </div>
                 <label className="block">
                   <span className="block text-sm font-medium text-gray-400 mb-2">Ollama Base URL</span>
-                  <input type="text" value={config.ollama_base_url} onChange={(e) => updateField('ollama_base_url', e.target.value)} placeholder="http://localhost:11434" className={inputBaseStyle} />
+                  <input type="text" value={config.ollama_base_url} onChange={(e) => updateField('ollama_base_url', e.target.value)} placeholder="http://localhost:11434" className={inputBaseStyle} onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()} />
                 </label>
               </section>
 
@@ -210,8 +225,22 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                     <div className="space-y-2">
                         {(config.mcp_servers || []).map((srv, idx) => (
                         <div key={`${srv.url}-${idx}`} className="flex items-center gap-3">
-                            <div className={`w-40 ${readOnlyItemStyle}`}>{srv.label}</div>
-                            <div className={readOnlyItemStyle}>{srv.url}</div>
+                            <input
+                              type="text"
+                              readOnly
+                              value={srv.label}
+                              className={`w-40 ${readOnlyInputStyle}`}
+                              onFocus={(e) => e.currentTarget.select()}
+                              onMouseUp={(e) => e.preventDefault()}
+                            />
+                            <input
+                              type="text"
+                              readOnly
+                              value={srv.url}
+                              className={readOnlyInputStyle}
+                              onFocus={(e) => e.currentTarget.select()}
+                              onMouseUp={(e) => e.preventDefault()}
+                            />
                             <button onClick={() => removeServer(idx)} className={buttonRemoveIconStyle} title="Remove Server">
                                 <TrashIcon className="w-5 h-5" />
                             </button>
@@ -219,8 +248,8 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                         ))}
                     </div>
                     <div className="flex items-center gap-3 pt-2">
-                      <input type="text" value={newServer.label} onChange={(e) => setNewServer(prev => ({ ...prev, label: e.target.value }))} placeholder="Label" className={`w-40 ${inputBaseStyle}`} />
-                      <input type="text" value={newServer.url} onChange={(e) => setNewServer(prev => ({ ...prev, url: e.target.value }))} placeholder="https://..." className={`flex-1 ${inputBaseStyle}`} />
+                      <input type="text" value={newServer.label} onChange={(e) => setNewServer(prev => ({ ...prev, label: e.target.value }))} placeholder="Label" className={`w-40 ${inputBaseStyle}`} onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()} />
+                      <input type="text" value={newServer.url} onChange={(e) => setNewServer(prev => ({ ...prev, url: e.target.value }))} placeholder="https://..." className={`flex-1 ${inputBaseStyle}`} onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()} />
                       <button onClick={addServer} className={buttonAddIconStyle} title="Add Server">
                           <PlusIcon className="w-5 h-5" />
                       </button>
@@ -231,11 +260,11 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                   <div className="space-y-4">
                     <label className="block">
                       <span className="block text-sm font-medium text-gray-400 mb-2">Stdio Command</span>
-                      <input type="text" value={config.mcp_stdio_command || ''} onChange={(e) => updateField('mcp_stdio_command', e.target.value)} placeholder="python" className={inputBaseStyle} />
+                      <input type="text" value={config.mcp_stdio_command || ''} onChange={(e) => updateField('mcp_stdio_command', e.target.value)} placeholder="python" className={inputBaseStyle} onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()} />
                     </label>
                     <label className="block">
                       <span className="block text-sm font-medium text-gray-400 mb-2">Stdio Args (comma-separated)</span>
-                      <input type="text" value={(config.mcp_stdio_args || []).join(', ')} onChange={(e) => updateField('mcp_stdio_args', e.target.value.split(',').map(s => s.trim()).filter(Boolean))} placeholder="script.py, --flag" className={inputBaseStyle} />
+                      <input type="text" value={(config.mcp_stdio_args || []).join(', ')} onChange={(e) => updateField('mcp_stdio_args', e.target.value.split(',').map(s => s.trim()).filter(Boolean))} placeholder="script.py, --flag" className={inputBaseStyle} onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()} />
                     </label>
                   </div>
                 )}
