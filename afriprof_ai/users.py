@@ -257,9 +257,24 @@ def delete_user(user_id: str, http_request: Request, db: SASession = Depends(get
         # Clean up sessions/messages/settings for the user
         # These tables are defined in sessions.py with no FK to users; remove manually
         db_sessions = db.query(session_mod.SessionDB).filter(session_mod.SessionDB.user_id == user_id).all()
+        # Explicitly delete messages first to be robust if FK cascade is missing
+        try:
+            session_ids = [s.id for s in db_sessions]
+            if session_ids:
+                db.query(session_mod.MessageDB).filter(session_mod.MessageDB.session_id.in_(session_ids)).delete(synchronize_session=False)
+        except Exception:
+            # Non-fatal: continue with session delete
+            pass
+        # Delete sessions (ORM will cascade to messages where supported)
         for s in db_sessions:
-            # Messages and settings use cascade or direct deletes in sessions router
             db.delete(s)
+
+        # Remove user-level session settings row(s)
+        try:
+            db.query(session_mod.SessionSettingsDB).filter(session_mod.SessionSettingsDB.user_id == user_id).delete(synchronize_session=False)
+        except Exception:
+            # Non-fatal: settings table may not exist in some deployments
+            pass
 
         # Clean up AGNO PostgresStorage rows for this user's sessions
         try:
@@ -273,13 +288,53 @@ def delete_user(user_id: str, http_request: Request, db: SASession = Depends(get
 
         db.delete(u)
         db.commit()
-        # Optionally remove user document directory
+        # Optionally remove user document directory and per-user agent memory DB files
         try:
             user_dir = get_user_pdf_dir(user_id)
             if os.path.isdir(user_dir):
-                # Leave files if you prefer; here we remove directory
                 import shutil
-                shutil.rmtree(user_dir, ignore_errors=True)
+                try:
+                    shutil.rmtree(user_dir)
+                except Exception:
+                    try:
+                        for root, dirs, files in os.walk(user_dir, topdown=False):
+                            for name in files:
+                                fpath = os.path.join(root, name)
+                                try:
+                                    os.remove(fpath)
+                                except Exception:
+                                    pass
+                            for name in dirs:
+                                dpath = os.path.join(root, name)
+                                try:
+                                    os.rmdir(dpath)
+                                except Exception:
+                                    pass
+                        os.rmdir(user_dir)
+                    except Exception:
+                        pass
+            # Clean up agent SQLite memory DBs created per user/session
+            # These are used by teacher agents (assistant/rag/mcp) and live under tmp/user_session_dbs
+            try:
+                import glob
+                base_mem_dir = os.path.join("tmp", "user_session_dbs")
+                if os.path.isdir(base_mem_dir):
+                    # Remove *.db and common SQLite sidecars (*.db-wal, *.db-shm)
+                    patterns = [
+                        os.path.join(base_mem_dir, f"memory_{user_id}_*.db"),
+                        os.path.join(base_mem_dir, f"memory_{user_id}_*.db-wal"),
+                        os.path.join(base_mem_dir, f"memory_{user_id}_*.db-shm"),
+                    ]
+                    for p in patterns:
+                        for f in glob.glob(p):
+                            try:
+                                os.remove(f)
+                            except Exception:
+                                # Best-effort: ignore file-level errors
+                                pass
+            except Exception:
+                # Best-effort cleanup; ignore if glob or removal fails
+                pass
         except Exception:
             pass
         return {"status": "deleted"}

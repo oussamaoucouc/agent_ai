@@ -315,7 +315,15 @@ async def delete_session(session_id: str, request: DeleteSessionRequest, http_re
         s = db.query(SessionDB).filter(SessionDB.id == session_id, SessionDB.user_id == uid).first()
         if not s:
             raise HTTPException(status_code=404, detail="Session not found")
-        # Delete app session (ORM will cascade to app_messages)
+        # Explicitly delete messages for this session to be robust across deployments
+        # where the DB schema may not have ON DELETE CASCADE on the FK.
+        try:
+            db.query(MessageDB).filter(MessageDB.session_id == session_id).delete(synchronize_session=False)
+        except Exception:
+            # Non-fatal: if the table doesn't exist or delete fails, continue with session delete
+            pass
+
+        # Delete app session (ORM will cascade to app_messages where supported)
         db.delete(s)
 
         # Also clean up AGNO PostgresStorage rows in agent_session for this user/session.
