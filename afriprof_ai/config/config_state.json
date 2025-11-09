@@ -31,6 +31,10 @@
     {
       "label": "weather",
       "url": "https://server.smithery.ai/@isdaniel/mcp_weather_server/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1"
+    },
+    {
+      "label": "Fetch web",
+      "url": "https://server.smithery.ai/@smithery-ai/fetch/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1"
     }
   ]
 }
