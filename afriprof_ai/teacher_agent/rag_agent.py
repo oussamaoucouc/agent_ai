@@ -21,7 +21,7 @@ from agno.tools.reasoning import ReasoningTools
 from agno.tools.thinking import ThinkingTools
 from agno.tools.knowledge import KnowledgeTools
 from agno.storage.sqlite import SqliteStorage
-from .config import DB_URL, DATA_DIR, get_current_model, OLLAMA_BASE_URL, get_user_pdf_dir
+from .config import DB_URL, DATA_DIR, get_current_model, get_current_model_id, OLLAMA_BASE_URL, get_user_pdf_dir
 from .locks import get_user_kb_lock
 
 import logging
@@ -158,8 +158,21 @@ async def run_rag_agent_async(query, user_id, session_id):
     add_instructions=False,
     )
 
+    # Resolve per-session model preference
+    try:
+        import sessions as session_mod
+        with session_mod.SessionLocal() as db:
+            session_model_id = session_mod.get_session_model_id(db, user_id, session_id)
+        logging.info(f"RAG agent model selected: user={user_id}, session={session_id}, model_id={session_model_id}")
+        # Build model instance from id (Ollama or Groq depending on prefix)
+        # Use Ollama by default
+        session_model = Ollama(id=session_model_id, host=OLLAMA_BASE_URL)
+    except Exception as e:
+        logging.warning(f"Falling back to current model due to error resolving session model: {e}")
+        session_model = get_current_model()
+
     rag_expert_agent = Agent(
-        model=get_current_model(),
+        model=session_model,
         reasoning=False,
         name="rag_expert_agent",
         session_id=session_id,

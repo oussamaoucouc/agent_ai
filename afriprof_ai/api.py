@@ -1350,7 +1350,26 @@ async def set_model_endpoint(request: SetModelRequest):
     """Set the model for the AI agents"""
     try:
         from teacher_agent.config import set_model_id
+        # Update runtime config immediately
         set_model_id(request.model)
+        # Persist as a per-user setting (use latest record)
+        with sessions.SessionLocal() as db:
+            settings = (
+                db.query(sessions.SessionSettingsDB)
+                .filter(sessions.SessionSettingsDB.user_id == request.user_id)
+                .order_by(sessions.SessionSettingsDB.updated_at.desc())
+                .first()
+            )
+            now = datetime.utcnow()
+            if settings:
+                settings.model_id = request.model
+                settings.updated_at = now
+            else:
+                # Ensure non-null voice default when creating a new settings row
+                from teacher_agent.config import get_current_voice
+                db.add(sessions.SessionSettingsDB(user_id=request.user_id, voice=get_current_voice(), model_id=request.model, updated_at=now))
+            db.commit()
+        logging.info(f"Model change persisted (user-level): user={request.user_id}, model_id={request.model}")
         return {"success": True, "message": f"Model changed to {request.model}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error setting model: {str(e)}")
@@ -1359,22 +1378,25 @@ async def set_model_endpoint(request: SetModelRequest):
 async def set_voice_endpoint(request: SetVoiceRequest):
     """Set the voice for TTS"""
     try:
-        # Persist per-session voice and update runtime config
+        # Update runtime config immediately
         from teacher_agent.config import set_voice
         set_voice(request.voice)
-        # Also persist to the database as session-specific setting
+        # Persist as a per-user setting (use latest record)
         with sessions.SessionLocal() as db:
-            settings = db.query(sessions.SessionSettingsDB).filter(
-                sessions.SessionSettingsDB.session_id == request.session_id,
-                sessions.SessionSettingsDB.user_id == request.user_id,
-            ).first()
+            settings = (
+                db.query(sessions.SessionSettingsDB)
+                .filter(sessions.SessionSettingsDB.user_id == request.user_id)
+                .order_by(sessions.SessionSettingsDB.updated_at.desc())
+                .first()
+            )
             now = datetime.utcnow()
             if settings:
                 settings.voice = request.voice
                 settings.updated_at = now
             else:
-                db.add(sessions.SessionSettingsDB(session_id=request.session_id, user_id=request.user_id, voice=request.voice, updated_at=now))
+                db.add(sessions.SessionSettingsDB(user_id=request.user_id, voice=request.voice, updated_at=now))
             db.commit()
+        logging.info(f"Voice change persisted (user-level): user={request.user_id}, voice={request.voice}")
         return {"success": True, "message": f"Voice changed to {request.voice}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error setting voice: {str(e)}")

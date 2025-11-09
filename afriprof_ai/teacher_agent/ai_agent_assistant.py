@@ -9,6 +9,7 @@ from agno.storage.postgres import PostgresStorage
 from agno.memory.v2.db.sqlite import SqliteMemoryDb
 from agno.memory.v2.memory import Memory
 from .config import DB_URL, get_current_model, OLLAMA_BASE_URL
+from agno.models.ollama import Ollama
 
 logging.basicConfig(level=logging.INFO)
 
@@ -50,9 +51,19 @@ async def run_assistant_agent_async(query, user_id, session_id):
     memory_assistant = await initialize_memory_dbs(user_id, session_id)
     storage_session_id = f"{user_id}_{session_id}"  # For PostgresStorage isolation
 
-    
+    # Resolve per-session model preference
+    try:
+        import sessions as session_mod
+        with session_mod.SessionLocal() as db:
+            session_model_id = session_mod.get_session_model_id(db, user_id, session_id)
+        logging.info(f"Assistant agent model selected: user={user_id}, session={session_id}, model_id={session_model_id}")
+        session_model = Ollama(id=session_model_id, host=OLLAMA_BASE_URL)
+    except Exception as e:
+        logging.warning(f"Falling back to current model for assistant due to error resolving session model: {e}")
+        session_model = get_current_model()
+
     assistant_agent = Agent(
-        model=get_current_model(),
+        model=session_model,
         reasoning=False,
         name="assistant_agent",
         session_id=session_id,

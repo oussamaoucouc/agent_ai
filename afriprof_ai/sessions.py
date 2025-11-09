@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, constr
 from typing import Optional
-from sqlalchemy import create_engine, Column, String, Text, DateTime, ForeignKey
+from sqlalchemy import create_engine, Column, String, Text, DateTime, ForeignKey, inspect
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship, Session as SASession
 from datetime import datetime
 from teacher_agent.config import DB_URL, get_current_voice, set_voice
 import uuid
+import logging
 
 # SQLAlchemy base and engine
 Base = declarative_base()
@@ -27,10 +28,10 @@ class SessionDB(Base):
 
 class SessionSettingsDB(Base):
     __tablename__ = "app_session_settings"
-    # Use session_id as primary key to enforce one settings row per session
-    session_id = Column(String(64), ForeignKey("app_sessions.id", ondelete="CASCADE"), primary_key=True)
-    user_id = Column(String(256), index=True, nullable=False)
+    # User-level settings: one row per user
+    user_id = Column(String(256), primary_key=True)
     voice = Column(String(128), nullable=False, default="af_sky")
+    model_id = Column(String(128), nullable=True)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -47,6 +48,48 @@ class MessageDB(Base):
 engine = create_engine(DB_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base.metadata.create_all(bind=engine)
+
+# Ensure schema aligns with user-level settings.
+try:
+    insp = inspect(engine)
+    cols = [c.get('name') for c in insp.get_columns('app_session_settings')]
+    # Add model_id if missing (older deployments)
+    if 'model_id' not in cols:
+        with engine.connect() as conn:
+            conn.exec_driver_sql("ALTER TABLE app_session_settings ADD COLUMN model_id VARCHAR(128)")
+            conn.commit()
+            logging.info("Added model_id column to app_session_settings (runtime migration)")
+    # Migrate away from session_id if present to user-level PK
+    if 'session_id' in cols:
+        with engine.connect() as conn:
+            conn.exec_driver_sql(
+                """
+                CREATE TABLE IF NOT EXISTS app_session_settings_new (
+                    user_id VARCHAR(256) PRIMARY KEY,
+                    voice VARCHAR(128) NOT NULL,
+                    model_id VARCHAR(128),
+                    updated_at TIMESTAMP NOT NULL
+                );
+                """
+            )
+            conn.exec_driver_sql(
+                """
+                INSERT INTO app_session_settings_new (user_id, voice, model_id, updated_at)
+                SELECT DISTINCT ON (user_id)
+                    user_id,
+                    COALESCE(voice, 'af_sky') AS voice,
+                    model_id,
+                    COALESCE(updated_at, CURRENT_TIMESTAMP) AS updated_at
+                FROM app_session_settings
+                ORDER BY user_id, updated_at DESC NULLS LAST;
+                """
+            )
+            conn.exec_driver_sql("DROP TABLE app_session_settings")
+            conn.exec_driver_sql("ALTER TABLE app_session_settings_new RENAME TO app_session_settings")
+            conn.commit()
+            logging.info("Migrated app_session_settings to user-level schema (dropped session_id).")
+except Exception as e:
+    logging.warning(f"Settings schema migration skipped or partially applied: {e}")
 
 
 def get_db():
@@ -90,7 +133,13 @@ def _db_to_session_model(s: SessionDB) -> SessionModel:
 
 
 def get_session_voice(db: SASession, user_id: str, session_id: str) -> str:
-    settings = db.query(SessionSettingsDB).filter(SessionSettingsDB.session_id == session_id, SessionSettingsDB.user_id == user_id).first()
+    # Resolve voice by user-level preference (latest), ignore session_id
+    settings = (
+        db.query(SessionSettingsDB)
+        .filter(SessionSettingsDB.user_id == user_id)
+        .order_by(SessionSettingsDB.updated_at.desc())
+        .first()
+    )
     return settings.voice if settings and settings.voice else get_current_voice()
 
 
@@ -98,10 +147,37 @@ def apply_session_voice(db: SASession, user_id: str, session_id: str) -> str:
     voice = get_session_voice(db, user_id, session_id)
     try:
         set_voice(voice)
+        logging.info(f"Applied session voice: user={user_id}, session={session_id}, voice={voice}")
     except Exception:
         # If setting voice fails (unlikely), continue with current config
-        pass
+        logging.warning("Failed to apply session voice; continuing with current config.")
     return voice
+
+# --- Per-session model helpers ---
+from teacher_agent.config import get_current_model_id, set_model_id
+import logging
+
+def get_session_model_id(db: SASession, user_id: str, session_id: str) -> str:
+    """Resolve model by user-level preference (latest), falling back to global config."""
+    settings = (
+        db.query(SessionSettingsDB)
+        .filter(SessionSettingsDB.user_id == user_id)
+        .order_by(SessionSettingsDB.updated_at.desc())
+        .first()
+    )
+    model_id = settings.model_id if settings and settings.model_id else get_current_model_id()
+    logging.info(f"Session model resolve: user={user_id}, session={session_id}, model_id={model_id}")
+    return model_id
+
+def apply_session_model(db: SASession, user_id: str, session_id: str) -> str:
+    """Apply the session-specific model to runtime config and return it."""
+    model_id = get_session_model_id(db, user_id, session_id)
+    try:
+        set_model_id(model_id)
+        logging.info(f"Applied session model: user={user_id}, session={session_id}, model_id={model_id}")
+    except Exception as e:
+        logging.warning(f"Failed to apply session model; continuing with current config. err={e}")
+    return model_id
 
 
 class CreateSessionRequest(BaseModel):
@@ -151,14 +227,14 @@ async def create_session(request: CreateSessionRequest, db: SASession = Depends(
             created_at=now,
         )
         db.add(greet_msg)
-        # Create default session settings
-        default_voice = get_current_voice()
-        settings = SessionSettingsDB(session_id=session_id, user_id=request.user_id, voice=default_voice, updated_at=now)
-        db.add(settings)
+        # Ensure user-level settings exist once; do not duplicate per session
+        if not db.query(SessionSettingsDB).filter(SessionSettingsDB.user_id == request.user_id).first():
+            default_voice = get_current_voice()
+            default_model = get_current_model_id()
+            db.add(SessionSettingsDB(user_id=request.user_id, voice=default_voice, model_id=default_model, updated_at=now))
         db.commit()
         db.refresh(s)
         db.refresh(greet_msg)
-        db.refresh(settings)
         return _db_to_session_model(s)
     except Exception as e:
         db.rollback()
@@ -196,6 +272,32 @@ async def delete_session(session_id: str, request: DeleteSessionRequest, db: SAS
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error deleting session: {str(e)}")
+
+
+# --- Session settings retrieval ---
+class SessionSettingsResponse(BaseModel):
+    model_id: str
+    voice: str
+
+
+@router.get("/{session_id}/settings", response_model=SessionSettingsResponse)
+async def get_session_settings(session_id: str, user_id: str = Query(..., min_length=1), db: SASession = Depends(get_db)):
+    """Return per-session settings (model and voice), falling back to global defaults if unset."""
+    try:
+        settings = db.query(SessionSettingsDB).filter(SessionSettingsDB.user_id == user_id).first()
+
+        # Resolve with fallbacks
+        resolved_model = get_session_model_id(db, user_id, session_id)
+        resolved_voice = get_session_voice(db, user_id, session_id)
+
+        logging.info(
+            f"Settings resolve: user={user_id}, session={session_id}, "
+            f"model_id={resolved_model}, voice={resolved_voice}, exists={bool(settings)} (user-level)"
+        )
+
+        return SessionSettingsResponse(model_id=resolved_model, voice=resolved_voice)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching session settings: {str(e)}")
 
 
 @router.put("/{session_id}/messages", response_model=SessionModel)

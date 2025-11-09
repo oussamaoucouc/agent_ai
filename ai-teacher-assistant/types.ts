@@ -207,3 +207,9 @@ export interface ConfigPathResponse {
     config_state_path: string;
     exists: boolean;
 }
+
+// --- Per-session settings ---
+export interface SessionSettingsResponse {
+    model_id: string;
+    voice: string; // matches TTSVoice enum string values
+}

@@ -11,7 +11,7 @@ import { AddUserPage } from './components/AddUserPage';
 import { EditUserPage } from './components/EditUserPage';
 import { Modal } from './components/Modal';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
-import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, listUserStats, createUser, deleteUser, loginUser, updateUser, getModelsCatalog } from './services/apiService';
+import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, listUserStats, createUser, deleteUser, loginUser, updateUser, getModelsCatalog, getSessionSettings } from './services/apiService';
 import * as storage from './services/storageService';
 import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice, QueryMode, AdminUser } from './types';
 import { API_BASE_URL } from './constants';
@@ -465,17 +465,36 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
             setSessions(updatedSessions);
             setActiveSessionId(newSession.id);
             setMessages(newSession.messages);
+            // Load per-session settings to reflect model/voice in sidebar
+            try {
+                const settings = await getSessionSettings(currentUser, newSession.id);
+                setCurrentModel(settings.model_id);
+                // Cast voice string to TTSVoice where possible
+                setCurrentVoice(settings.voice as TTSVoice);
+            } catch (e) {
+                console.warn('Failed to load new session settings, using defaults:', e);
+            }
         } catch (err) {
             console.error('Failed to create session:', err);
         }
     };
 
-    const handleSelectSession = (sessionId: string, currentSessions: Session[]) => {
+    const handleSelectSession = async (sessionId: string, currentSessions: Session[]) => {
         handleStopAudio();
         const session = currentSessions.find(s => s.id === sessionId);
         if (session) {
             setActiveSessionId(session.id);
             setMessages(session.messages);
+            // Fetch persisted per-session settings
+            if (currentUser) {
+                try {
+                    const settings = await getSessionSettings(currentUser, session.id);
+                    setCurrentModel(settings.model_id);
+                    setCurrentVoice(settings.voice as TTSVoice);
+                } catch (e) {
+                    console.warn('Failed to load session settings; keeping current selections.', e);
+                }
+            }
         }
     };
     

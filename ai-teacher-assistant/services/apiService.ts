@@ -22,7 +22,8 @@ import {
     ConfigResponse,
     ConfigUpdateRequest,
     ModelsCatalogResponse,
-    ConfigPathResponse
+    ConfigPathResponse,
+    SessionSettingsResponse
 } from '../types';
 
 const handleResponse = async <T,>(response: Response): Promise<T> => {
@@ -359,4 +360,13 @@ export const getConfigPath = async (user_id: string, signal?: AbortSignal): Prom
     url.searchParams.set('ts', Date.now().toString());
     const response = await fetch(url, { method: 'GET', signal, cache: 'no-store' });
     return handleResponse<ConfigPathResponse>(response);
+};
+
+// --- Per-session settings ---
+export const getSessionSettings = async (user_id: string, session_id: string, signal?: AbortSignal): Promise<SessionSettingsResponse> => {
+    const url = new URL(`${API_BASE_URL}/sessions/${session_id}/settings`);
+    url.searchParams.set('user_id', user_id);
+    url.searchParams.set('ts', Date.now().toString());
+    const response = await fetch(url, { method: 'GET', signal, cache: 'no-store' });
+    return handleResponse<SessionSettingsResponse>(response);
 };

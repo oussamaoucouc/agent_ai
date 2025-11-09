@@ -15,6 +15,7 @@ from . import config as cfg
 from agno.tools.mcp import MCPTools
 from mcp.shared.exceptions import McpError
 from contextlib import AsyncExitStack
+from agno.models.ollama import Ollama
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -82,10 +83,21 @@ async def run_agent_async(query, user_id, session_id):
     memory_mcp = await initialize_memory_dbs(user_id, session_id)
     storage_session_id = f"{user_id}_{session_id}"  # For PostgresStorage isolation
 
+    # Resolve per-session model preference
+    try:
+        import sessions as session_mod
+        with session_mod.SessionLocal() as db:
+            session_model_id = session_mod.get_session_model_id(db, user_id, session_id)
+        logger.info(f"MCP agent model selected: user={user_id}, session={session_id}, model_id={session_model_id}")
+        session_model = Ollama(id=session_model_id, host=cfg.OLLAMA_BASE_URL)
+    except Exception as e:
+        logger.warning(f"Falling back to current model for MCP due to error resolving session model: {e}")
+        session_model = cfg.get_current_model()
+
     # Memory DBs already initialized via the cached function
     # Common Agent configuration to avoid duplication across transports
     agent_common_kwargs = dict(
-        model=cfg.get_current_model(),
+        model=session_model,
         name="mcp_llm_agent",
         instructions=dedent("""\
             You are an AI assistant that MUST use MCP tools to answer.
