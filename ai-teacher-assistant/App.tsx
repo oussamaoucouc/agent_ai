@@ -177,6 +177,7 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                 role: u.role === 'admin' ? 'admin' : 'user',
                 sessions: u.sessions ?? 0,
                 documents: u.documents ?? 0,
+                mcpTools: u.mcpTools ?? 0,
                 createdAt: u.createdAt,
             }));
             setAdminUsers(mapped);

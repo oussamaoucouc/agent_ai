@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, constr
-from sqlalchemy import create_engine, Column, String, DateTime, Integer, UniqueConstraint
+import json as _json
+from sqlalchemy import create_engine, Column, String, DateTime, Integer, UniqueConstraint, text
 from sqlalchemy.orm import sessionmaker, declarative_base, Session as SASession
 from datetime import datetime
 import uuid
@@ -81,6 +82,7 @@ class UserStatsModel(BaseModel):
     role: str
     sessions: int
     documents: int
+    mcpTools: int
     createdAt: str
 
 
@@ -258,6 +260,17 @@ def delete_user(user_id: str, http_request: Request, db: SASession = Depends(get
         for s in db_sessions:
             # Messages and settings use cascade or direct deletes in sessions router
             db.delete(s)
+
+        # Clean up AGNO PostgresStorage rows for this user's sessions
+        try:
+            db.execute(
+                text("DELETE FROM agent_session WHERE user_id = :uid"),
+                {"uid": user_id},
+            )
+        except Exception:
+            # Non-fatal: agent_session may not exist in some deployments
+            pass
+
         db.delete(u)
         db.commit()
         # Optionally remove user document directory
@@ -326,12 +339,23 @@ def user_stats(request: Request, db: SASession = Depends(get_db)):
                     docs_count = len([f for f in os.listdir(user_dir) if os.path.isfile(os.path.join(user_dir, f))])
             except Exception:
                 pass
+            # Count selected MCP tools from session settings (JSON array of URLs)
+            tools_count = 0
+            try:
+                settings = db.query(session_mod.SessionSettingsDB).filter(session_mod.SessionSettingsDB.user_id == u.id).first()
+                if settings and settings.mcp_tools_urls:
+                    parsed = _json.loads(settings.mcp_tools_urls)
+                    if isinstance(parsed, list):
+                        tools_count = len([str(x).strip() for x in parsed if isinstance(x, str) and str(x).strip()])
+            except Exception:
+                tools_count = 0
             stats.append(UserStatsModel(
                 id=u.id,
                 username=u.username,
                 role=u.role,
                 sessions=sess_count,
                 documents=docs_count,
+                mcpTools=tools_count,
                 createdAt=u.created_at.isoformat()
             ))
         return stats

@@ -49,6 +49,7 @@ export interface AdminUser {
     role: 'admin' | 'user';
     sessions: number;
     documents: number;
+    mcpTools: number;
     createdAt: string;
 }
 

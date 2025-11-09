@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, constr
 from typing import Optional
-from sqlalchemy import create_engine, Column, String, Text, DateTime, ForeignKey, inspect
+from sqlalchemy import create_engine, Column, String, Text, DateTime, ForeignKey, inspect, text
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship, Session as SASession
 from datetime import datetime
 from teacher_agent.config import DB_URL, get_current_voice, set_voice
@@ -315,7 +315,24 @@ async def delete_session(session_id: str, request: DeleteSessionRequest, http_re
         s = db.query(SessionDB).filter(SessionDB.id == session_id, SessionDB.user_id == uid).first()
         if not s:
             raise HTTPException(status_code=404, detail="Session not found")
+        # Delete app session (ORM will cascade to app_messages)
         db.delete(s)
+
+        # Also clean up AGNO PostgresStorage rows in agent_session for this user/session.
+        # Some agents use plain session_id, others use f"{user_id}_{session_id}".
+        try:
+            db.execute(
+                text(
+                    """
+                    DELETE FROM agent_session
+                    WHERE user_id = :uid AND (session_id = :sid OR session_id = :combined)
+                    """
+                ),
+                {"uid": uid, "sid": session_id, "combined": f"{uid}_{session_id}"},
+            )
+        except Exception:
+            # Non-fatal: agent_session may not exist in some deployments
+            pass
         db.commit()
         return {"status": "deleted"}
     except HTTPException:
