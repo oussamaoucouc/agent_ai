@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { UploadedFile, Session, TTSVoice } from '../types';
+import * as storage from '../services/storageService';
+import { getVoicesCatalog } from '../services/apiService';
 import { DocumentIcon, UploadIcon, SpinnerIcon, CheckIcon, ErrorIcon, PlusIcon, LogoutIcon, ChatIcon, CloseIcon, EditIcon, TrashIcon, CubeIcon, SpeakerIcon } from './icons';
 
 interface SidebarProps {
@@ -35,12 +37,17 @@ const StatusIcon: React.FC<{ status: UploadedFile['status'] }> = ({ status }) =>
     }
 };
 
-const femaleVoiceOptions: { id: TTSVoice }[] = [
-    { id: TTSVoice.AF_BELLA }, { id: TTSVoice.AF_NICOLE }, { id: TTSVoice.AF_SARAH },
-    { id: TTSVoice.AF_SKY }, { id: TTSVoice.BF_EMMA }, { id: TTSVoice.BF_ISABELLA },
-];
-const maleVoiceOptions: { id: TTSVoice }[] = [
-    { id: TTSVoice.AM_ADAM }, { id: TTSVoice.AM_MICHAEL }, { id: TTSVoice.BM_GEORGE }, { id: TTSVoice.BM_LEWIS },
+const DEFAULT_VOICES: string[] = [
+    TTSVoice.AF_BELLA,
+    TTSVoice.AF_NICOLE,
+    TTSVoice.AF_SARAH,
+    TTSVoice.AF_SKY,
+    TTSVoice.BF_EMMA,
+    TTSVoice.BF_ISABELLA,
+    TTSVoice.AM_ADAM,
+    TTSVoice.AM_MICHAEL,
+    TTSVoice.BM_GEORGE,
+    TTSVoice.BM_LEWIS,
 ];
 
 
@@ -74,6 +81,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
             renameInputRef.current.select();
         }
     }, [renamingSessionId]);
+
+    // Voice catalog state and loader (single dynamic list)
+    const [voices, setVoices] = useState<string[]>(DEFAULT_VOICES);
+
+    useEffect(() => {
+        const controller = new AbortController();
+        const loadVoices = async () => {
+            try {
+                const userId = storage.getCurrentUser() || '';
+                if (!userId) return;
+                const res = await getVoicesCatalog(userId, controller.signal);
+                const fetched = res.available_voices || [];
+                if (fetched.length > 0) setVoices(fetched);
+            } catch (e) {
+                // silently fall back to defaults
+                console.warn('Failed to load voices catalog, using defaults');
+            }
+        };
+        loadVoices();
+        return () => controller.abort();
+    }, []);
 
 
     const handleStartRename = (session: Session) => {
@@ -213,31 +241,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         </div>
                         <div>
                              <h3 className="text-sm font-medium text-gray-400 mb-2 flex items-center"><SpeakerIcon className="w-4 h-4 mr-2" />Voice</h3>
-                             <h4 className="text-xs font-semibold text-gray-500 mb-2">Female Voices</h4>
                              <div className="grid grid-cols-3 gap-2">
-                                {femaleVoiceOptions.map(voice => (
+                                {voices.map(v => (
                                     <button
-                                        key={voice.id}
-                                        onClick={() => onVoiceChange(voice.id)}
+                                        key={v}
+                                        onClick={() => onVoiceChange(v as TTSVoice)}
                                         className={`px-2 py-1.5 text-xs font-mono rounded-lg transition-colors border-2 focus:outline-none focus:border-sky-500 ${
-                                            currentVoice === voice.id ? 'bg-sky-500 text-white font-bold border-sky-500' : 'bg-slate-800 hover:bg-slate-700 text-gray-300 border-transparent'
+                                            currentVoice === (v as TTSVoice) ? 'bg-sky-500 text-white font-bold border-sky-500' : 'bg-slate-800 hover:bg-slate-700 text-gray-300 border-transparent'
                                         }`}
                                     >
-                                        {voice.id.replace('af_', 'af-').replace('bf_', 'bf-')}
-                                    </button>
-                                ))}
-                            </div>
-                            <h4 className="text-xs font-semibold text-gray-500 mt-3 mb-2">Male Voices</h4>
-                             <div className="grid grid-cols-3 gap-2">
-                                {maleVoiceOptions.map(voice => (
-                                    <button
-                                        key={voice.id}
-                                        onClick={() => onVoiceChange(voice.id)}
-                                        className={`px-2 py-1.5 text-xs font-mono rounded-lg transition-colors border-2 focus:outline-none focus:border-sky-500 ${
-                                            currentVoice === voice.id ? 'bg-sky-500 text-white font-bold border-sky-500' : 'bg-slate-800 hover:bg-slate-700 text-gray-300 border-transparent'
-                                        }`}
-                                    >
-                                        {voice.id.replace('am_', 'am-').replace('bm_', 'bm-')}
+                                        {v
+                                            .replace('af_', 'af-')
+                                            .replace('bf_', 'bf-')
+                                            .replace('am_', 'am-')
+                                            .replace('bm_', 'bm-')}
                                     </button>
                                 ))}
                             </div>

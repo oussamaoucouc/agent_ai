@@ -93,6 +93,7 @@ MCP_STDIO_ARGS = _parse_stdio_args(_MCP_STDIO_ARGS_RAW)
 
 # Catalogs and lists persisted across restarts
 _available_models: list[str] = [_current_model_id]
+_available_voices: list[str] = [_current_voice]
 _mcp_servers: list[dict] = [{"label": "Default MCP", "url": MCP_SERVER_URL}]
 
 def _load_config_state() -> Dict[str, Any]:
@@ -190,6 +191,7 @@ def get_runtime_config() -> Dict[str, Any]:
         "mcp_stdio_command": MCP_STDIO_COMMAND,
         "mcp_stdio_args": MCP_STDIO_ARGS,
         "available_models": _available_models,
+        "available_voices": _available_voices,
         "mcp_servers": _mcp_servers,
     }
 
@@ -254,6 +256,15 @@ def update_runtime_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
                 _available_models = [str(m) for m in models if str(m)] or _available_models
         except Exception:
             pass
+    # Optional voices list management
+    global _available_voices
+    if "available_voices" in cfg and cfg["available_voices"] is not None:
+        try:
+            voices = cfg["available_voices"]
+            if isinstance(voices, list):
+                _available_voices = [str(v) for v in voices if str(v)] or _available_voices
+        except Exception:
+            pass
     if "mcp_servers" in cfg and cfg["mcp_servers"] is not None:
         try:
             servers = cfg["mcp_servers"]
@@ -280,6 +291,7 @@ def update_runtime_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "mcp_stdio_command": MCP_STDIO_COMMAND,
         "mcp_stdio_args": MCP_STDIO_ARGS,
         "available_models": _available_models,
+        "available_voices": _available_voices,
         "mcp_servers": _mcp_servers,
     }
     _save_config_state(new_state)

@@ -12,6 +12,10 @@
     "phi4-mini:3.8b",
     "ai_teacher_qwen"
   ],
+  "available_voices": [
+    "af_sky",
+    "af_nicole"
+  ],
   "mcp_servers": [
     {
       "label": "web browsing",

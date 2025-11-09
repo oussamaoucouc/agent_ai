@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ConfigResponse, TTSVoice } from '../types';
+import { ConfigResponse } from '../types';
 import { getConfig, updateConfig } from '../services/apiService';
 import * as storage from '../services/storageService';
 import { PlusIcon, TrashIcon } from './icons';
@@ -23,6 +23,7 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [newServer, setNewServer] = useState<{ label: string; url: string }>({ label: '', url: '' });
   const [newModel, setNewModel] = useState<string>('');
+  const [newVoice, setNewVoice] = useState<string>('');
 
   const userId = storage.getCurrentUser() || '';
 
@@ -58,6 +59,7 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
         mcp_stdio_command: config.mcp_stdio_command ?? null,
         mcp_stdio_args: config.mcp_stdio_args || [],
         available_models: config.available_models || [],
+        available_voices: (config as any).available_voices || [],
         mcp_servers: config.mcp_servers || [],
       };
       const res = await updateConfig(payload);
@@ -75,7 +77,7 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
     setConfig(prev => prev ? { ...prev, [field]: value } : prev);
   };
 
-  const voiceOptions = Object.values(TTSVoice);
+  // Voice options now managed via available_voices in runtime config
 
   const addServer = () => {
     const label = newServer.label.trim();
@@ -98,6 +100,17 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
 
   const removeModel = (index: number) => {
     setConfig(prev => prev ? { ...prev, available_models: (prev.available_models || []).filter((_, i) => i !== index) } : prev);
+  };
+
+  const addVoice = () => {
+    const voice = newVoice.trim();
+    if (!voice) return;
+    setConfig(prev => prev ? { ...prev, available_voices: Array.from(new Set([...(prev.available_voices || []), voice])) } : prev);
+    setNewVoice('');
+  };
+
+  const removeVoice = (index: number) => {
+    setConfig(prev => prev ? { ...prev, available_voices: (prev.available_voices || []).filter((_, i) => i !== index) } : prev);
   };
 
   return (
@@ -156,12 +169,25 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                     </div>
                   </div>
                 </div>
-                <label className="block">
-                  <span className="block text-sm font-medium text-gray-400 mb-2">TTS Voice</span>
-                  <select value={config.voice} onChange={(e) => updateField('voice', e.target.value)} className={inputBaseStyle} >
-                    {voiceOptions.map(v => (<option key={v} value={v}>{v}</option>))}
-                  </select>
-                </label>
+                <div>
+                  <span className="block text-sm font-medium text-gray-400 mb-2">Available Voices</span>
+                  <div className="space-y-2">
+                    {(config.available_voices || []).map((v, idx) => (
+                      <div key={`${v}-${idx}`} className="flex items-center gap-3">
+                        <div className={readOnlyItemStyle}>{v}</div>
+                        <button onClick={() => removeVoice(idx)} className={buttonRemoveIconStyle} title="Remove Voice">
+                            <TrashIcon className="w-5 h-5" />
+                        </button>
+                      </div>
+                    ))}
+                    <div className="flex items-center gap-3 pt-2">
+                      <input type="text" value={newVoice} onChange={(e) => setNewVoice(e.target.value)} placeholder="Add new voice id" className={`flex-1 ${inputBaseStyle}`} />
+                      <button onClick={addVoice} className={buttonAddIconStyle} title="Add Voice">
+                          <PlusIcon className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
                 <label className="block">
                   <span className="block text-sm font-medium text-gray-400 mb-2">Ollama Base URL</span>
                   <input type="text" value={config.ollama_base_url} onChange={(e) => updateField('ollama_base_url', e.target.value)} placeholder="http://localhost:11434" className={inputBaseStyle} />

@@ -183,6 +183,7 @@ export interface ConfigResponse {
     mcp_stdio_command?: string | null;
     mcp_stdio_args: string[];
     available_models: string[];
+    available_voices: string[];
     mcp_servers: { label: string; url: string }[];
 }
 
@@ -196,11 +197,16 @@ export interface ConfigUpdateRequest {
     mcp_stdio_command?: string | null;
     mcp_stdio_args?: string[];
     available_models?: string[];
+    available_voices?: string[];
     mcp_servers?: { label: string; url: string }[];
 }
 
 export interface ModelsCatalogResponse {
     available_models: string[];
+}
+
+export interface VoicesCatalogResponse {
+    available_voices: string[];
 }
 
 export interface ConfigPathResponse {

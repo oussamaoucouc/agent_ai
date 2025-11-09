@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../constants';
+import { VoicesCatalogResponse } from '../types';
 import { 
     QueryRequest, 
     QueryTTSResponse, 
@@ -352,6 +353,19 @@ export const getModelsCatalog = async (user_id: string, signal?: AbortSignal): P
     }
     const models = Array.isArray(raw?.models) ? raw.models : [];
     return { available_models: models };
+};
+
+export const getVoicesCatalog = async (user_id: string, signal?: AbortSignal): Promise<VoicesCatalogResponse> => {
+    const url = new URL(`${API_BASE_URL}/voices`);
+    url.searchParams.set('user_id', user_id);
+    url.searchParams.set('ts', Date.now().toString());
+    const response = await fetch(url, { method: 'GET', signal, cache: 'no-store' });
+    const raw = await response.json();
+    if (!response.ok) {
+        throw new Error(raw?.detail || `Failed to fetch voices catalog: ${response.status}`);
+    }
+    const voices = Array.isArray(raw?.voices) ? raw.voices : [];
+    return { available_voices: voices };
 };
 
 export const getConfigPath = async (user_id: string, signal?: AbortSignal): Promise<ConfigPathResponse> => {

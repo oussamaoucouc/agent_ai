@@ -177,6 +177,7 @@ class ConfigResponse(BaseModel):
     mcp_stdio_command: Optional[str] = None
     mcp_stdio_args: list[str] = []
     available_models: list[str] = []
+    available_voices: list[str] = []
     mcp_servers: list[Dict[str, str]] = []
 
 class ConfigUpdateRequest(BaseModel):
@@ -189,6 +190,7 @@ class ConfigUpdateRequest(BaseModel):
     mcp_stdio_command: Optional[str] = None
     mcp_stdio_args: Optional[list[str]] = None
     available_models: Optional[list[str]] = None
+    available_voices: Optional[list[str]] = None
     mcp_servers: Optional[list[Dict[str, str]]] = None
 
 class ConfigPathResponse(BaseModel):
@@ -1437,6 +1439,7 @@ async def update_config(request: ConfigUpdateRequest):
             "mcp_stdio_command": request.mcp_stdio_command,
             "mcp_stdio_args": request.mcp_stdio_args,
             "available_models": request.available_models,
+            "available_voices": request.available_voices,
             "mcp_servers": request.mcp_servers,
         })
         return ConfigResponse(**cfg)
@@ -1517,6 +1520,9 @@ async def deployment_status():
 class ModelsCatalogResponse(BaseModel):
     models: list[str]
 
+class VoicesCatalogResponse(BaseModel):
+    voices: list[str]
+
 @app.get("/models", response_model=ModelsCatalogResponse)
 async def get_models(user_id: str):
     """Return available models catalog to any authenticated user."""
@@ -1533,3 +1539,21 @@ async def get_models(user_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching models: {str(e)}")
+
+# Voices catalog for any authenticated user
+@app.get("/voices", response_model=VoicesCatalogResponse)
+async def get_voices(user_id: str):
+    """Return available voices catalog to any authenticated user."""
+    try:
+        # Verify user exists (any role)
+        with users.SessionLocal() as db:
+            u = db.query(users.UserDB).filter(users.UserDB.id == user_id).first()
+            if not u:
+                raise HTTPException(status_code=401, detail="Invalid user")
+        from teacher_agent.config import get_runtime_config
+        cfg = get_runtime_config()
+        return VoicesCatalogResponse(voices=cfg.get("available_voices", []))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching voices: {str(e)}")
