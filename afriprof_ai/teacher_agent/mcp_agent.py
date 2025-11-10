@@ -158,7 +158,11 @@ async def run_agent_async(query, user_id, session_id):
             - Always call tools yourself; never tell the user to use tools.
             - Do not invent facts; rely strictly on tool outputs.
             - Never output pseudocode or instructions for using tools; return only results from actual tool calls.
-            - If tools are insufficient or unavailable, reply exactly: "Unable to answer with available tools."
+            - Do not reveal internal tool names, function identifiers, API endpoints, or example API calls.
+              If a tool returns setup instructions or examples (e.g., function lists), summarize in plain language
+              or provide a concise human answer. Do not echo those internal details to the user.
+            - If tools are insufficient or unavailable or a configuration (e.g., API key) is missing,
+              reply exactly: "Unable to answer with available tools."
             - When tools provide sources, include brief citations (title + link or identifier).
 
             Response style (human‑like and informative):
@@ -337,7 +341,8 @@ async def run_agent_async(query, user_id, session_id):
     except McpError as e:
         logger.error(f"MCP Error: {e}")
         logger.error("This usually means the MCP server failed to start or is not responding.")
-        raise
+        # Return a safe user-facing fallback instead of surfacing internal errors
+        return "Unable to answer with available tools."
     except asyncio.CancelledError:
         # Propagate cancellation so API endpoints can return 499
         logger.info("MCP agent cancelled")

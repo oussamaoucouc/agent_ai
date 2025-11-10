@@ -107,10 +107,25 @@ def clean_model_output(text: str) -> str:
     text = re.sub(r'```[a-zA-Z]*\s*', '', text)
     text = re.sub(r'```', '', text)
 
-    # Strip list and step markers from each line
+    # Strip list/step markers and drop internal API/function-like traces
     lines = text.splitlines()
-    lines = [re.sub(r'^\s*(?:[-*]\s+|\d+[.)]\s+|Step\s*\d+\s*:)', '', line) for line in lines]
-    text = '\n'.join(lines)
+    cleaned_lines = []
+    func_like = re.compile(r"\b[a-zA-Z_][a-zA-Z0-9_]*\s*\(.*\)")
+    bulk_like = re.compile(r"\bget[a-zA-Z0-9]+(?:TTMBulk|Bulk)\b")
+    api_examples = re.compile(r"(?is)examples of API calls|API calls you can make")
+    for line in lines:
+        base = re.sub(r'^\s*(?:[-*]\s+|\d+[.)]\s+|Step\s*\d+\s*:)', '', line)
+        # Drop lines that look like internal examples or function identifiers
+        if (
+            api_examples.search(base)
+            or bulk_like.search(base)
+            or func_like.search(base)
+            or re.search(r'^\s*\"?arguments\"?\s*:\s*\{.*\}\s*$', base)
+            or re.fullmatch(r"\s*[{}]\s*", base)
+        ):
+            continue
+        cleaned_lines.append(base)
+    text = '\n'.join(cleaned_lines)
 
     # Collapse excessive blank lines and trim
     text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
@@ -393,6 +408,7 @@ async def query_agent(request: QueryRequest):
 async def query_mcp(request: QueryRequest):
     try:
         response = await run_mcp_agent(request.query, request.user_id, request.session_id)
+        response = clean_model_output(response)
         return QueryResponse(
             user_id=request.user_id,
             session_id=request.session_id,
@@ -588,6 +604,7 @@ async def query_mcp_tts_endpoint(request: QueryRequest):
     """
     try:
         response_text = await run_mcp_agent(request.query, request.user_id, request.session_id)
+        response_text = clean_model_output(response_text)
 
         # Generate audio and visemes
         # Apply per-session voice before generating audio

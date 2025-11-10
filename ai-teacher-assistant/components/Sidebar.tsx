@@ -299,7 +299,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 Choose the AI model to power your assistant. Pro is more capable, while Flash is faster.
                             </p>
                         </div>
-                        {/* Tools multi-select */}
+                        {/* Voices at top */}
+                        <div>
+                             <h3 className="text-sm font-medium text-gray-400 mb-2 flex items-center"><SpeakerIcon className="w-4 h-4 mr-2" />Voices</h3>
+                             <div className="grid grid-cols-3 gap-2">
+                                {voices.map(v => (
+                                    <button
+                                        key={v}
+                                        onClick={() => onVoiceChange(v as TTSVoice)}
+                                        className={`px-2 py-1.5 text-xs font-mono rounded-lg transition-colors border-2 focus:outline-none focus:border-sky-500 ${
+                                            currentVoice === (v as TTSVoice) ? 'bg-sky-500 text-white font-bold border-sky-500' : 'bg-slate-800 hover:bg-slate-700 text-gray-300 border-transparent'
+                                        }`}
+                                    >
+                                        {v
+                                            .replace('af_', 'af-')
+                                            .replace('bf_', 'bf-')
+                                            .replace('am_', 'am-')
+                                            .replace('bm_', 'bm-')}
+                                    </button>
+                                ))}
+                             </div>
+                        </div>
+                        {/* Tools multi-select below Voices */}
                         <div>
                             <h3 className="text-sm font-medium text-gray-400 mb-2">Tools</h3>
                             <div className="grid grid-cols-2 gap-2">
@@ -324,26 +345,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     ? 'Select tools to use with the Tools agent.'
                                     : 'Switch to Tools mode to select tools.'}
                             </p>
-                        </div>
-                        <div>
-                             <h3 className="text-sm font-medium text-gray-400 mb-2 flex items-center"><SpeakerIcon className="w-4 h-4 mr-2" />Voices</h3>
-                             <div className="grid grid-cols-3 gap-2">
-                                {voices.map(v => (
-                                    <button
-                                        key={v}
-                                        onClick={() => onVoiceChange(v as TTSVoice)}
-                                        className={`px-2 py-1.5 text-xs font-mono rounded-lg transition-colors border-2 focus:outline-none focus:border-sky-500 ${
-                                            currentVoice === (v as TTSVoice) ? 'bg-sky-500 text-white font-bold border-sky-500' : 'bg-slate-800 hover:bg-slate-700 text-gray-300 border-transparent'
-                                        }`}
-                                    >
-                                        {v
-                                            .replace('af_', 'af-')
-                                            .replace('bf_', 'bf-')
-                                            .replace('am_', 'am-')
-                                            .replace('bm_', 'bm-')}
-                                    </button>
-                                ))}
-                             </div>
                         </div>
                     </div>
                 </div>
