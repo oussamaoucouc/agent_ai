@@ -37,6 +37,18 @@
     {
       "label": "Financial Adviser",
       "url": "https://server.smithery.ai/@imbenrabi/financial-modeling-prep-mcp-server/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1"
+    },
+    {
+      "label": "websearch DuckDuckGo",
+      "url": "https://server.smithery.ai/@OEvortex/ddg_search/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1"
+    },
+    {
+      "label": "Web fetch",
+      "url": "https://remote.mcpservers.org/fetch/mcp"
+    },
+    {
+      "label": "Thinking LLM",
+      "url": "https://remote.mcpservers.org/sequentialthinking/mcp"
     }
   ]
 }

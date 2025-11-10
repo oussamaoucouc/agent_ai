@@ -323,7 +323,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         {/* Tools multi-select below Voices */}
                         <div>
                             <h3 className="text-sm font-medium text-gray-400 mb-2">Tools</h3>
-                            <div className="grid grid-cols-2 gap-2">
+                            {/* Wrap grid to enable hover tooltip when disabled */}
+                            <div className={`relative ${!canSelectTools ? 'group' : ''}`}>
+                              <div className="grid grid-cols-2 gap-2">
                                 {mcpTools.map(tool => (
                                     <button
                                         key={tool.label}
@@ -339,6 +341,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                         {tool.label}
                                     </button>
                                 ))}
+                              </div>
+                              {!canSelectTools && (
+                                <div className="pointer-events-none absolute -top-10 left-0 bg-gray-900/90 text-white text-xs px-2 py-1 rounded-md shadow-md opacity-0 group-hover:opacity-100">
+                                  Switch to Tools mode to enable tool selection
+                                </div>
+                              )}
                             </div>
                             <p className="mt-2 text-xs text-gray-500">
                                 {canSelectTools
@@ -353,14 +361,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div>
                     <h2 className="text-lg font-semibold text-gray-200 mb-3">Knowledge Base</h2>
                     <p className="text-sm text-gray-400 mb-4">Add documents to provide context for the AI assistant.</p>
-                    <label
-                        htmlFor="file-upload"
-                        className={`w-full ${canUploadDocs ? 'cursor-pointer bg-sky-600 hover:bg-sky-700' : 'cursor-not-allowed bg-slate-800 opacity-50'} text-white font-bold py-2 px-4 rounded-lg inline-flex items-center justify-center transition-colors`}
-                        aria-disabled={!canUploadDocs}
-                    >
-                        <UploadIcon className="w-5 h-5 mr-2" />
-                        <span>Upload Document</span>
-                    </label>
+                    {/* Upload button with hover tooltip when disabled */}
+                    <div className={`relative ${!canUploadDocs ? 'group' : ''}`}>
+                      <label
+                          htmlFor="file-upload"
+                          className={`w-full ${canUploadDocs ? 'cursor-pointer bg-sky-600 hover:bg-sky-700' : 'cursor-not-allowed bg-slate-800 opacity-50'} text-white font-bold py-2 px-4 rounded-lg inline-flex items-center justify-center transition-colors`}
+                          aria-disabled={!canUploadDocs}
+                      >
+                          <UploadIcon className="w-5 h-5 mr-2" />
+                          <span>Upload Document</span>
+                      </label>
+                      {!canUploadDocs && (
+                        <div className="pointer-events-none absolute -top-10 left-0 bg-gray-900/90 text-white text-xs px-2 py-1 rounded-md shadow-md opacity-0 group-hover:opacity-100">
+                          Switch to Document Search mode to enable uploads
+                        </div>
+                      )}
+                    </div>
                     <input id="file-upload" type="file" className="hidden" onChange={onFileChange} multiple disabled={!canUploadDocs} />
                     {!canUploadDocs && (
                         <p className="mt-2 text-xs text-gray-500">Switch to Document Search mode to Upload Document.</p>
