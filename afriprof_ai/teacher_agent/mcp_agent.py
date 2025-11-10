@@ -149,9 +149,11 @@ async def run_agent_async(query, user_id, session_id):
         model=session_model,
         name="mcp_llm_agent",
         instructions=dedent("""\
-            You are an AI assistant that uses MCP tools to produce accurate, helpful answers.
+             You are an AI assistant that uses MCP tools to produce accurate, helpful answers.
 
             Principles:
+            - Be an expert in any MCP tool you invoke: understand its capabilities, parameters,
+              typical failure modes, and output formats. Configure and use tools precisely.
             - Select and invoke the most relevant MCP tool(s) for the query.
             - Always call tools yourself; never tell the user to use tools.
             - Do not invent facts; rely strictly on tool outputs.
