@@ -9,14 +9,19 @@ export const AddUserPage: React.FC<AddUserPageProps> = ({ onAddUser, onCancel })
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [role, setRole] = useState<'user' | 'admin'>('user');
+    const [touched, setTouched] = useState(false);
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+    const isValidEmail = emailRegex.test(username.trim());
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (username.trim() && password.trim()) {
-            onAddUser({ name: username.trim(), password: password.trim(), role });
-        } else {
-            alert('Username and password cannot be empty.');
+        setTouched(true);
+        const email = username.trim();
+        if (!emailRegex.test(email) || !password.trim()) {
+            return; // require valid email + non-empty password
         }
+        onAddUser({ name: email, password: password.trim(), role });
     };
 
     return (
@@ -31,17 +36,23 @@ export const AddUserPage: React.FC<AddUserPageProps> = ({ onAddUser, onCancel })
                 <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
                     <div className="rounded-md shadow-sm space-y-4">
                         <div>
-                            <label htmlFor="username" className="block text-sm font-medium text-gray-300 mb-2">Username</label>
+                            <label htmlFor="username" className="block text-sm font-medium text-gray-300 mb-2">Email</label>
                             <input
                                 id="username"
                                 name="username"
-                                type="text"
+                                type="email"
                                 required
                                 value={username}
                                 onChange={(e) => setUsername(e.target.value)}
+                                onBlur={() => setTouched(true)}
+                                aria-invalid={touched && !isValidEmail}
+                                aria-describedby="adduser-email-help"
                                 className="appearance-none rounded-lg relative block w-full px-3 py-3 border border-gray-600 bg-gray-900 placeholder-gray-500 text-white focus:outline-none focus:ring-sky-500 focus:border-sky-500 focus:z-10 sm:text-sm"
-                                placeholder="e.g., John Doe"
+                                placeholder="Email (e.g., user@example.com)"
                             />
+                            {touched && !isValidEmail && (
+                                <p id="adduser-email-help" className="mt-2 text-xs text-red-400">Enter a valid email with a domain, like user@example.com.</p>
+                            )}
                         </div>
                         <div>
                             <label htmlFor="password-create" className="block text-sm font-medium text-gray-300 mb-2">Password</label>
@@ -81,7 +92,8 @@ export const AddUserPage: React.FC<AddUserPageProps> = ({ onAddUser, onCancel })
                         </button>
                         <button
                             type="submit"
-                            className="group relative flex justify-center py-3 px-6 border border-transparent text-sm font-medium rounded-lg text-white bg-sky-600 hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 focus:ring-offset-gray-900 transition-colors"
+                            disabled={touched && (!isValidEmail || !password.trim())}
+                            className="group relative flex justify-center py-3 px-6 border border-transparent text-sm font-medium rounded-lg text-white bg-sky-600 hover:bg-sky-700 disabled:bg-slate-600 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 focus:ring-offset-gray-900 transition-colors"
                         >
                             Save User
                         </button>
