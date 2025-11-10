@@ -129,7 +129,7 @@ async def run_agent_async(query, user_id, session_id):
     logger.info(f"Starting MCP agent with Ollama at: {cfg.OLLAMA_BASE_URL}")
     
     # Get cached knowledge base and memory DBs
-    memory_mcp = await initialize_memory_dbs(user_id, session_id)
+    #memory_mcp = await initialize_memory_dbs(user_id, session_id)
     storage_session_id = f"{user_id}_{session_id}"  # For PostgresStorage isolation
 
     # Resolve per-session model preference
@@ -179,8 +179,8 @@ async def run_agent_async(query, user_id, session_id):
         num_history_responses=2,
         monitoring=True,
         storage=PostgresStorage(table_name="agent_session", db_url=cfg.DB_URL),
-        memory=memory_mcp,
-        enable_user_memories=True,
+        #memory=memory_mcp,
+        #enable_user_memories=True,
         enable_session_summaries=True,
     )
     

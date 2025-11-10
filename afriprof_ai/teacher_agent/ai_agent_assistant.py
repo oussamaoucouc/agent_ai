@@ -48,7 +48,7 @@ async def run_assistant_agent_async(query, user_id, session_id):
     logging.info(f"Starting AI Assistant agent with Ollama at: {OLLAMA_BASE_URL}")
     
     # Get per-user/session memory DB
-    memory_assistant = await initialize_memory_dbs(user_id, session_id)
+    #memory_assistant = await initialize_memory_dbs(user_id, session_id)
     storage_session_id = f"{user_id}_{session_id}"  # For PostgresStorage isolation
 
     # Resolve per-session model preference
@@ -90,8 +90,8 @@ async def run_assistant_agent_async(query, user_id, session_id):
         monitoring=True,
         show_tool_calls=True,
         storage = PostgresStorage(table_name="agent_session", db_url=DB_URL),
-        memory=memory_assistant,
-        enable_user_memories=True,
+        #memory=memory_assistant,
+        #enable_user_memories=True,
         enable_session_summaries=True,
         instructions=dedent("""\
         Follow these rules for every user interaction:

@@ -92,6 +92,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const [mcpTools, setMcpToolsCatalog] = useState<McpToolItem[]>([]);
     const [selectedMcpToolLabels, setSelectedMcpToolLabels] = useState<string[]>([]);
     const canSelectTools = queryMode === 'tools';
+    const canUploadDocs = queryMode === 'direct';
 
     useEffect(() => {
         const controller = new AbortController();
@@ -351,11 +352,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div>
                     <h2 className="text-lg font-semibold text-gray-200 mb-3">Knowledge Base</h2>
                     <p className="text-sm text-gray-400 mb-4">Add documents to provide context for the AI assistant.</p>
-                    <label htmlFor="file-upload" className="w-full cursor-pointer bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-4 rounded-lg inline-flex items-center justify-center transition-colors">
+                    <label
+                        htmlFor="file-upload"
+                        className={`w-full ${canUploadDocs ? 'cursor-pointer bg-sky-600 hover:bg-sky-700' : 'cursor-not-allowed bg-slate-800 opacity-50'} text-white font-bold py-2 px-4 rounded-lg inline-flex items-center justify-center transition-colors`}
+                        aria-disabled={!canUploadDocs}
+                    >
                         <UploadIcon className="w-5 h-5 mr-2" />
                         <span>Upload Document</span>
                     </label>
-                    <input id="file-upload" type="file" className="hidden" onChange={onFileChange} multiple />
+                    <input id="file-upload" type="file" className="hidden" onChange={onFileChange} multiple disabled={!canUploadDocs} />
+                    {!canUploadDocs && (
+                        <p className="mt-2 text-xs text-gray-500">Switch to Document Search mode to Upload Document.</p>
+                    )}
                 
                     <h3 className="text-md font-semibold text-gray-300 mt-4 mb-2">Uploaded Files</h3>
                     {uploadedFiles.length > 0 ? (

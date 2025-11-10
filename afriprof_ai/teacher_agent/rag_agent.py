@@ -143,7 +143,7 @@ async def run_rag_agent_async(query, user_id, session_id):
         logging.info(f"Entered KB lock for user {user_id} (query)")
         await knowledge_base.aload(recreate=False, upsert=True)
         logging.info(f"KB upsert load complete for user {user_id} (query)")
-    memory_rag = await initialize_memory_dbs(user_id, session_id)
+    #memory_rag = await initialize_memory_dbs(user_id, session_id)
     storage_session_id = f"{user_id}_{session_id}"  # For PostgresStorage isolation
 
     # Memory DBs already initialized via the cached function
@@ -194,8 +194,8 @@ async def run_rag_agent_async(query, user_id, session_id):
         monitoring=True,
         show_tool_calls=True,
         storage = PostgresStorage(table_name="agent_session", db_url=DB_URL),
-        memory=memory_rag,  # Add memory instance here
-        enable_user_memories=True,
+        #memory=memory_rag,  # Add memory instance here
+        #enable_user_memories=True,
         enable_session_summaries=True,
         instructions=dedent("""\
         You are an AI RAG Expert. Follow these advanced retrieval and synthesis protocols for optimal performance:
