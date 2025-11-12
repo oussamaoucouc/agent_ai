@@ -49,6 +49,10 @@
     {
       "label": "Thinking LLM",
       "url": "https://remote.mcpservers.org/sequentialthinking/mcp"
+    },
+    {
+      "label": "Customer support",
+      "url": "https://mcp.intercom.com/sse"
     }
   ]
 }

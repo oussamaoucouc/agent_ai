@@ -140,6 +140,13 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
     }, []);
 
     useEffect(() => {
+        const persistedMode = storage.getQueryMode();
+        if (persistedMode === 'agent' || persistedMode === 'direct' || persistedMode === 'tools') {
+            setQueryMode(persistedMode);
+        }
+    }, []);
+
+    useEffect(() => {
         if (isAdmin) {
             const persistedView = storage.getAdminView();
             if (persistedView === 'dashboard' || persistedView === 'addUser' || persistedView === 'editUser' || persistedView === 'config') {
@@ -984,7 +991,10 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                                 onStopRecording={handleStopRecording} 
                                 isLoading={isLoading}
                                 queryMode={queryMode}
-                                onQueryModeChange={setQueryMode}
+                                onQueryModeChange={(m) => {
+                                    setQueryMode(m);
+                                    storage.setQueryMode(m);
+                                }}
                                 onCancel={handleCancelGeneration}
                             />
                         </div>

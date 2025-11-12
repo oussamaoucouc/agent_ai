@@ -1,4 +1,4 @@
-import { Session } from '../types';
+import { Session, QueryMode } from '../types';
 
 // Lightweight persistence for auth state: store current user/role/username in sessionStorage.
 // Using sessionStorage avoids cross-tab/session mixing that can cause role leakage.
@@ -18,6 +18,7 @@ const LS_KEYS = {
   activeSession: 'app.activeSessionId',
   adminView: 'app.adminView',
   token: 'app.authToken',
+  queryMode: 'app.queryMode',
 };
 
 const hasSessionStorage = (): boolean => {
@@ -142,4 +143,13 @@ export const getAdminView = (): string | null => {
 
 export const setAdminView = (view: 'dashboard' | 'addUser' | 'editUser' | 'config') => {
   lsSet(LS_KEYS.adminView, view);
+};
+
+export const getQueryMode = (): QueryMode | null => {
+  const val = lsGet(LS_KEYS.queryMode);
+  return val === 'agent' || val === 'direct' || val === 'tools' ? (val as QueryMode) : null;
+};
+
+export const setQueryMode = (mode: QueryMode) => {
+  lsSet(LS_KEYS.queryMode, mode);
 };
