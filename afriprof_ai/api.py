@@ -188,6 +188,7 @@ class ConfigResponse(BaseModel):
     model: str
     voice: str
     ollama_base_url: str
+    openai_api_key_set: bool = False
     mcp_transport: str
     mcp_server_url: Optional[str] = None
     mcp_stdio_command: Optional[str] = None
@@ -201,6 +202,7 @@ class ConfigUpdateRequest(BaseModel):
     model: Optional[str] = None
     voice: Optional[str] = None
     ollama_base_url: Optional[str] = None
+    openai_api_key: Optional[str] = None
     mcp_transport: Optional[str] = None
     mcp_server_url: Optional[str] = None
     mcp_stdio_command: Optional[str] = None
@@ -1473,6 +1475,7 @@ async def update_config(request: ConfigUpdateRequest, http_request: Request = No
             "model": request.model,
             "voice": request.voice,
             "ollama_base_url": request.ollama_base_url,
+            "openai_api_key": request.openai_api_key,
             "mcp_transport": request.mcp_transport,
             "mcp_server_url": request.mcp_server_url,
             "mcp_stdio_command": request.mcp_stdio_command,

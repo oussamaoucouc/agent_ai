@@ -179,6 +179,7 @@ export interface ConfigResponse {
     model: string;
     voice: string;
     ollama_base_url: string;
+    openai_api_key_set: boolean;
     mcp_transport: string;
     mcp_server_url?: string | null;
     mcp_stdio_command?: string | null;
@@ -193,6 +194,7 @@ export interface ConfigUpdateRequest {
     model?: string;
     voice?: string;
     ollama_base_url?: string;
+    openai_api_key?: string | null;
     mcp_transport?: string;
     mcp_server_url?: string | null;
     mcp_stdio_command?: string | null;

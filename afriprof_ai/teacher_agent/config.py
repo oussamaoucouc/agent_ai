@@ -11,15 +11,18 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agno.models.ollama import Ollama
+from urllib.parse import urlparse
 
 # Ollama configuration
 # Use OLLAMA_BASE_URL from environment, with fallback to localhost for local development
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_HOST = OLLAMA_BASE_URL
 
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+
 # Use the model that's actually pulled in docker-compose
 #MODEL_ID = "ai_teacher_qwen" # Use the model without thinking capabilities
-MODEL_ID = "granite4:tiny-h" # Use the model without thinking capabilities
+MODEL_ID = "ai/granite-4.0-h-tiny:7B" # Use the model without thinking capabilities
 
 # Dynamic configuration variables for runtime changes
 _current_model_id = MODEL_ID
@@ -42,6 +45,15 @@ def get_current_model_id():
     """Get the current model ID."""
     return _current_model_id
 
+def get_default_model_id() -> str:
+    """Return the default model id, preferring the first available model if present."""
+    try:
+        if isinstance(_available_models, list) and len(_available_models) > 0 and str(_available_models[0]).strip():
+            return str(_available_models[0]).strip()
+    except Exception:
+        pass
+    return _current_model_id
+
 def set_model_id(new_model_id: str):
     """Set a new model ID and update the MODEL instance."""
     global _current_model_id, MODEL
@@ -53,12 +65,24 @@ def get_current_voice():
     """Get the current voice setting."""
     return _current_voice
 
+def get_default_voice() -> str:
+    try:
+        if isinstance(_available_voices, list) and len(_available_voices) > 0 and str(_available_voices[0]).strip():
+            return str(_available_voices[0]).strip()
+    except Exception:
+        pass
+    return _current_voice
+
 def set_voice(new_voice: str):
     """Set a new voice for TTS."""
     global _current_voice
     _current_voice = new_voice
     # Update the KOKORO_TTS_CONFIG with the new voice
-    KOKORO_TTS_CONFIG["voice"] = new_voice
+    try:
+        if 'KOKORO_TTS_CONFIG' in globals() and isinstance(KOKORO_TTS_CONFIG, dict):
+            KOKORO_TTS_CONFIG["voice"] = new_voice
+    except Exception:
+        pass
     print(f"Voice changed to: {new_voice}")
 
 # --- Runtime config persistence ---
@@ -125,11 +149,15 @@ def _save_config_state(state: Dict[str, Any]) -> None:
 
 # Initialize runtime-config from persisted state if present
 _state = _load_config_state()
-if _state.get("model_id"):
-    try:
-        set_model_id(_state["model_id"])
-    except Exception as e:
-        print(f"Failed to apply persisted model_id: {e}")
+try:
+    am = _state.get("available_models")
+    default_model_from_list = None
+    if isinstance(am, list) and len(am) > 0 and str(am[0]).strip():
+        default_model_from_list = str(am[0]).strip()
+    default_model = default_model_from_list or _state.get("model_id") or _current_model_id
+    set_model_id(default_model)
+except Exception as e:
+    print(f"Failed to determine startup model; using current default. err={e}")
 if _state.get("voice"):
     try:
         set_voice(_state["voice"])
@@ -194,6 +222,7 @@ def get_runtime_config() -> Dict[str, Any]:
         "model": _current_model_id,
         "voice": _current_voice,
         "ollama_base_url": OLLAMA_BASE_URL,
+        "openai_api_key_set": bool(OPENAI_API_KEY),
         "mcp_transport": MCP_TRANSPORT,
         "mcp_server_url": MCP_SERVER_URL,
         "mcp_stdio_command": MCP_STDIO_COMMAND,
@@ -210,6 +239,31 @@ def set_ollama_base_url(new_url: str) -> None:
     # Recreate MODEL with the new host
     MODEL = Ollama(id=_current_model_id, host=OLLAMA_BASE_URL)
     print(f"OLLAMA_BASE_URL changed to: {new_url}")
+
+def get_openai_base_url() -> str:
+    try:
+        p = urlparse(OLLAMA_BASE_URL)
+        base = f"{p.scheme}://{p.netloc}" if p.scheme and p.netloc else OLLAMA_BASE_URL
+        path = (p.path or "").strip()
+        # If user provided a Docker Model Runner engine path, preserve `/engines/.../v1/`
+        if path.startswith("/engines/"):
+            # Normalize to drop any trailing segments like `/chat`
+            # Keep exactly `/engines/<engine>/v1/`
+            parts = [seg for seg in path.split('/') if seg]
+            if len(parts) >= 3 and parts[0] == 'engines' and parts[2] == 'v1':
+                return base + f"/engines/{parts[1]}/v1/"
+            # Fallback: if path contains v1 further, just join up to v1
+            if 'v1' in parts:
+                v1_index = parts.index('v1')
+                return base + '/' + '/'.join(parts[:v1_index+1]) + '/'
+            return base + '/engines/llama.cpp/v1/'
+        # If already points to OpenAI-style `/v1`, normalize with trailing slash
+        if path.startswith('/v1'):
+            return base + '/v1/'
+        # Otherwise, default to Docker Model Runner engine path
+        return base + '/engines/llama.cpp/v1/'
+    except Exception:
+        return OLLAMA_BASE_URL
 
 def set_mcp_transport(new_transport: str) -> None:
     global MCP_TRANSPORT
@@ -246,6 +300,11 @@ def update_runtime_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
         set_voice(str(cfg["voice"]))
     if "ollama_base_url" in cfg and cfg["ollama_base_url"]:
         set_ollama_base_url(str(cfg["ollama_base_url"]))
+    if "openai_api_key" in cfg and cfg["openai_api_key"]:
+        try:
+            set_openai_api_key(str(cfg["openai_api_key"]))
+        except Exception:
+            pass
     if "mcp_transport" in cfg and cfg["mcp_transport"]:
         set_mcp_transport(str(cfg["mcp_transport"]))
     if "mcp_server_url" in cfg and cfg["mcp_server_url"] is not None:
@@ -294,6 +353,7 @@ def update_runtime_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "model_id": _current_model_id,
         "voice": _current_voice,
         "ollama_base_url": OLLAMA_BASE_URL,
+        "openai_api_key_set": bool(OPENAI_API_KEY),
         "mcp_transport": MCP_TRANSPORT,
         "mcp_server_url": MCP_SERVER_URL,
         "mcp_stdio_command": MCP_STDIO_COMMAND,
@@ -305,6 +365,11 @@ def update_runtime_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     _save_config_state(new_state)
     return get_runtime_config()
 
+def set_openai_api_key(key: str) -> None:
+    global OPENAI_API_KEY
+    OPENAI_API_KEY = str(key).strip()
+    print("OPENAI_API_KEY updated (value hidden)")
+
 
 
 # Export OLLAMA_BASE_URL and runtime config helpers for use in other modules
@@ -313,8 +378,8 @@ __all__ = [
     'VOSK_MODEL_PATH', 'TTS_CACHE_DIR', 'KOKORO_TTS_URL', 'KOKORO_TTS_CONFIG',
     'KOKORO_TTS_HEADERS', 'KOKORO_TTS_TIMEOUT', 'RHUBARB_PATH',
     'MCP_TRANSPORT', 'MCP_SERVER_URL', 'MCP_STDIO_COMMAND', 'MCP_STDIO_ARGS',
-    'get_current_model', 'get_current_model_id', 'set_model_id', 
-    'get_current_voice', 'set_voice', 'get_user_pdf_dir',
+    'get_current_model', 'get_current_model_id', 'get_default_model_id', 'set_model_id', 
+    'get_current_voice', 'get_default_voice', 'set_voice', 'get_user_pdf_dir',
     'get_runtime_config', 'update_runtime_config', 'set_ollama_base_url',
     'set_mcp_transport', 'set_mcp_server_url', 'set_mcp_stdio_command', 'set_mcp_stdio_args'
 ]
@@ -373,7 +438,7 @@ KOKORO_TTS_TIMEOUT = 120
 
 # Debug logging for configuration
 print(f"Ollama URL: {OLLAMA_BASE_URL}")
-print(f"Model ID: {MODEL_ID}")
+print(f"Model ID: {_current_model_id}")
 print(f"Database URL: {DB_URL}")
 print(f"Vosk Model Path: {VOSK_MODEL_PATH}")
 print(f"Kokoro TTS URL: {KOKORO_TTS_URL}")

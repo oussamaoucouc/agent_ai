@@ -23,6 +23,7 @@ except Exception:
 from mcp.shared.exceptions import McpError
 from contextlib import AsyncExitStack
 from agno.models.ollama import Ollama
+from agno.models.openai import OpenAIChat
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -127,6 +128,7 @@ async def run_agent_async(query, user_id, session_id):
     Using cached knowledge base and memory DBs for better performance.
     """
     logger.info(f"Starting MCP agent with Ollama at: {cfg.OLLAMA_BASE_URL}")
+    logger.info(f"OpenAI-compatible base URL: {cfg.get_openai_base_url()}")
     
     # Get cached knowledge base and memory DBs
     #memory_mcp = await initialize_memory_dbs(user_id, session_id)
@@ -138,7 +140,7 @@ async def run_agent_async(query, user_id, session_id):
         with session_mod.SessionLocal() as db:
             session_model_id = session_mod.get_session_model_id(db, user_id, session_id)
         logger.info(f"MCP agent model selected: user={user_id}, session={session_id}, model_id={session_model_id}")
-        session_model = Ollama(id=session_model_id, host=cfg.OLLAMA_BASE_URL)
+        session_model = OpenAIChat(id=session_model_id, base_url=cfg.get_openai_base_url(), api_key=cfg.OPENAI_API_KEY or "anything")
     except Exception as e:
         logger.warning(f"Falling back to current model for MCP due to error resolving session model: {e}")
         session_model = cfg.get_current_model()

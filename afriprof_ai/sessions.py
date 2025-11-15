@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import create_engine, Column, String, Text, DateTime, ForeignKey, inspect, text
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship, Session as SASession
 from datetime import datetime
-from teacher_agent.config import DB_URL, get_current_voice, set_voice
+from teacher_agent.config import DB_URL, get_current_voice, set_voice, get_runtime_config, get_default_voice
 import uuid
 import logging
 from auth import get_user_from_auth_header
@@ -142,14 +142,30 @@ def _db_to_session_model(s: SessionDB) -> SessionModel:
 
 
 def get_session_voice(db: SASession, user_id: str, session_id: str) -> str:
-    # Resolve voice by user-level preference (latest), ignore session_id
     settings = (
         db.query(SessionSettingsDB)
         .filter(SessionSettingsDB.user_id == user_id)
         .order_by(SessionSettingsDB.updated_at.desc())
         .first()
     )
-    return settings.voice if settings and settings.voice else get_current_voice()
+    candidate = (settings.voice if settings and settings.voice else None) or get_default_voice()
+    try:
+        cfg = get_runtime_config()
+        available = cfg.get("available_voices", []) or []
+        if not candidate or candidate not in available:
+            corrected = get_default_voice()
+            if settings:
+                from datetime import datetime as _dt
+                settings.voice = corrected
+                settings.updated_at = _dt.utcnow()
+                db.commit()
+            logging.info(
+                f"Session voice resolve: user={user_id}, session={session_id} invalid or unset -> corrected to {corrected}"
+            )
+            return corrected
+    except Exception:
+        pass
+    return candidate
 
 
 def apply_session_voice(db: SASession, user_id: str, session_id: str) -> str:
@@ -163,20 +179,38 @@ def apply_session_voice(db: SASession, user_id: str, session_id: str) -> str:
     return voice
 
 # --- Per-session model helpers ---
-from teacher_agent.config import get_current_model_id, set_model_id
+from teacher_agent.config import get_current_model_id, set_model_id, get_runtime_config, get_default_model_id
 import logging
 
 def get_session_model_id(db: SASession, user_id: str, session_id: str) -> str:
-    """Resolve model by user-level preference (latest), falling back to global config."""
+    """Resolve model by user-level preference (latest), validated against available_models.
+    Falls back to first available model.
+    """
     settings = (
         db.query(SessionSettingsDB)
         .filter(SessionSettingsDB.user_id == user_id)
         .order_by(SessionSettingsDB.updated_at.desc())
         .first()
     )
-    model_id = settings.model_id if settings and settings.model_id else get_current_model_id()
-    logging.info(f"Session model resolve: user={user_id}, session={session_id}, model_id={model_id}")
-    return model_id
+    candidate = (settings.model_id if settings and settings.model_id else None) or get_default_model_id()
+    try:
+        cfg = get_runtime_config()
+        available = cfg.get("available_models", []) or []
+        if not candidate or candidate not in available:
+            corrected = get_default_model_id()
+            if settings:
+                from datetime import datetime as _dt
+                settings.model_id = corrected
+                settings.updated_at = _dt.utcnow()
+                db.commit()
+            logging.info(
+                f"Session model resolve: user={user_id}, session={session_id} invalid or unset -> corrected to {corrected}"
+            )
+            return corrected
+    except Exception:
+        pass
+    logging.info(f"Session model resolve: user={user_id}, session={session_id}, model_id={candidate}")
+    return candidate
 
 def apply_session_model(db: SASession, user_id: str, session_id: str) -> str:
     """Apply the session-specific model to runtime config and return it."""
@@ -272,12 +306,19 @@ async def create_session(request: CreateSessionRequest, http_request: Request = 
         db.add(greet_msg)
         # Ensure user-level settings exist once; do not duplicate per session
         if not db.query(SessionSettingsDB).filter(SessionSettingsDB.user_id == uid).first():
-            default_voice = get_current_voice()
-            default_model = get_current_model_id()
+            default_voice = get_default_voice()
+            from teacher_agent.config import get_default_model_id
+            default_model = get_default_model_id()
             db.add(SessionSettingsDB(user_id=uid, voice=default_voice, model_id=default_model, updated_at=now))
         db.commit()
         db.refresh(s)
         db.refresh(greet_msg)
+        try:
+            resolved_model = get_session_model_id(db, uid, session_id)
+            resolved_voice = get_session_voice(db, uid, session_id)
+            logging.info(f"New session created: user={uid}, session={session_id}, model_id={resolved_model}, voice={resolved_voice}")
+        except Exception:
+            pass
         return _db_to_session_model(s)
     except Exception as e:
         db.rollback()

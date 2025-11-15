@@ -22,6 +22,7 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [config, setConfig] = useState<ConfigResponse | null>(null);
+  const [openaiApiKey, setOpenaiApiKey] = useState<string>('');
   const [newServer, setNewServer] = useState<{ label: string; url: string }>({ label: '', url: '' });
   const [newModel, setNewModel] = useState<string>('');
   const [newVoice, setNewVoice] = useState<string>('');
@@ -56,6 +57,7 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
         model: config.model,
         voice: config.voice,
         ollama_base_url: config.ollama_base_url,
+        openai_api_key: openaiApiKey || undefined,
         mcp_transport: config.mcp_transport,
         mcp_stdio_command: config.mcp_stdio_command ?? null,
         mcp_stdio_args: config.mcp_stdio_args || [],
@@ -218,8 +220,21 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                   </div>
                 </div>
                 <label className="block">
-                  <span className="block text-sm font-medium text-gray-400 mb-2">Ollama Base URL</span>
+                  <span className="block text-sm font-medium text-gray-400 mb-2">AI Base URL</span>
                   <input type="text" value={config.ollama_base_url} onChange={(e) => updateField('ollama_base_url', e.target.value)} placeholder="http://localhost:11434" className={inputBaseStyle} onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()} />
+                </label>
+                <label className="block">
+                  <span className="block text-sm font-medium text-gray-400 mb-2">OpenAI API Key (optional)</span>
+                  <input
+                    type="password"
+                    value={openaiApiKey}
+                    onChange={(e) => setOpenaiApiKey(e.target.value)}
+                    placeholder={config.openai_api_key_set ? 'Key is set (enter to replace)' : 'sk-... or any string'}
+                    className={inputBaseStyle}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onMouseUp={(e) => e.preventDefault()}
+                  />
+                  <p className="mt-2 text-xs text-gray-500">Stored in memory; never displayed back.</p>
                 </label>
               </section>
 

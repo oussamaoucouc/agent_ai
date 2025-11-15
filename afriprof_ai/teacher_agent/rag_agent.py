@@ -9,10 +9,16 @@ import logging
 import pickle
 from agno.agent import Agent
 from agno.embedder.ollama import OllamaEmbedder
+try:
+    from agno.embedder.openai import OpenAIEmbedder
+    HAS_OPENAI_EMBEDDER = True
+except Exception:
+    HAS_OPENAI_EMBEDDER = False
 from agno.knowledge.pdf import PDFKnowledgeBase, PDFReader
 from agno.vectordb.chroma import ChromaDb
 from agno.models.groq import Groq
 from agno.models.ollama import Ollama
+from agno.models.openai import OpenAIChat
 from agno.storage.postgres import PostgresStorage
 from agno.memory.v2.db.sqlite import SqliteMemoryDb
 from agno.memory.v2.memory import Memory
@@ -21,7 +27,7 @@ from agno.tools.reasoning import ReasoningTools
 from agno.tools.thinking import ThinkingTools
 from agno.tools.knowledge import KnowledgeTools
 from agno.storage.sqlite import SqliteStorage
-from .config import DB_URL, DATA_DIR, get_current_model, get_current_model_id, OLLAMA_BASE_URL, get_user_pdf_dir
+from . import config as cfg
 from .locks import get_user_kb_lock
 
 import logging
@@ -61,16 +67,25 @@ async def initialize_knowledge_base(user_id: str):
     """
     Initialize the per-user knowledge base and let AGNO/Chroma manage persistence.
     """
-    user_pdf_dir = get_user_pdf_dir(user_id)
+    user_pdf_dir = cfg.get_user_pdf_dir(user_id)
 
     logging.info("Initializing knowledge base")
-    logging.info(f"Using Ollama URL for embedder: {OLLAMA_BASE_URL}")
+    logging.info(f"Using Ollama URL for embedder: {cfg.OLLAMA_BASE_URL}")
+    logging.info(f"OpenAI-compatible base URL (embeddings): {cfg.get_openai_base_url()}")
 
-    embedder = OllamaEmbedder(
-        id="nomic-embed-text",
-        dimensions=768,
-        host=OLLAMA_BASE_URL
-    )
+    if HAS_OPENAI_EMBEDDER:
+        embedder = OpenAIEmbedder(
+            id="ai/nomic-embed-text-v1.5",
+            dimensions=768,
+            base_url=cfg.get_openai_base_url(),
+            api_key=cfg.OPENAI_API_KEY or "anything",
+        )
+    else:
+        embedder = OllamaEmbedder(
+            id="nomic-embed-text",
+            dimensions=768,
+            host="http://localhost:11434"
+        )
 
     user_chroma_path = os.path.join(tempfile.gettempdir(), "afriprof_ai_chroma", str(user_id))
     os.makedirs(user_chroma_path, exist_ok=True)
@@ -132,7 +147,8 @@ async def run_rag_agent_async(query, user_id, session_id):
     AGNO RAG agent using ChromaDB and openhermes embedder.
     Initializes a fresh knowledge base sync on each query.
     """
-    logging.info(f"Starting RAG agent with Ollama at: {OLLAMA_BASE_URL}")
+    logging.info(f"Starting RAG agent with Ollama at: {cfg.OLLAMA_BASE_URL}")
+    logging.info(f"OpenAI-compatible base URL: {cfg.get_openai_base_url()}")
     
     # Initialize knowledge base then perform upsert-only load for queries
     knowledge_base = await initialize_knowledge_base(user_id)
@@ -164,12 +180,10 @@ async def run_rag_agent_async(query, user_id, session_id):
         with session_mod.SessionLocal() as db:
             session_model_id = session_mod.get_session_model_id(db, user_id, session_id)
         logging.info(f"RAG agent model selected: user={user_id}, session={session_id}, model_id={session_model_id}")
-        # Build model instance from id (Ollama or Groq depending on prefix)
-        # Use Ollama by default
-        session_model = Ollama(id=session_model_id, host=OLLAMA_BASE_URL)
+        session_model = OpenAIChat(id=session_model_id, base_url=cfg.get_openai_base_url(), api_key=cfg.OPENAI_API_KEY or "anything")
     except Exception as e:
         logging.warning(f"Falling back to current model due to error resolving session model: {e}")
-        session_model = get_current_model()
+        session_model = cfg.get_current_model()
 
     rag_expert_agent = Agent(
         model=session_model,
@@ -193,7 +207,7 @@ async def run_rag_agent_async(query, user_id, session_id):
         num_history_responses=2,
         monitoring=True,
         show_tool_calls=True,
-        storage = PostgresStorage(table_name="agent_session", db_url=DB_URL),
+        storage = PostgresStorage(table_name="agent_session", db_url=cfg.DB_URL),
         #memory=memory_rag,  # Add memory instance here
         #enable_user_memories=True,
         enable_session_summaries=True,
