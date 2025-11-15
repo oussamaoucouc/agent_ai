@@ -11,14 +11,34 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agno.models.ollama import Ollama
+from agno.models.openai import OpenAIChat
 from urllib.parse import urlparse
 
 # Ollama configuration
 # Use OLLAMA_BASE_URL from environment, with fallback to localhost for local development
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:12434")
 OLLAMA_HOST = OLLAMA_BASE_URL
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+
+def get_openai_base_url() -> str:
+    try:
+        p = urlparse(OLLAMA_BASE_URL)
+        base = f"{p.scheme}://{p.netloc}" if p.scheme and p.netloc else OLLAMA_BASE_URL
+        path = (p.path or "").strip()
+        if path.startswith("/engines/"):
+            parts = [seg for seg in path.split('/') if seg]
+            if len(parts) >= 3 and parts[0] == 'engines' and parts[2] == 'v1':
+                return base + f"/engines/{parts[1]}/v1/"
+            if 'v1' in parts:
+                v1_index = parts.index('v1')
+                return base + '/' + '/'.join(parts[:v1_index+1]) + '/'
+            return base + '/engines/llama.cpp/v1/'
+        if path.startswith('/v1'):
+            return base + '/v1/'
+        return base + '/engines/llama.cpp/v1/'
+    except Exception:
+        return OLLAMA_BASE_URL
 
 # Use the model that's actually pulled in docker-compose
 #MODEL_ID = "ai_teacher_qwen" # Use the model without thinking capabilities
@@ -35,7 +55,7 @@ MCP_STDIO_COMMAND = os.getenv("MCP_STDIO_COMMAND", "").strip()
 _MCP_STDIO_ARGS_RAW = os.getenv("MCP_STDIO_ARGS", "").strip()
 
 # Initialize the model
-MODEL = Ollama(id=MODEL_ID, host=OLLAMA_BASE_URL)
+MODEL = OpenAIChat(id=MODEL_ID, base_url=get_openai_base_url(), api_key=OPENAI_API_KEY or "anything")
 
 def get_current_model():
     """Get the current model instance."""
@@ -58,7 +78,7 @@ def set_model_id(new_model_id: str):
     """Set a new model ID and update the MODEL instance."""
     global _current_model_id, MODEL
     _current_model_id = new_model_id
-    MODEL = Ollama(id=new_model_id, host=OLLAMA_BASE_URL)
+    MODEL = OpenAIChat(id=new_model_id, base_url=get_openai_base_url(), api_key=OPENAI_API_KEY or "anything")
     print(f"Model changed to: {new_model_id}")
 
 def get_current_voice():
@@ -236,34 +256,9 @@ def set_ollama_base_url(new_url: str) -> None:
     global OLLAMA_BASE_URL, OLLAMA_HOST, MODEL
     OLLAMA_BASE_URL = new_url
     OLLAMA_HOST = new_url
-    # Recreate MODEL with the new host
-    MODEL = Ollama(id=_current_model_id, host=OLLAMA_BASE_URL)
+    MODEL = OpenAIChat(id=_current_model_id, base_url=get_openai_base_url(), api_key=OPENAI_API_KEY or "anything")
     print(f"OLLAMA_BASE_URL changed to: {new_url}")
 
-def get_openai_base_url() -> str:
-    try:
-        p = urlparse(OLLAMA_BASE_URL)
-        base = f"{p.scheme}://{p.netloc}" if p.scheme and p.netloc else OLLAMA_BASE_URL
-        path = (p.path or "").strip()
-        # If user provided a Docker Model Runner engine path, preserve `/engines/.../v1/`
-        if path.startswith("/engines/"):
-            # Normalize to drop any trailing segments like `/chat`
-            # Keep exactly `/engines/<engine>/v1/`
-            parts = [seg for seg in path.split('/') if seg]
-            if len(parts) >= 3 and parts[0] == 'engines' and parts[2] == 'v1':
-                return base + f"/engines/{parts[1]}/v1/"
-            # Fallback: if path contains v1 further, just join up to v1
-            if 'v1' in parts:
-                v1_index = parts.index('v1')
-                return base + '/' + '/'.join(parts[:v1_index+1]) + '/'
-            return base + '/engines/llama.cpp/v1/'
-        # If already points to OpenAI-style `/v1`, normalize with trailing slash
-        if path.startswith('/v1'):
-            return base + '/v1/'
-        # Otherwise, default to Docker Model Runner engine path
-        return base + '/engines/llama.cpp/v1/'
-    except Exception:
-        return OLLAMA_BASE_URL
 
 def set_mcp_transport(new_transport: str) -> None:
     global MCP_TRANSPORT
