@@ -8,25 +8,16 @@ import os
 import logging
 import pickle
 from agno.agent import Agent
-from agno.embedder.ollama import OllamaEmbedder
-try:
-    from agno.embedder.openai import OpenAIEmbedder
-    HAS_OPENAI_EMBEDDER = True
-except Exception:
-    HAS_OPENAI_EMBEDDER = False
-from agno.knowledge.pdf import PDFKnowledgeBase, PDFReader
+from agno.knowledge.embedder.openai import OpenAIEmbedder
+from agno.knowledge.knowledge import Knowledge
 from agno.vectordb.chroma import ChromaDb
 from agno.models.groq import Groq
 from agno.models.ollama import Ollama
 from agno.models.openai import OpenAIChat
-from agno.storage.postgres import PostgresStorage
-from agno.memory.v2.db.sqlite import SqliteMemoryDb
-from agno.memory.v2.memory import Memory
-from agno.document.chunking.document import DocumentChunking
+from agno.db.postgres import PostgresDb
 from agno.tools.reasoning import ReasoningTools
-from agno.tools.thinking import ThinkingTools
 from agno.tools.knowledge import KnowledgeTools
-from agno.storage.sqlite import SqliteStorage
+ 
 from . import config as cfg
 from .locks import get_user_kb_lock
 
@@ -73,19 +64,11 @@ async def initialize_knowledge_base(user_id: str):
     logging.info(f"Using Ollama URL for embedder: {cfg.OLLAMA_BASE_URL}")
     logging.info(f"OpenAI-compatible base URL (embeddings): {cfg.get_openai_base_url()}")
 
-    if HAS_OPENAI_EMBEDDER:
-        embedder = OpenAIEmbedder(
-            id="ai/nomic-embed-text-v1.5",
-            dimensions=768,
-            base_url=cfg.get_openai_base_url(),
-            api_key=cfg.OPENAI_API_KEY or "anything",
-        )
-    else:
-        embedder = OllamaEmbedder(
-            id="nomic-embed-text",
-            dimensions=768,
-            host="http://localhost:11434"
-        )
+    embedder = OpenAIEmbedder(
+        id="ai/granite-embedding-multilingual",
+        base_url=cfg.get_openai_base_url(),
+        api_key=cfg.OPENAI_API_KEY or "anything",
+    )
 
     user_chroma_path = os.path.join(tempfile.gettempdir(), "afriprof_ai_chroma", str(user_id))
     os.makedirs(user_chroma_path, exist_ok=True)
@@ -97,50 +80,37 @@ async def initialize_knowledge_base(user_id: str):
     )
     logging.info(f"Initialized ChromaDB: collection=ragdocs{user_id}, path={user_chroma_path}")
 
-    logging.info(f"Using user-specific PDF directory: {user_pdf_dir}")
-    knowledge_base = PDFKnowledgeBase(
-        path=user_pdf_dir,
+    contents_db = PostgresDb(db_url=cfg.DB_URL, knowledge_table="knowledge_contents_v2")
+    knowledge = Knowledge(
+        name=f"user_{user_id}_kb",
         vector_db=vector_db,
-        chunking_strategy=DocumentChunking()
+        contents_db=contents_db,
+        max_results=10
     )
 
-    # Log basic ingestion diagnostics
     try:
-        pdf_files = list(Path(user_pdf_dir).glob("*.pdf"))
-        logging.info(f"Knowledge ingestion: found {len(pdf_files)} PDFs for user {user_id}")
-        if len(pdf_files) == 0:
-            logging.warning(f"No PDFs found in {user_pdf_dir} for user {user_id}. Retrieval may return no documents.")
+        if hasattr(knowledge, "add_contents_async"):
+            await knowledge.add_contents_async(
+                paths=[user_pdf_dir],
+                include=["*.pdf", "*.md", "*.mkd", "*.csv", "*.json", "*.txt", "*.pptx", "*.docx"],
+                metadata={"user_id": user_id}
+            )
+        else:
+            patterns = ["*.pdf", "*.md", "*.mkd", "*.csv", "*.json", "*.txt", "*.pptx", "*.docx"]
+            files = []
+            for pat in patterns:
+                files.extend([str(p) for p in Path(user_pdf_dir).glob(pat)])
+            for f in files:
+                if hasattr(knowledge, "add_content_async"):
+                    await knowledge.add_content_async(path=f, metadata={"user_id": user_id})
+                else:
+                    knowledge.add_content(path=f, metadata={"user_id": user_id})
     except Exception as e:
-        logging.warning(f"Unable to list PDFs in {user_pdf_dir}: {e}")
+        logging.warning(f"Unable to add contents from {user_pdf_dir}: {e}")
 
-    # Do not load here; callers will decide recreate/upsert based on context
-    logging.info("Knowledge base object created; loading deferred to caller")
-    return knowledge_base
+    return knowledge
 
-async def initialize_memory_dbs(user_id, session_id):
-    """
-    Initialize memory databases for agents.
-    This function is cached to avoid recreating DBs for the same user/session.
-    Each user/session pair gets its own database file.
-    """
-    # Define a base directory for user-specific databases
-    db_base_dir = os.path.join("tmp", "user_session_dbs")
-    # Ensure the directory exists
-    os.makedirs(db_base_dir, exist_ok=True)
-    
-    # Construct a unique database file path for this user/session
-    db_file_path = os.path.join(db_base_dir, f"memory_{user_id}_{session_id}.db")
-
-    logging.info(f"Initializing memory DBs for user {user_id}, session {session_id} using db: {db_file_path}")
-    
-    # Create memory instances
-    memory_db_rag = SqliteMemoryDb(
-        table_name="agent_memories_rag",  # Table name can be the same as DB file is unique
-        db_file=db_file_path,
-    )
-    memory_rag = Memory(db=memory_db_rag)
-
-    return memory_rag
+# Removed explicit Memory v2 setup. Agno v2 manages user memories via Agent(db=..., enable_user_memories=...).
 
 async def run_rag_agent_async(query, user_id, session_id):
     """
@@ -150,29 +120,17 @@ async def run_rag_agent_async(query, user_id, session_id):
     logging.info(f"Starting RAG agent with Ollama at: {cfg.OLLAMA_BASE_URL}")
     logging.info(f"OpenAI-compatible base URL: {cfg.get_openai_base_url()}")
     
-    # Initialize knowledge base then perform upsert-only load for queries
     knowledge_base = await initialize_knowledge_base(user_id)
-    # Serialize KB loads per user to avoid races with upload/delete
     lock = get_user_kb_lock(user_id)
     logging.info(f"Waiting for KB lock for user {user_id} (query)")
     async with lock:
         logging.info(f"Entered KB lock for user {user_id} (query)")
-        await knowledge_base.aload(recreate=False, upsert=True)
-        logging.info(f"KB upsert load complete for user {user_id} (query)")
     #memory_rag = await initialize_memory_dbs(user_id, session_id)
     storage_session_id = f"{user_id}_{session_id}"  # For PostgresStorage isolation
 
     # Memory DBs already initialized via the cached function
     
-    #knowledge tools reasoning, search, analyze, few shot, instructions
-    knowledge_tools = KnowledgeTools(
-    knowledge=knowledge_base,
-    think=False,
-    search=True,
-    analyze=False,
-    add_few_shot=False,
-    add_instructions=False,
-    )
+    
 
     # Resolve per-session model preference
     try:
@@ -191,25 +149,21 @@ async def run_rag_agent_async(query, user_id, session_id):
         name="rag_expert_agent",
         session_id=session_id,
         session_state={"user_id":user_id, "session_id":session_id},
-        add_state_in_messages=True,
+        
         role="AI Expert in Retrieval-Augmented Generation (RAG) systems that provides comprehensive, accurate, and contextually relevant responses by leveraging advanced document retrieval and knowledge synthesis techniques",
         user_id=user_id,
         description=dedent(f"""\
             You are an AI RAG Expert, optimized for maximum retrieval accuracy, semantic understanding, and knowledge synthesis. 
             Your expertise lies in intelligently retrieving, analyzing, and synthesizing information from knowledge bases to provide comprehensive, accurate, and contextually relevant responses.
             """),
-        tools=[knowledge_tools],
         knowledge=knowledge_base,
-        #search_knowledge=True,
+        search_knowledge=True,
         markdown=True,
         read_chat_history=True,
-        add_history_to_messages=True,
-        num_history_responses=2,
-        monitoring=True,
-        show_tool_calls=True,
-        storage = PostgresStorage(table_name="agent_session", db_url=cfg.DB_URL),
-        #memory=memory_rag,  # Add memory instance here
-        #enable_user_memories=True,
+        add_history_to_context=True,
+        num_history_runs=2,
+        db = PostgresDb(db_url=cfg.DB_URL, session_table="agent_session_v2"),
+        enable_user_memories=False,
         enable_session_summaries=True,
         instructions=dedent("""\
         You are an AI RAG Expert. Follow these advanced retrieval and synthesis protocols for optimal performance:

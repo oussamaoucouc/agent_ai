@@ -310,17 +310,16 @@ async def upload_document_endpoint(file: UploadFile = File(...), user_id: str = 
             logging.info(f"Entered KB lock for user {user_id} (upload)")
             kb = await initialize_knowledge_base(user_id)
             try:
-                await kb.aload(recreate=False, upsert=True)
-                logging.info(f"KB upsert load complete for user {user_id} (upload)")
-            except Exception as e:
-                # Fallback: first-time collection creation or backend hiccup
-                msg = str(e).lower()
-                if "not found" in msg or "does not exist" in msg or "no such" in msg:
-                    logging.info(f"Upsert failed; recreating collection for user {user_id} (upload)")
-                    await kb.aload(recreate=True, upsert=False)
-                    logging.info(f"KB recreate load complete for user {user_id} (upload)")
+                if hasattr(kb, "add_content_async"):
+                    await kb.add_content_async(path=file_path, metadata={"user_id": user_id})
+                elif hasattr(kb, "add_contents_async"):
+                    # Fallback to directory ingestion if per-file async is unavailable
+                    await kb.add_contents_async(paths=[user_pdfs_dir], include=["*.pdf"], metadata={"user_id": user_id})
                 else:
-                    raise
+                    kb.add_content(path=file_path, metadata={"user_id": user_id})
+                logging.info(f"KB content added for user {user_id}: {safe_name}")
+            except Exception:
+                raise
         return {"message": f"Successfully uploaded {safe_name}", "filename": safe_name, "path": file_path}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error uploading document: {str(e)}")
@@ -384,8 +383,22 @@ async def delete_document(user_id: Optional[str] = None, filename: str = "", req
         async with lock:
             logging.info(f"Entered KB lock for user {user_id} (delete)")
             kb = await initialize_knowledge_base(user_id)
-            await kb.aload(recreate=True, upsert=False)
-            logging.info(f"KB recreate load complete for user {user_id} (delete)")
+            try:
+                if hasattr(kb, "add_contents_async"):
+                    await kb.add_contents_async(paths=[user_pdfs_dir], include=["*.pdf"], metadata={"user_id": user_id})
+                else:
+                    # Best-effort resync: per-file add for remaining PDFs
+                    for name in os.listdir(user_pdfs_dir):
+                        if name.lower().endswith('.pdf'):
+                            path = os.path.join(user_pdfs_dir, name)
+                            if hasattr(kb, "add_content_async"):
+                                await kb.add_content_async(path=path, metadata={"user_id": user_id})
+                            else:
+                                kb.add_content(path=path, metadata={"user_id": user_id})
+                logging.info(f"KB resync complete for user {user_id} (delete)")
+            except Exception:
+                # Non-fatal: leave KB as-is if resync fails
+                logging.warning(f"KB resync failed for user {user_id} after deletion")
         return {"message": "Successfully deleted", "filename": safe_name}
     except HTTPException:
         raise

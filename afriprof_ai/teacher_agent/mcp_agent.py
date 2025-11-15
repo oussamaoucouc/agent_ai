@@ -9,9 +9,8 @@ import logging
 import asyncio
 
 from agno.agent import Agent
-from agno.storage.postgres import PostgresStorage
-from agno.memory.v2.db.sqlite import SqliteMemoryDb
-from agno.memory.v2.memory import Memory
+from agno.db.postgres import PostgresDb
+ 
 from . import config as cfg
 from agno.tools.mcp import MCPTools
 try:
@@ -96,31 +95,7 @@ def run_agent(query, user_id, session_id):
         return asyncio.run(run_agent_async(query, user_id, session_id))
 
 
-async def initialize_memory_dbs(user_id, session_id):
-    """
-    Initialize memory databases for agents.
-    This function is cached to avoid recreating DBs for the same user/session.
-    Each user/session pair gets its own database file.
-    """
-    # Define a base directory for user-specific databases
-    db_base_dir = os.path.join("tmp", "user_session_dbs")
-    # Ensure the directory exists
-    os.makedirs(db_base_dir, exist_ok=True)
-    
-    # Construct a unique database file path for this user/session
-    db_file_path = os.path.join(db_base_dir, f"memory_{user_id}_{session_id}.db")
-
-    logging.info(f"Initializing memory DBs for user {user_id}, session {session_id} using db: {db_file_path}")
-    
-    # Create memory instances
-    memory_db_mcp = SqliteMemoryDb(
-        table_name="agent_memories_mcp",  # Table name can be the same as DB file is unique
-        db_file=db_file_path,
-    )
-    memory_mcp = Memory(db=memory_db_mcp)
-
-    
-    return memory_mcp
+# Removed explicit Memory v2 setup. Agno v2 manages user memories via Agent(db=..., enable_user_memories=...).
 
 async def run_agent_async(query, user_id, session_id):
     """
@@ -176,17 +151,15 @@ async def run_agent_async(query, user_id, session_id):
             - Avoid heavy templates or excessive headings; prioritize clarity and usefulness.
         """),
         markdown=True,
-        show_tool_calls=False,
         reasoning=False,
         session_id=storage_session_id,
         user_id=user_id,
         session_state={"user_id": user_id, "session_id": session_id},
-        add_state_in_messages=True,
+        enable_user_memories=False,
         read_chat_history=True,
-        add_history_to_messages=False,
-        num_history_responses=2,
-        monitoring=True,
-        storage=PostgresStorage(table_name="agent_session", db_url=cfg.DB_URL),
+        add_history_to_context=False,
+        num_history_runs=2,
+        db=PostgresDb(db_url=cfg.DB_URL, session_table="agent_session_v2"),
         #memory=memory_mcp,
         #enable_user_memories=True,
         enable_session_summaries=True,

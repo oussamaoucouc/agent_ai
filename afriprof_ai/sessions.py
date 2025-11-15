@@ -367,13 +367,13 @@ async def delete_session(session_id: str, request: DeleteSessionRequest, http_re
         # Delete app session (ORM will cascade to app_messages where supported)
         db.delete(s)
 
-        # Also clean up AGNO PostgresStorage rows in agent_session for this user/session.
+        # Also clean up AGNO PostgresDb rows in agent_session_v2 for this user/session.
         # Some agents use plain session_id, others use f"{user_id}_{session_id}".
         try:
             db.execute(
                 text(
                     """
-                    DELETE FROM agent_session
+                    DELETE FROM agent_session_v2
                     WHERE user_id = :uid AND (session_id = :sid OR session_id = :combined)
                     """
                 ),

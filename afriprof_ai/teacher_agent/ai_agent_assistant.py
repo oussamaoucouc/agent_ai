@@ -6,9 +6,8 @@ from textwrap import dedent
 import os
 import logging
 from agno.agent import Agent
-from agno.storage.postgres import PostgresStorage
-from agno.memory.v2.db.sqlite import SqliteMemoryDb
-from agno.memory.v2.memory import Memory
+from agno.db.postgres import PostgresDb
+ 
 from . import config as cfg
 from agno.models.ollama import Ollama
 from agno.models.openai import OpenAIChat
@@ -17,30 +16,7 @@ logging.basicConfig(level=logging.INFO)
 
 
 
-async def initialize_memory_dbs(user_id, session_id):
-    """
-    Initialize memory databases for agents.
-    This function is cached to avoid recreating DBs for the same user/session.
-    Each user/session pair gets its own database file.
-    """
-    # Define a base directory for user-specific databases
-    db_base_dir = os.path.join("tmp", "user_session_dbs")
-    # Ensure the directory exists
-    os.makedirs(db_base_dir, exist_ok=True)
-    
-    # Construct a unique database file path for this user/session
-    db_file_path = os.path.join(db_base_dir, f"memory_{user_id}_{session_id}.db")
-
-    logging.info(f"Initializing memory DBs for user {user_id}, session {session_id} using db: {db_file_path}")
-    
-    # Create memory instance for the assistant agent
-    memory_db_assistant = SqliteMemoryDb(
-        table_name="agent_memories_assistant",
-        db_file=db_file_path,
-    )
-    memory_assistant = Memory(db=memory_db_assistant)
-    
-    return memory_assistant
+# Removed explicit Memory v2 setup. Agno v2 manages user memories via Agent(db=..., enable_user_memories=...).
 
 async def run_assistant_agent_async(query, user_id, session_id):
     """
@@ -71,7 +47,6 @@ async def run_assistant_agent_async(query, user_id, session_id):
         name="assistant_agent",
         session_id=session_id,
         session_state={"user_id":user_id, "session_id":session_id},
-        add_state_in_messages=True,
         role="General AI Assistant that answer questions and provide insights across various domains based on available knowledge",
         user_id=user_id,
         description=dedent(f"""\
@@ -88,11 +63,10 @@ async def run_assistant_agent_async(query, user_id, session_id):
             """),
         markdown=True,
         read_chat_history=True,
-        add_history_to_messages=True,
-        num_history_responses=5,
-        monitoring=True,
-        show_tool_calls=True,
-        storage = PostgresStorage(table_name="agent_session", db_url=cfg.DB_URL),
+        add_history_to_context=True,
+        num_history_runs=5,
+        db=PostgresDb(db_url=cfg.DB_URL, session_table="agent_session_v2"),
+        enable_user_memories=False,
         #memory=memory_assistant,
         #enable_user_memories=True,
         enable_session_summaries=True,

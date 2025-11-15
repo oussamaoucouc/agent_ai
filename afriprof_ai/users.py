@@ -280,7 +280,7 @@ def delete_user(user_id: str, http_request: Request, db: SASession = Depends(get
         # Clean up AGNO PostgresStorage rows for this user's sessions
         try:
             db.execute(
-                text("DELETE FROM agent_session WHERE user_id = :uid"),
+                text("DELETE FROM agent_session_v2 WHERE user_id = :uid"),
                 {"uid": user_id},
             )
         except Exception:

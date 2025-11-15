@@ -40,6 +40,9 @@ def get_openai_base_url() -> str:
     except Exception:
         return OLLAMA_BASE_URL
 
+def get_embeddings_base_url() -> str:
+    return get_openai_base_url()
+
 # Use the model that's actually pulled in docker-compose
 #MODEL_ID = "ai_teacher_qwen" # Use the model without thinking capabilities
 MODEL_ID = "ai/granite-4.0-h-tiny:7B" # Use the model without thinking capabilities
