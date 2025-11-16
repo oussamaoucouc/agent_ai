@@ -73,29 +73,23 @@ async def initialize_knowledge_base(user_id: str):
     logging.info(f"Using Ollama URL for embedder: {cfg.OLLAMA_BASE_URL}")
     logging.info(f"OpenAI-compatible base URL (embeddings): {cfg.get_openai_base_url()}")
 
-    if HAS_OPENAI_EMBEDDER:
-        embedder = OpenAIEmbedder(
-            id="ai/nomic-embed-text-v1.5",
-            dimensions=768,
-            base_url=cfg.get_openai_base_url(),
-            api_key=cfg.OPENAI_API_KEY or "anything",
-        )
-    else:
-        embedder = OllamaEmbedder(
+
+    embedder = OllamaEmbedder(
             id="nomic-embed-text",
             dimensions=768,
             host="http://localhost:11434"
         )
 
-    user_chroma_path = os.path.join(tempfile.gettempdir(), "afriprof_ai_chroma", str(user_id))
-    os.makedirs(user_chroma_path, exist_ok=True)
+    base_tmp_dir = cfg.BASE_DIR / "tmp"
+    user_chroma_path = base_tmp_dir / str(user_id)
+    os.makedirs(str(user_chroma_path), exist_ok=True)
     vector_db = ChromaDb(
         collection=f"ragdocs{user_id}",
-        path=user_chroma_path,
+        path=str(user_chroma_path),
         persistent_client=True,
         embedder=embedder
     )
-    logging.info(f"Initialized ChromaDB: collection=ragdocs{user_id}, path={user_chroma_path}")
+    logging.info(f"Initialized ChromaDB: collection=ragdocs{user_id}, path={str(user_chroma_path)}")
 
     logging.info(f"Using user-specific PDF directory: {user_pdf_dir}")
     knowledge_base = PDFKnowledgeBase(

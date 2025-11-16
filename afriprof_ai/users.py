@@ -8,7 +8,7 @@ import uuid
 import hashlib
 import os
 
-from teacher_agent.config import DB_URL, get_user_pdf_dir
+from teacher_agent.config import DB_URL, get_user_pdf_dir, BASE_DIR
 import sessions as session_mod
 from fastapi import Request
 from auth import issue_token, get_user_from_auth_header
@@ -314,6 +314,45 @@ def delete_user(user_id: str, http_request: Request, db: SASession = Depends(get
                         os.rmdir(user_dir)
                     except Exception:
                         pass
+            chroma_dir = str(BASE_DIR / "tmp" / str(user_id))
+            if os.path.isdir(chroma_dir):
+                import shutil
+                import time
+                last_err = None
+                for attempt in range(5):
+                    try:
+                        shutil.rmtree(chroma_dir)
+                        last_err = None
+                        break
+                    except PermissionError as e:
+                        last_err = e
+                        time.sleep(0.25)
+                    except Exception:
+                        # Fallback to manual removal to handle stubborn files on Windows
+                        try:
+                            for root, dirs, files in os.walk(chroma_dir, topdown=False):
+                                for name in files:
+                                    fpath = os.path.join(root, name)
+                                    try:
+                                        os.remove(fpath)
+                                    except Exception:
+                                        pass
+                                for name in dirs:
+                                    dpath = os.path.join(root, name)
+                                    try:
+                                        os.rmdir(dpath)
+                                    except Exception:
+                                        pass
+                            os.rmdir(chroma_dir)
+                            last_err = None
+                            break
+                        except PermissionError as e:
+                            last_err = e
+                            time.sleep(0.25)
+                        except Exception as e:
+                            last_err = e
+                            break
+                # If still failing, ignore best-effort errors
             # Clean up agent SQLite memory DBs created per user/session
             # These are used by teacher agents (assistant/rag/mcp) and live under tmp/user_session_dbs
             try:
