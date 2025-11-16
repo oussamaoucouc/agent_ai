@@ -8,7 +8,7 @@ import { DocumentIcon, UploadIcon, SpinnerIcon, CheckIcon, ErrorIcon, PlusIcon, 
 interface SidebarProps {
     uploadedFiles: UploadedFile[];
     onFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
-    onDeleteDocument: (filename: string) => void;
+    onDeleteDocument: (filename: string, kind?: UploadedFile['kind']) => void;
     sessions: Session[];
     activeSessionId: string | null;
     onNewSession: () => void;
@@ -377,7 +377,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         </div>
                       )}
                     </div>
-                    <input id="file-upload" type="file" className="hidden" onChange={onFileChange} multiple disabled={!canUploadDocs} />
+                    <input id="file-upload" type="file" accept=".pdf,.doc,.docx,.txt,.md,.csv" className="hidden" onChange={onFileChange} multiple disabled={!canUploadDocs} />
                     {!canUploadDocs && (
                         <p className="mt-2 text-xs text-gray-500">Switch to Document Search mode to Upload Document.</p>
                     )}
@@ -392,7 +392,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     <div className="ml-2 flex items-center gap-2">
                                         <StatusIcon status={upload.status} />
                                         <button
-                                            onClick={() => onDeleteDocument(upload.file.name)}
+                                            onClick={() => onDeleteDocument(upload.file.name, upload.kind)}
                                             className="p-1.5 text-gray-400 hover:text-red-400 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
                                             title="Delete document"
                                         >

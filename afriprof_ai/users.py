@@ -8,7 +8,7 @@ import uuid
 import hashlib
 import os
 
-from teacher_agent.config import DB_URL, get_user_pdf_dir
+from teacher_agent.config import DB_URL, get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir
 import sessions as session_mod
 from fastapi import Request
 from auth import issue_token, get_user_from_auth_header
@@ -125,8 +125,9 @@ def ensure_admin_seed():
         db.commit()
         # Ensure document directory exists
         try:
-            user_dir = get_user_pdf_dir(user_id)
-            os.makedirs(user_dir, exist_ok=True)
+            for f in (get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir):
+                d = f(user_id)
+                os.makedirs(d, exist_ok=True)
         except Exception:
             pass
         # Create default per-user settings on first user creation
@@ -184,10 +185,10 @@ def create_user(request: UserCreateRequest, http_request: Request, db: SASession
         db.refresh(u)
         # Ensure user has a document folder created
         try:
-            user_dir = get_user_pdf_dir(user_id)
-            os.makedirs(user_dir, exist_ok=True)
+            for f in (get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir):
+                d = f(user_id)
+                os.makedirs(d, exist_ok=True)
         except Exception:
-            # Non-fatal
             pass
         # Initialize default per-user settings at creation
         try:
@@ -277,54 +278,51 @@ def delete_user(user_id: str, http_request: Request, db: SASession = Depends(get
             # Non-fatal: settings table may not exist in some deployments
             pass
 
-        # Clean up AGNO PostgresStorage rows for this user's sessions
-        try:
-            db.execute(
-                text("DELETE FROM agent_session WHERE user_id = :uid"),
-                {"uid": user_id},
-            )
-        except Exception:
-            # Non-fatal: agent_session may not exist in some deployments
-            pass
-
-        # Purge PgVector entries for this user from shared ragdocs table
-        try:
-            db.execute(
-                text("DELETE FROM ragdocs WHERE meta_data->>'user_id' = :uid"),
-                {"uid": user_id},
-            )
-        except Exception:
-            # Best-effort: ragdocs may not exist or driver may differ
-            pass
+        # Robust deletes: check table existence before deleting, and rollback on errors to avoid transaction abort
+        def _delete_if_table_exists(table: str, column_expr: str = "meta_data->>'user_id'"):
+            try:
+                exists = db.execute(text("SELECT to_regclass(:tname)"), {"tname": table}).scalar()
+                if exists:
+                    db.execute(text(f"DELETE FROM {table} WHERE {column_expr} = :uid"), {"uid": user_id})
+                    db.commit()
+            except Exception:
+                db.rollback()
+        _delete_if_table_exists("agent_session", column_expr="user_id")
+        _delete_if_table_exists("ragdocs")
+        _delete_if_table_exists("pdf_documents")
+        _delete_if_table_exists("docx_documents")
+        _delete_if_table_exists("text_documents")
+        _delete_if_table_exists("csv_documents")
+        _delete_if_table_exists("combined_documents")
 
         db.delete(u)
         db.commit()
         # Optionally remove user document directory and per-user agent memory DB files
         try:
-            user_dir = get_user_pdf_dir(user_id)
-            if os.path.isdir(user_dir):
-                import shutil
-                try:
-                    shutil.rmtree(user_dir)
-                except Exception:
+            import shutil
+            for f in (get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir):
+                user_dir = f(user_id)
+                if os.path.isdir(user_dir):
                     try:
-                        for root, dirs, files in os.walk(user_dir, topdown=False):
-                            for name in files:
-                                fpath = os.path.join(root, name)
-                                try:
-                                    os.remove(fpath)
-                                except Exception:
-                                    pass
-                            for name in dirs:
-                                dpath = os.path.join(root, name)
-                                try:
-                                    os.rmdir(dpath)
-                                except Exception:
-                                    pass
-                        os.rmdir(user_dir)
+                        shutil.rmtree(user_dir)
                     except Exception:
-                        pass
-            # No agent SQLite memory DBs to clean up
+                        try:
+                            for root, dirs, files in os.walk(user_dir, topdown=False):
+                                for name in files:
+                                    fpath = os.path.join(root, name)
+                                    try:
+                                        os.remove(fpath)
+                                    except Exception:
+                                        pass
+                                for name in dirs:
+                                    dpath = os.path.join(root, name)
+                                    try:
+                                        os.rmdir(dpath)
+                                    except Exception:
+                                        pass
+                            os.rmdir(user_dir)
+                        except Exception:
+                            pass
         except Exception:
             pass
         return {"status": "deleted"}
@@ -376,12 +374,12 @@ def user_stats(request: Request, db: SASession = Depends(get_db)):
         # Build a per-user sessions count
         for u in users:
             sess_count = db.query(session_mod.SessionDB).filter(session_mod.SessionDB.user_id == u.id).count()
-            # Count documents by scanning user PDF dir
             docs_count = 0
             try:
-                user_dir = get_user_pdf_dir(u.id)
-                if os.path.isdir(user_dir):
-                    docs_count = len([f for f in os.listdir(user_dir) if os.path.isfile(os.path.join(user_dir, f))])
+                for f in (get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir):
+                    d = f(u.id)
+                    if os.path.isdir(d):
+                        docs_count += len([fpath for fpath in os.listdir(d) if os.path.isfile(os.path.join(d, fpath))])
             except Exception:
                 pass
             # Count selected MCP tools from session settings (JSON array of URLs)

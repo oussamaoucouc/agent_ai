@@ -16,7 +16,7 @@ from pydub import AudioSegment
 from teacher_agent.rag_agent import run_rag_agent, initialize_knowledge_base
 from teacher_agent.locks import get_user_kb_lock
 from teacher_agent.ai_agent_assistant import run_assistant_agent
-from teacher_agent.config import get_user_pdf_dir
+from teacher_agent.config import get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir
 from teacher_agent.mcp_agent import run_agent_async as run_mcp_agent
 from teacher_agent.tts import text_to_speech
 from teacher_agent.config import TTS_DELETE_AFTER_SERVE, TTS_DELETE_DELAY_SECONDS
@@ -240,18 +240,30 @@ async def login(request: LoginRequest):
 async def upload_document_endpoint(file: UploadFile = File(...), user_id: str = Form(...), session_id: str = Form(...)):
     try:
         file_extension = os.path.splitext(file.filename)[1].lower()
-        if file_extension != ".pdf":
-            raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+        allowed = {".pdf", ".docx", ".doc", ".txt", ".md", ".csv"}
+        if file_extension not in allowed:
+            raise HTTPException(status_code=400, detail="Only pdf, docx, doc, txt, md, csv files are allowed")
 
         # Save the uploaded file to the per-user PDFs directory
-        user_pdfs_dir = str(get_user_pdf_dir(user_id))
-        os.makedirs(user_pdfs_dir, exist_ok=True)
+        if file_extension == ".pdf":
+            target_dir = str(get_user_pdf_dir(user_id))
+            kind = "pdf"
+        elif file_extension in {".doc", ".docx"}:
+            target_dir = str(get_user_docx_dir(user_id))
+            kind = "docx"
+        elif file_extension in {".txt", ".md"}:
+            target_dir = str(get_user_text_dir(user_id))
+            kind = "text"
+        else:
+            target_dir = str(get_user_csv_dir(user_id))
+            kind = "csv"
+        os.makedirs(target_dir, exist_ok=True)
         safe_name = os.path.basename(file.filename)
-        file_path = os.path.join(user_pdfs_dir, safe_name)
+        file_path = os.path.join(target_dir, safe_name)
 
         # Write upload to a temporary file first
-        tmp_name = f".tmp_{uuid.uuid4().hex}.pdf"
-        tmp_path = os.path.join(user_pdfs_dir, tmp_name)
+        tmp_name = f".tmp_{uuid.uuid4().hex}{file_extension}"
+        tmp_path = os.path.join(target_dir, tmp_name)
         with open(tmp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
@@ -278,11 +290,11 @@ async def upload_document_endpoint(file: UploadFile = File(...), user_id: str = 
                     base, ext = os.path.splitext(safe_name)
                     counter = 2
                     new_name = f"{base} ({counter}){ext}"
-                    new_path = os.path.join(user_pdfs_dir, new_name)
+                    new_path = os.path.join(target_dir, new_name)
                     while os.path.exists(new_path):
                         counter += 1
                         new_name = f"{base} ({counter}){ext}"
-                        new_path = os.path.join(user_pdfs_dir, new_name)
+                        new_path = os.path.join(target_dir, new_name)
                     os.replace(tmp_path, new_path)
                     safe_name = new_name
                     file_path = new_path
@@ -291,11 +303,11 @@ async def upload_document_endpoint(file: UploadFile = File(...), user_id: str = 
                 base, ext = os.path.splitext(safe_name)
                 counter = 2
                 new_name = f"{base} ({counter}){ext}"
-                new_path = os.path.join(user_pdfs_dir, new_name)
+                new_path = os.path.join(target_dir, new_name)
                 while os.path.exists(new_path):
                     counter += 1
                     new_name = f"{base} ({counter}){ext}"
-                    new_path = os.path.join(user_pdfs_dir, new_name)
+                    new_path = os.path.join(target_dir, new_name)
                 os.replace(tmp_path, new_path)
                 safe_name = new_name
                 file_path = new_path
@@ -308,7 +320,7 @@ async def upload_document_endpoint(file: UploadFile = File(...), user_id: str = 
         logging.info(f"Waiting for KB lock for user {user_id} (upload)")
         async with lock:
             logging.info(f"Entered KB lock for user {user_id} (upload)")
-            kb = await initialize_knowledge_base(user_id)
+            kb = await initialize_knowledge_base(user_id, only_path=file_path, only_kind=kind)
             try:
                 await kb.aload(recreate=False, upsert=True)
                 logging.info(f"KB upsert load complete for user {user_id} (upload)")
@@ -321,7 +333,7 @@ async def upload_document_endpoint(file: UploadFile = File(...), user_id: str = 
                     logging.info(f"KB recreate load complete for user {user_id} (upload)")
                 else:
                     raise
-        return {"message": f"Successfully uploaded {safe_name}", "filename": safe_name, "path": file_path}
+        return {"message": f"Successfully uploaded {safe_name}", "filename": safe_name, "path": file_path, "kind": kind}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error uploading document: {str(e)}")
 
@@ -335,34 +347,62 @@ async def list_documents(user_id: Optional[str] = None, request: Request = None)
             user_id = token_payload.get("uid")
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
-        user_pdfs_dir = str(get_user_pdf_dir(user_id))
-        os.makedirs(user_pdfs_dir, exist_ok=True)
+        dirs = [
+            (str(get_user_pdf_dir(user_id)), "pdf", {".pdf"}),
+            (str(get_user_docx_dir(user_id)), "docx", {".doc", ".docx"}),
+            (str(get_user_text_dir(user_id)), "text", {".txt", ".md"}),
+            (str(get_user_csv_dir(user_id)), "csv", {".csv"}),
+        ]
         docs = []
-        for name in os.listdir(user_pdfs_dir):
-            if name.lower().endswith(".pdf"):
-                docs.append({
-                    "filename": name,
-                    "path": os.path.join(user_pdfs_dir, name)
-                })
+        for d, kind, exts in dirs:
+            os.makedirs(d, exist_ok=True)
+            for name in os.listdir(d):
+                if any(name.lower().endswith(ext) for ext in exts):
+                    docs.append({"filename": name, "path": os.path.join(d, name), "kind": kind})
         return {"documents": docs}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error listing documents: {str(e)}")
 
 # Delete a document for a user and sync KB
 @app.delete("/delete_document", response_model=Dict[str, str])
-async def delete_document(user_id: Optional[str] = None, filename: str = "", request: Request = None):
+async def delete_document(user_id: Optional[str] = None, filename: str = "", kind: Optional[str] = None, request: Request = None):
     try:
         token_payload = get_user_from_auth_header(request.headers.get("Authorization")) if request else None
         if token_payload:
             user_id = token_payload.get("uid")
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
-        user_pdfs_dir = str(get_user_pdf_dir(user_id))
-        os.makedirs(user_pdfs_dir, exist_ok=True)
         safe_name = os.path.basename(filename)
-        file_path = os.path.join(user_pdfs_dir, safe_name)
-        if not os.path.isfile(file_path):
+        candidates = []
+        if kind == "pdf":
+            d = str(get_user_pdf_dir(user_id))
+            candidates.append(os.path.join(d, safe_name))
+        elif kind == "docx":
+            d = str(get_user_docx_dir(user_id))
+            candidates.append(os.path.join(d, safe_name))
+        elif kind == "text":
+            d = str(get_user_text_dir(user_id))
+            candidates.append(os.path.join(d, safe_name))
+        elif kind == "csv":
+            d = str(get_user_csv_dir(user_id))
+            candidates.append(os.path.join(d, safe_name))
+        else:
+            for d in [str(get_user_pdf_dir(user_id)), str(get_user_docx_dir(user_id)), str(get_user_text_dir(user_id)), str(get_user_csv_dir(user_id))]:
+                candidates.append(os.path.join(d, safe_name))
+        file_path = next((p for p in candidates if os.path.isfile(p)), None)
+        if not file_path:
             raise HTTPException(status_code=404, detail="File not found")
+        def _sha256(path: str) -> str:
+            import hashlib
+            h = hashlib.sha256()
+            with open(path, "rb") as f:
+                for chunk in iter(lambda: f.read(8192), b""):
+                    h.update(chunk)
+            return h.hexdigest()
+        try:
+            file_sha256 = _sha256(file_path)
+        except Exception:
+            file_sha256 = ""
         # Robust deletion: retry a few times in case the file is briefly locked (Windows)
         last_err = None
         for attempt in range(5):
@@ -378,14 +418,39 @@ async def delete_document(user_id: Optional[str] = None, filename: str = "", req
                 break
         if last_err is not None:
             raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(last_err)}")
-        # Trigger KB sync (rebuild collection to reflect deletion)
         lock = get_user_kb_lock(user_id)
         logging.info(f"Waiting for KB lock for user {user_id} (delete)")
         async with lock:
             logging.info(f"Entered KB lock for user {user_id} (delete)")
-            kb = await initialize_knowledge_base(user_id)
-            await kb.aload(recreate=True, upsert=False)
-            logging.info(f"KB recreate load complete for user {user_id} (delete)")
+            from sqlalchemy import text
+            from sessions import SessionLocal
+            base_name = os.path.splitext(safe_name)[0]
+            name_full = safe_name
+            name_base = base_name
+            params = {"uid": user_id, "sha": file_sha256, "name_full": name_full, "name_base": name_base}
+            tables = ["combined_documents"]
+            if kind == "pdf":
+                tables.append("pdf_documents")
+            elif kind == "docx":
+                tables.append("docx_documents")
+            elif kind == "text":
+                tables.append("text_documents")
+            elif kind == "csv":
+                tables.append("csv_documents")
+            with SessionLocal() as db:
+                for t in tables:
+                    try:
+                        exists = db.execute(text("SELECT to_regclass(:tname)"), {"tname": t}).scalar()
+                        if exists:
+                            db.execute(
+                                text(
+                                    f"DELETE FROM {t} WHERE meta_data->>'user_id' = :uid AND ((meta_data->>'file_sha256' = :sha AND :sha <> '') OR name = :name_full OR name = :name_base)"
+                                ),
+                                params,
+                            )
+                            db.commit()
+                    except Exception:
+                        db.rollback()
         return {"message": "Successfully deleted", "filename": safe_name}
     except HTTPException:
         raise

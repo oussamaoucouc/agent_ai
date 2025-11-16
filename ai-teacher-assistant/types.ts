@@ -33,6 +33,7 @@ export interface UploadedFile {
     id: string;
     file: File;
     status: UploadStatus;
+    kind?: 'pdf' | 'docx' | 'text' | 'csv';
 }
 
 export interface Session {
@@ -120,11 +121,13 @@ export interface UploadDocumentResponse {
     filename: string;
     path?: string;
     duplicate?: boolean;
+    kind?: 'pdf' | 'docx' | 'text' | 'csv';
 }
 
 export interface DeleteDocumentRequest {
     user_id: string;
     filename: string;
+    kind?: 'pdf' | 'docx' | 'text' | 'csv';
 }
 
 export interface DeleteDocumentResponse {
@@ -171,7 +174,7 @@ export interface SaveMessagesRequest {
 
 // List documents response for persisted user PDFs
 export interface ListDocumentsResponse {
-    documents: { filename: string; path: string }[];
+    documents: { filename: string; path: string; kind?: 'pdf' | 'docx' | 'text' | 'csv' }[];
 }
 
 // --- Admin Configuration types ---

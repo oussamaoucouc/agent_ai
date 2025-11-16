@@ -15,6 +15,10 @@ try:
 except Exception:
     HAS_OPENAI_EMBEDDER = False
 from agno.knowledge.pdf import PDFKnowledgeBase, PDFReader
+from agno.knowledge.docx import DocxKnowledgeBase
+from agno.knowledge.text import TextKnowledgeBase
+from agno.knowledge.csv import CSVKnowledgeBase
+from agno.knowledge.combined import CombinedKnowledgeBase
 from agno.vectordb.pgvector import PgVector, SearchType
 from agno.models.groq import Groq
 from agno.models.ollama import Ollama
@@ -62,11 +66,14 @@ def run_rag_agent(query, user_id, session_id):
         logging.info("Creating new event loop")
         return asyncio.run(run_rag_agent_async(query, user_id, session_id))
 
-async def initialize_knowledge_base(user_id: str):
+async def initialize_knowledge_base(user_id: str, only_path: str | None = None, only_kind: str | None = None):
     """
     Initialize the per-user knowledge base and let AGNO/Chroma manage persistence.
     """
     user_pdf_dir = cfg.get_user_pdf_dir(user_id)
+    user_docx_dir = cfg.get_user_docx_dir(user_id)
+    user_text_dir = cfg.get_user_text_dir(user_id)
+    user_csv_dir = cfg.get_user_csv_dir(user_id)
 
     logging.info("Initializing knowledge base")
     logging.info(f"Using Ollama URL for embedder: {cfg.OLLAMA_BASE_URL}")
@@ -79,32 +86,105 @@ async def initialize_knowledge_base(user_id: str):
             host="http://localhost:11434"
         )
 
-    vector_db = PgVector(
-        table_name="ragdocs",
+    pdf_vector_db = PgVector(
+        table_name="pdf_documents",
         db_url=cfg.VECTOR_DB_URL,
         embedder=embedder,
         search_type=SearchType.hybrid
     )
-    logging.info(f"Initialized PgVector: table=ragdocs")
+    docx_vector_db = PgVector(
+        table_name="docx_documents",
+        db_url=cfg.VECTOR_DB_URL,
+        embedder=embedder,
+        search_type=SearchType.hybrid
+    )
+    text_vector_db = PgVector(
+        table_name="text_documents",
+        db_url=cfg.VECTOR_DB_URL,
+        embedder=embedder,
+        search_type=SearchType.hybrid
+    )
+    csv_vector_db = PgVector(
+        table_name="csv_documents",
+        db_url=cfg.VECTOR_DB_URL,
+        embedder=embedder,
+        search_type=SearchType.hybrid
+    )
+    combined_vector_db = PgVector(
+        table_name="combined_documents",
+        db_url=cfg.VECTOR_DB_URL,
+        embedder=embedder,
+        search_type=SearchType.hybrid
+    )
+    logging.info("Initialized PgVector tables for pdf, docx, text, csv, combined")
 
-    logging.info(f"Using user-specific PDF directory: {user_pdf_dir}")
+    logging.info(f"Using user-specific directories: pdf={user_pdf_dir}, docx={user_docx_dir}, text={user_text_dir}, csv={user_csv_dir}")
     try:
         pdf_files_for_kb = list(Path(user_pdf_dir).glob("*.pdf"))
     except Exception:
         pdf_files_for_kb = []
-    kb_paths = [{"path": str(p), "metadata": {"user_id": str(user_id)}} for p in pdf_files_for_kb]
-    knowledge_base = PDFKnowledgeBase(
-        path=kb_paths,
-        vector_db=vector_db,
-        chunking_strategy=AgenticChunking()
+    try:
+        docx_files_for_kb = list(Path(user_docx_dir).glob("*.docx")) + list(Path(user_docx_dir).glob("*.doc"))
+    except Exception:
+        docx_files_for_kb = []
+    try:
+        text_files_for_kb = list(Path(user_text_dir).glob("*.txt")) + list(Path(user_text_dir).glob("*.md"))
+    except Exception:
+        text_files_for_kb = []
+    try:
+        csv_files_for_kb = list(Path(user_csv_dir).glob("*.csv"))
+    except Exception:
+        csv_files_for_kb = []
+
+    if only_path and only_kind:
+        p = Path(only_path)
+        kind = only_kind.lower()
+        pdf_files_for_kb = [p] if kind == "pdf" and p.suffix.lower() == ".pdf" else []
+        docx_files_for_kb = [p] if kind == "docx" and p.suffix.lower() in {".doc", ".docx"} else []
+        text_files_for_kb = [p] if kind == "text" and p.suffix.lower() in {".txt", ".md"} else []
+        csv_files_for_kb = [p] if kind == "csv" and p.suffix.lower() == ".csv" else []
+
+    def _sha256(path: Path) -> str:
+        import hashlib
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    pdf_kb = PDFKnowledgeBase(
+        path=[{"path": str(p), "metadata": {"user_id": str(user_id), "type": "pdf", "file_sha256": _sha256(p)}} for p in pdf_files_for_kb],
+        vector_db=pdf_vector_db,
+        chunking_strategy=AgenticChunking(),
+        num_documents=5
+    )
+    docx_kb = DocxKnowledgeBase(
+        path=[{"path": str(p), "metadata": {"user_id": str(user_id), "type": "docx", "file_sha256": _sha256(p)}} for p in docx_files_for_kb],
+        vector_db=docx_vector_db,
+        formats=[".doc", ".docx"],
+        num_documents=5
+    )
+    text_kb = TextKnowledgeBase(
+        path=[{"path": str(p), "metadata": {"user_id": str(user_id), "type": "text", "file_sha256": _sha256(p)}} for p in text_files_for_kb],
+        vector_db=text_vector_db,
+        formats=[".txt", ".md"],
+        num_documents=5
+    )
+    csv_kb = CSVKnowledgeBase(
+        path=[{"path": str(p), "metadata": {"user_id": str(user_id), "type": "csv", "file_sha256": _sha256(p)}} for p in csv_files_for_kb],
+        vector_db=csv_vector_db,
+        num_documents=5
+    )
+
+    knowledge_base = CombinedKnowledgeBase(
+        sources=[pdf_kb, docx_kb, text_kb, csv_kb],
+        vector_db=combined_vector_db,
+        num_documents=6
     )
 
     # Log basic ingestion diagnostics
     try:
-        pdf_files = pdf_files_for_kb if 'pdf_files_for_kb' in locals() else list(Path(user_pdf_dir).glob("*.pdf"))
-        logging.info(f"Knowledge ingestion: found {len(pdf_files)} PDFs for user {user_id}")
-        if len(pdf_files) == 0:
-            logging.warning(f"No PDFs found in {user_pdf_dir} for user {user_id}. Retrieval may return no documents.")
+        logging.info(f"Knowledge ingestion: pdf={len(pdf_files_for_kb)} docx={len(docx_files_for_kb)} text={len(text_files_for_kb)} csv={len(csv_files_for_kb)} for user {user_id}")
     except Exception as e:
         logging.warning(f"Unable to list PDFs in {user_pdf_dir}: {e}")
 

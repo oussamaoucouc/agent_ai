@@ -206,7 +206,8 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                 const items: UploadedFile[] = (res.documents || []).map((doc) => ({
                     id: crypto.randomUUID(),
                     file: new File([""], doc.filename),
-                    status: 'success'
+                    status: 'success',
+                    kind: doc.kind as UploadedFile['kind']
                 }));
                 setUploadedFiles(items);
             } catch (err) {
@@ -793,8 +794,8 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
 
             newUploads.forEach(upload => {
                 uploadDocument({ file: upload.file, user_id: currentUser, session_id: activeSessionId })
-                    .then(() => {
-                        setUploadedFiles(prev => prev.map(f => f.id === upload.id ? { ...f, status: 'success' } : f));
+                    .then((res) => {
+                        setUploadedFiles(prev => prev.map(f => f.id === upload.id ? { ...f, status: 'success', kind: res.kind as UploadedFile['kind'] } : f));
                     })
                     .catch(err => {
                         console.error("File upload failed:", err);
@@ -808,11 +809,11 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
         }
     };
 
-    const handleDeleteDocument = async (filename: string) => {
+    const handleDeleteDocument = async (filename: string, kind?: UploadedFile['kind']) => {
         if (!currentUser) return;
         try {
-            await deleteDocument({ user_id: currentUser, filename });
-            setUploadedFiles(prev => prev.filter(f => f.file.name !== filename));
+            await deleteDocument({ user_id: currentUser, filename, kind });
+            setUploadedFiles(prev => prev.filter(f => !(f.file.name === filename && (kind ? f.kind === kind : true))));
         } catch (err) {
             console.error('Delete document failed:', err);
         }

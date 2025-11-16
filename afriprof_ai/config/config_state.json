@@ -1,17 +1,17 @@
 {
-  "model_id": "granite4:tiny-h",
+  "model_id": "ai/granite-4.0-h-tiny:7B",
   "voice": "af_sky",
   "ollama_base_url": "http://localhost:12434",
-  "openai_api_key_set": true,
+  "openai_api_key_set": false,
   "mcp_transport": "streamable-http",
   "mcp_server_url": "https://server.smithery.ai/@Aas-ee/open-websearch/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1",
   "mcp_stdio_command": "",
   "mcp_stdio_args": [],
   "available_models": [
     "ai/granite-4.0-h-tiny:7B",
-    "ai/qwen3-vl:4B-Q8_K_XL",
     "ai/granite-4.0-nano",
-    "refresh"
+    "refresh",
+    "ai/deepseek-r1-distill-llama"
   ],
   "available_voices": [
     "af_sky",

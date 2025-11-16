@@ -190,6 +190,7 @@ export const deleteDocument = async (request: DeleteDocumentRequest, signal?: Ab
     const url = new URL(`${API_BASE_URL}/delete_document`);
     url.searchParams.set('user_id', request.user_id);
     url.searchParams.set('filename', request.filename);
+    if (request.kind) url.searchParams.set('kind', request.kind);
     const response = await fetch(url.toString(), { method: 'DELETE', headers: authHeaders(), signal });
     return handleResponse<DeleteDocumentResponse>(response);
 };
