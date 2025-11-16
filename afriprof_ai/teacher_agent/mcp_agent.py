@@ -10,8 +10,6 @@ import asyncio
 
 from agno.agent import Agent
 from agno.storage.postgres import PostgresStorage
-from agno.memory.v2.db.sqlite import SqliteMemoryDb
-from agno.memory.v2.memory import Memory
 from . import config as cfg
 from agno.tools.mcp import MCPTools
 try:
@@ -96,31 +94,6 @@ def run_agent(query, user_id, session_id):
         return asyncio.run(run_agent_async(query, user_id, session_id))
 
 
-async def initialize_memory_dbs(user_id, session_id):
-    """
-    Initialize memory databases for agents.
-    This function is cached to avoid recreating DBs for the same user/session.
-    Each user/session pair gets its own database file.
-    """
-    # Define a base directory for user-specific databases
-    db_base_dir = os.path.join("tmp", "user_session_dbs")
-    # Ensure the directory exists
-    os.makedirs(db_base_dir, exist_ok=True)
-    
-    # Construct a unique database file path for this user/session
-    db_file_path = os.path.join(db_base_dir, f"memory_{user_id}_{session_id}.db")
-
-    logging.info(f"Initializing memory DBs for user {user_id}, session {session_id} using db: {db_file_path}")
-    
-    # Create memory instances
-    memory_db_mcp = SqliteMemoryDb(
-        table_name="agent_memories_mcp",  # Table name can be the same as DB file is unique
-        db_file=db_file_path,
-    )
-    memory_mcp = Memory(db=memory_db_mcp)
-
-    
-    return memory_mcp
 
 async def run_agent_async(query, user_id, session_id):
     """

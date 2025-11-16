@@ -15,14 +15,13 @@ try:
 except Exception:
     HAS_OPENAI_EMBEDDER = False
 from agno.knowledge.pdf import PDFKnowledgeBase, PDFReader
-from agno.vectordb.chroma import ChromaDb
+from agno.vectordb.pgvector import PgVector, SearchType
 from agno.models.groq import Groq
 from agno.models.ollama import Ollama
 from agno.models.openai import OpenAIChat
 from agno.storage.postgres import PostgresStorage
-from agno.memory.v2.db.sqlite import SqliteMemoryDb
-from agno.memory.v2.memory import Memory
 from agno.document.chunking.document import DocumentChunking
+from agno.document.chunking.agentic import AgenticChunking
 from agno.tools.reasoning import ReasoningTools
 from agno.tools.thinking import ThinkingTools
 from agno.tools.knowledge import KnowledgeTools
@@ -80,27 +79,29 @@ async def initialize_knowledge_base(user_id: str):
             host="http://localhost:11434"
         )
 
-    base_tmp_dir = cfg.BASE_DIR / "tmp"
-    user_chroma_path = base_tmp_dir / str(user_id)
-    os.makedirs(str(user_chroma_path), exist_ok=True)
-    vector_db = ChromaDb(
-        collection=f"ragdocs{user_id}",
-        path=str(user_chroma_path),
-        persistent_client=True,
-        embedder=embedder
+    vector_db = PgVector(
+        table_name="ragdocs",
+        db_url=cfg.VECTOR_DB_URL,
+        embedder=embedder,
+        search_type=SearchType.hybrid
     )
-    logging.info(f"Initialized ChromaDB: collection=ragdocs{user_id}, path={str(user_chroma_path)}")
+    logging.info(f"Initialized PgVector: table=ragdocs")
 
     logging.info(f"Using user-specific PDF directory: {user_pdf_dir}")
+    try:
+        pdf_files_for_kb = list(Path(user_pdf_dir).glob("*.pdf"))
+    except Exception:
+        pdf_files_for_kb = []
+    kb_paths = [{"path": str(p), "metadata": {"user_id": str(user_id)}} for p in pdf_files_for_kb]
     knowledge_base = PDFKnowledgeBase(
-        path=user_pdf_dir,
+        path=kb_paths,
         vector_db=vector_db,
-        chunking_strategy=DocumentChunking()
+        chunking_strategy=AgenticChunking()
     )
 
     # Log basic ingestion diagnostics
     try:
-        pdf_files = list(Path(user_pdf_dir).glob("*.pdf"))
+        pdf_files = pdf_files_for_kb if 'pdf_files_for_kb' in locals() else list(Path(user_pdf_dir).glob("*.pdf"))
         logging.info(f"Knowledge ingestion: found {len(pdf_files)} PDFs for user {user_id}")
         if len(pdf_files) == 0:
             logging.warning(f"No PDFs found in {user_pdf_dir} for user {user_id}. Retrieval may return no documents.")
@@ -111,30 +112,6 @@ async def initialize_knowledge_base(user_id: str):
     logging.info("Knowledge base object created; loading deferred to caller")
     return knowledge_base
 
-async def initialize_memory_dbs(user_id, session_id):
-    """
-    Initialize memory databases for agents.
-    This function is cached to avoid recreating DBs for the same user/session.
-    Each user/session pair gets its own database file.
-    """
-    # Define a base directory for user-specific databases
-    db_base_dir = os.path.join("tmp", "user_session_dbs")
-    # Ensure the directory exists
-    os.makedirs(db_base_dir, exist_ok=True)
-    
-    # Construct a unique database file path for this user/session
-    db_file_path = os.path.join(db_base_dir, f"memory_{user_id}_{session_id}.db")
-
-    logging.info(f"Initializing memory DBs for user {user_id}, session {session_id} using db: {db_file_path}")
-    
-    # Create memory instances
-    memory_db_rag = SqliteMemoryDb(
-        table_name="agent_memories_rag",  # Table name can be the same as DB file is unique
-        db_file=db_file_path,
-    )
-    memory_rag = Memory(db=memory_db_rag)
-
-    return memory_rag
 
 async def run_rag_agent_async(query, user_id, session_id):
     """
@@ -144,15 +121,7 @@ async def run_rag_agent_async(query, user_id, session_id):
     logging.info(f"Starting RAG agent with Ollama at: {cfg.OLLAMA_BASE_URL}")
     logging.info(f"OpenAI-compatible base URL: {cfg.get_openai_base_url()}")
     
-    # Initialize knowledge base then perform upsert-only load for queries
     knowledge_base = await initialize_knowledge_base(user_id)
-    # Serialize KB loads per user to avoid races with upload/delete
-    lock = get_user_kb_lock(user_id)
-    logging.info(f"Waiting for KB lock for user {user_id} (query)")
-    async with lock:
-        logging.info(f"Entered KB lock for user {user_id} (query)")
-        await knowledge_base.aload(recreate=False, upsert=True)
-        logging.info(f"KB upsert load complete for user {user_id} (query)")
     #memory_rag = await initialize_memory_dbs(user_id, session_id)
     storage_session_id = f"{user_id}_{session_id}"  # For PostgresStorage isolation
 
@@ -194,6 +163,7 @@ async def run_rag_agent_async(query, user_id, session_id):
             """),
         tools=[knowledge_tools],
         knowledge=knowledge_base,
+        knowledge_filters={"user_id": str(user_id)},
         #search_knowledge=True,
         markdown=True,
         read_chat_history=True,

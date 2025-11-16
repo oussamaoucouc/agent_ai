@@ -369,7 +369,7 @@ def set_openai_api_key(key: str) -> None:
 
 # Export OLLAMA_BASE_URL and runtime config helpers for use in other modules
 __all__ = [
-    'MODEL', 'DB_URL', 'DATA_DIR', 'OLLAMA_BASE_URL',
+    'MODEL', 'DB_URL', 'VECTOR_DB_URL', 'DATA_DIR', 'OLLAMA_BASE_URL',
     'VOSK_MODEL_PATH', 'TTS_CACHE_DIR', 'KOKORO_TTS_URL', 'KOKORO_TTS_CONFIG',
     'KOKORO_TTS_HEADERS', 'KOKORO_TTS_TIMEOUT', 'RHUBARB_PATH',
     'MCP_TRANSPORT', 'MCP_SERVER_URL', 'MCP_STDIO_COMMAND', 'MCP_STDIO_ARGS',
@@ -383,6 +383,7 @@ __all__ = [
 # Use DATABASE_URL from environment, default to localhost for non-Docker runs.
 # The Dockerfile sets DATABASE_URL to postgresql://ai:ai@postgres:5432/ai
 DB_URL = os.getenv("DATABASE_URL", "postgresql+psycopg2://ai:ai@localhost:5532/ai")
+VECTOR_DB_URL = os.getenv("VECTOR_DB_URL", "postgresql+psycopg://ai:ai@localhost:5532/ai")
 
 # Path configurations
 # Determine Rhubarb executable path based on the operating system
