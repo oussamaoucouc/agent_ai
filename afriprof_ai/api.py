@@ -428,15 +428,17 @@ async def delete_document(user_id: Optional[str] = None, filename: str = "", kin
             name_full = safe_name
             name_base = base_name
             params = {"uid": user_id, "sha": file_sha256, "name_full": name_full, "name_base": name_base}
-            tables = ["combined_documents"]
+            import hashlib
+            uid = f"u_{hashlib.sha1(str(user_id).encode('utf-8')).hexdigest()[:12]}"
+            tables = [f"combined_documents_{uid}"]
             if kind == "pdf":
-                tables.append("pdf_documents")
+                tables.append(f"pdf_documents_{uid}")
             elif kind == "docx":
-                tables.append("docx_documents")
+                tables.append(f"docx_documents_{uid}")
             elif kind == "text":
-                tables.append("text_documents")
+                tables.append(f"text_documents_{uid}")
             elif kind == "csv":
-                tables.append("csv_documents")
+                tables.append(f"csv_documents_{uid}")
             with SessionLocal() as db:
                 for t in tables:
                     try:

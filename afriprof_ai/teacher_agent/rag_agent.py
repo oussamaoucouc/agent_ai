@@ -85,38 +85,44 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
             dimensions=768,
             host="http://localhost:11434"
         )
+    def _uid_suffix(uid: str) -> str:
+        import hashlib
+        dig = hashlib.sha1(str(uid).encode("utf-8")).hexdigest()[:12]
+        return f"u_{dig}"
+    def _tbl(base: str) -> str:
+        return f"{base}_{_uid_suffix(user_id)}"
 
     pdf_vector_db = PgVector(
-        table_name="pdf_documents",
+        table_name=_tbl("pdf_documents"),
         db_url=cfg.VECTOR_DB_URL,
         embedder=embedder,
         search_type=SearchType.hybrid
     )
     docx_vector_db = PgVector(
-        table_name="docx_documents",
+        table_name=_tbl("docx_documents"),
         db_url=cfg.VECTOR_DB_URL,
         embedder=embedder,
         search_type=SearchType.hybrid
     )
     text_vector_db = PgVector(
-        table_name="text_documents",
+        table_name=_tbl("text_documents"),
         db_url=cfg.VECTOR_DB_URL,
         embedder=embedder,
         search_type=SearchType.hybrid
     )
     csv_vector_db = PgVector(
-        table_name="csv_documents",
+        table_name=_tbl("csv_documents"),
         db_url=cfg.VECTOR_DB_URL,
         embedder=embedder,
         search_type=SearchType.hybrid
     )
     combined_vector_db = PgVector(
-        table_name="combined_documents",
+        table_name=_tbl("combined_documents"),
         db_url=cfg.VECTOR_DB_URL,
         embedder=embedder,
         search_type=SearchType.hybrid
     )
-    logging.info("Initialized PgVector tables for pdf, docx, text, csv, combined")
+    logging.info("Initialized PgVector user-scoped tables for pdf, docx, text, csv, combined")
 
     logging.info(f"Using user-specific directories: pdf={user_pdf_dir}, docx={user_docx_dir}, text={user_text_dir}, csv={user_csv_dir}")
     try:
@@ -202,6 +208,14 @@ async def run_rag_agent_async(query, user_id, session_id):
     logging.info(f"OpenAI-compatible base URL: {cfg.get_openai_base_url()}")
     
     knowledge_base = await initialize_knowledge_base(user_id)
+    lock = get_user_kb_lock(user_id)
+    async with lock:
+        try:
+            await knowledge_base.aload(recreate=False, upsert=False)
+        except Exception as e:
+            m = str(e).lower()
+            if "does not exist" in m or "relation" in m or "not found" in m:
+                await knowledge_base.aload(recreate=True, upsert=False)
     #memory_rag = await initialize_memory_dbs(user_id, session_id)
     storage_session_id = f"{user_id}_{session_id}"  # For PostgresStorage isolation
 

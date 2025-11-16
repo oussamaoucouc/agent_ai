@@ -295,6 +295,20 @@ def delete_user(user_id: str, http_request: Request, db: SASession = Depends(get
         _delete_if_table_exists("csv_documents")
         _delete_if_table_exists("combined_documents")
 
+        import hashlib
+        uid = f"u_{hashlib.sha1(user_id.encode('utf-8')).hexdigest()[:12]}"
+        def _drop_table_if_exists(schema_table: str):
+            try:
+                exists = db.execute(text("SELECT to_regclass(:tname)"), {"tname": schema_table}).scalar()
+                if exists:
+                    db.execute(text(f"DROP TABLE IF EXISTS {schema_table}"))
+                    db.commit()
+            except Exception:
+                db.rollback()
+        for base in ["combined_documents", "pdf_documents", "docx_documents", "text_documents", "csv_documents"]:
+            for schema in ["ai", "public"]:
+                _drop_table_if_exists(f"{schema}.{base}_{uid}")
+
         db.delete(u)
         db.commit()
         # Optionally remove user document directory and per-user agent memory DB files
