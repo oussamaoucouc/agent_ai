@@ -240,8 +240,10 @@ async def login(request: LoginRequest):
 async def upload_document_endpoint(file: UploadFile = File(...), user_id: str = Form(...), session_id: str = Form(...)):
     try:
         file_extension = os.path.splitext(file.filename)[1].lower()
-        if file_extension != ".pdf":
-            raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+        allowed_exts = {".pdf", ".md", ".mkd", ".txt", ".csv", ".json", ".pptx", ".docx"}
+        if file_extension not in allowed_exts:
+            allowed_list = ", ".join(sorted(allowed_exts))
+            raise HTTPException(status_code=400, detail=f"Only supported file types are allowed: {allowed_list}")
 
         # Save the uploaded file to the per-user PDFs directory
         user_pdfs_dir = str(get_user_pdf_dir(user_id))
@@ -249,8 +251,8 @@ async def upload_document_endpoint(file: UploadFile = File(...), user_id: str = 
         safe_name = os.path.basename(file.filename)
         file_path = os.path.join(user_pdfs_dir, safe_name)
 
-        # Write upload to a temporary file first
-        tmp_name = f".tmp_{uuid.uuid4().hex}.pdf"
+        # Write upload to a temporary file first, preserving extension
+        tmp_name = f".tmp_{uuid.uuid4().hex}{file_extension}"
         tmp_path = os.path.join(user_pdfs_dir, tmp_name)
         with open(tmp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -311,12 +313,12 @@ async def upload_document_endpoint(file: UploadFile = File(...), user_id: str = 
             kb = await initialize_knowledge_base(user_id)
             try:
                 if hasattr(kb, "add_content_async"):
-                    await kb.add_content_async(path=file_path, metadata={"user_id": user_id})
+                    await kb.add_content_async(name=safe_name, description="", path=file_path, metadata={"user_id": user_id})
                 elif hasattr(kb, "add_contents_async"):
                     # Fallback to directory ingestion if per-file async is unavailable
-                    await kb.add_contents_async(paths=[user_pdfs_dir], include=["*.pdf"], metadata={"user_id": user_id})
+                    await kb.add_contents_async(paths=[user_pdfs_dir], include=["*.pdf", "*.md", "*.mkd", "*.txt", "*.csv", "*.json", "*.pptx", "*.docx"], metadata={"user_id": user_id})
                 else:
-                    kb.add_content(path=file_path, metadata={"user_id": user_id})
+                    kb.add_content(name=safe_name, description="", path=file_path, metadata={"user_id": user_id})
                 logging.info(f"KB content added for user {user_id}: {safe_name}")
             except Exception:
                 raise
@@ -337,8 +339,10 @@ async def list_documents(user_id: Optional[str] = None, request: Request = None)
         user_pdfs_dir = str(get_user_pdf_dir(user_id))
         os.makedirs(user_pdfs_dir, exist_ok=True)
         docs = []
+        allowed_exts = {".pdf", ".md", ".mkd", ".txt", ".csv", ".json", ".pptx", ".docx"}
         for name in os.listdir(user_pdfs_dir):
-            if name.lower().endswith(".pdf"):
+            ext = os.path.splitext(name)[1].lower()
+            if ext in allowed_exts:
                 docs.append({
                     "filename": name,
                     "path": os.path.join(user_pdfs_dir, name)
@@ -377,24 +381,33 @@ async def delete_document(user_id: Optional[str] = None, filename: str = "", req
                 break
         if last_err is not None:
             raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(last_err)}")
-        # Trigger KB sync (rebuild collection to reflect deletion)
+        # Trigger KB rebuild: clear user vector store and re-index remaining PDFs
         lock = get_user_kb_lock(user_id)
         logging.info(f"Waiting for KB lock for user {user_id} (delete)")
         async with lock:
             logging.info(f"Entered KB lock for user {user_id} (delete)")
+            try:
+                import tempfile, shutil
+                user_chroma_path = os.path.join(tempfile.gettempdir(), "afriprof_ai_chroma", str(user_id))
+                if os.path.isdir(user_chroma_path):
+                    shutil.rmtree(user_chroma_path, ignore_errors=True)
+            except Exception:
+                pass
             kb = await initialize_knowledge_base(user_id)
             try:
                 if hasattr(kb, "add_contents_async"):
-                    await kb.add_contents_async(paths=[user_pdfs_dir], include=["*.pdf"], metadata={"user_id": user_id})
+                    await kb.add_contents_async(paths=[user_pdfs_dir], include=["*.pdf", "*.md", "*.mkd", "*.txt", "*.csv", "*.json", "*.pptx", "*.docx"], metadata={"user_id": user_id})
                 else:
-                    # Best-effort resync: per-file add for remaining PDFs
+                    # Best-effort resync: per-file add for remaining supported docs
+                    allowed_exts = {".pdf", ".md", ".mkd", ".txt", ".csv", ".json", ".pptx", ".docx"}
                     for name in os.listdir(user_pdfs_dir):
-                        if name.lower().endswith('.pdf'):
+                        ext = os.path.splitext(name)[1].lower()
+                        if ext in allowed_exts:
                             path = os.path.join(user_pdfs_dir, name)
                             if hasattr(kb, "add_content_async"):
-                                await kb.add_content_async(path=path, metadata={"user_id": user_id})
+                                await kb.add_content_async(name=name, description="", path=path, metadata={"user_id": user_id})
                             else:
-                                kb.add_content(path=path, metadata={"user_id": user_id})
+                                kb.add_content(name=name, description="", path=path, metadata={"user_id": user_id})
                 logging.info(f"KB resync complete for user {user_id} (delete)")
             except Exception:
                 # Non-fatal: leave KB as-is if resync fails

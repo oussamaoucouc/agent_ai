@@ -65,8 +65,8 @@ async def initialize_knowledge_base(user_id: str):
     logging.info(f"OpenAI-compatible base URL (embeddings): {cfg.get_openai_base_url()}")
 
     embedder = OpenAIEmbedder(
-        id="ai/granite-embedding-multilingual",
-        base_url=cfg.get_openai_base_url(),
+        id="ai/granite-embedding-multilingual:latest",
+        base_url=cfg.get_embeddings_base_url(),
         api_key=cfg.OPENAI_API_KEY or "anything",
     )
 
@@ -101,10 +101,19 @@ async def initialize_knowledge_base(user_id: str):
             for pat in patterns:
                 files.extend([str(p) for p in Path(user_pdf_dir).glob(pat)])
             for f in files:
-                if hasattr(knowledge, "add_content_async"):
-                    await knowledge.add_content_async(path=f, metadata={"user_id": user_id})
-                else:
-                    knowledge.add_content(path=f, metadata={"user_id": user_id})
+                fname = os.path.basename(f)
+                tries = 0
+                while tries < 3:
+                    try:
+                        if hasattr(knowledge, "add_content_async"):
+                            await knowledge.add_content_async(name=fname, description="", path=f, metadata={"user_id": user_id})
+                        else:
+                            knowledge.add_content(name=fname, description="", path=f, metadata={"user_id": user_id})
+                        break
+                    except Exception as e:
+                        tries += 1
+                        if tries >= 3:
+                            raise e
     except Exception as e:
         logging.warning(f"Unable to add contents from {user_pdf_dir}: {e}")
 

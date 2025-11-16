@@ -41,7 +41,26 @@ def get_openai_base_url() -> str:
         return OLLAMA_BASE_URL
 
 def get_embeddings_base_url() -> str:
-    return get_openai_base_url()
+    try:
+        p = urlparse(OLLAMA_BASE_URL)
+        base = f"{p.scheme}://{p.netloc}" if p.scheme and p.netloc else OLLAMA_BASE_URL
+        path = (p.path or "").strip()
+        if path.startswith("/engines/"):
+            parts = [seg for seg in path.split('/') if seg]
+            if len(parts) >= 3 and parts[0] == 'engines' and parts[2] == 'v1':
+                engine = parts[1] if parts[1] else 'ai'
+                if engine != 'ai':
+                    return base + '/engines/ai/v1/'
+                return base + f"/engines/{engine}/v1/"
+            if 'v1' in parts:
+                v1_index = parts.index('v1')
+                return base + '/' + '/'.join(parts[:v1_index+1]) + '/'
+            return base + '/engines/ai/v1/'
+        if path.startswith('/v1'):
+            return base + '/v1/'
+        return base + '/engines/ai/v1/'
+    except Exception:
+        return get_openai_base_url()
 
 # Use the model that's actually pulled in docker-compose
 #MODEL_ID = "ai_teacher_qwen" # Use the model without thinking capabilities
