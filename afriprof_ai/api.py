@@ -560,6 +560,10 @@ async def stt_query_mcp_endpoint(
 
         # Get the transcribed text
         query_text = stt_result["text"]
+        try:
+            logging.info(f"STT transcript len={len(query_text)} user={user_id} session={session_id}")
+        except Exception:
+            pass
         if not query_text:
             return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
 
@@ -589,6 +593,10 @@ async def stt_query_assistant_endpoint(
             return stt_result
 
         query_text = stt_result["text"]
+        try:
+            logging.info(f"STT transcript len={len(query_text)} user={user_id} session={session_id}")
+        except Exception:
+            pass
         if not query_text:
             return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
 
@@ -648,6 +656,10 @@ async def stt_query_mcp_direct_endpoint(
 
         # Get the transcribed text
         query_text = stt_result["text"]
+        try:
+            logging.info(f"STT transcript len={len(query_text)} user={user_id} session={session_id}")
+        except Exception:
+            pass
         if not query_text:
             return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
 
@@ -814,6 +826,10 @@ async def stt_query_mcp_tts_endpoint(
 
         # Get the transcribed text
         query_text = stt_result["text"]
+        try:
+            logging.info(f"STT transcript len={len(query_text)} user={user_id} session={session_id}")
+        except Exception:
+            pass
         if not query_text:
             return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
 
@@ -950,6 +966,10 @@ async def stt_query_mcp_tts_direct_endpoint(
 
         # Get the transcribed text
         query_text = stt_result["text"]
+        try:
+            logging.info(f"STT transcript len={len(query_text)} user={user_id} session={session_id}")
+        except Exception:
+            pass
         if not query_text:
             return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
 
@@ -1015,7 +1035,20 @@ async def stt_endpoint(
     Speech-to-text endpoint that accepts various audio formats, converts to WAV PCM 16-bit mono 16kHz, and returns the transcription.
     """
     try:
-        file_extension = os.path.splitext(file.filename)[1].lower() if file.filename else ".wav"
+        ct = getattr(file, "content_type", "") or ""
+        ct_l = ct.lower()
+        guessed_ext = ".wav"
+        if "webm" in ct_l:
+            guessed_ext = ".webm"
+        elif "ogg" in ct_l:
+            guessed_ext = ".ogg"
+        elif "mp3" in ct_l or "mpeg" in ct_l:
+            guessed_ext = ".mp3"
+        elif "wav" in ct_l:
+            guessed_ext = ".wav"
+
+        name_ext = os.path.splitext(file.filename)[1].lower() if file.filename else ""
+        file_extension = name_ext or guessed_ext
         with tempfile.NamedTemporaryFile(suffix=file_extension, delete=False) as temp_file:
             temp_file.write(await file.read())
             input_path = temp_file.name
@@ -1029,14 +1062,20 @@ async def stt_endpoint(
                 os.unlink(input_path)
                 input_path = wav_path
             except Exception as e:
-                raise HTTPException(status_code=400, detail=f"Error converting audio format: {str(e)}")
+                msg = str(e)
+                if "ffmpeg" in msg.lower():
+                    raise HTTPException(status_code=500, detail="FFmpeg is required to convert audio (install ffmpeg and ensure it's on PATH)")
+                raise HTTPException(status_code=400, detail=f"Error converting audio format: {msg}")
         else:
             try:
                 audio = AudioSegment.from_file(input_path)
                 audio = audio.set_channels(1).set_frame_rate(16000)
                 audio.export(input_path, format="wav")
             except Exception as e:
-                raise HTTPException(status_code=400, detail=f"Error processing WAV audio: {str(e)}")
+                msg = str(e)
+                if "ffmpeg" in msg.lower():
+                    raise HTTPException(status_code=500, detail="FFmpeg is required to process WAV audio (install ffmpeg and ensure it's on PATH)")
+                raise HTTPException(status_code=400, detail=f"Error processing WAV audio: {msg}")
 
         wf = None
         try:
@@ -1122,6 +1161,10 @@ async def stt_query_endpoint(
 
         # Get the transcribed text
         query_text = stt_result["text"]
+        try:
+            logging.info(f"STT transcript len={len(query_text)} user={user_id} session={session_id}")
+        except Exception:
+            pass
         if not query_text:
             return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
 
@@ -1159,6 +1202,10 @@ async def stt_query_direct_endpoint(
 
         # Get the transcribed text
         query_text = stt_result["text"]
+        try:
+            logging.info(f"STT transcript len={len(query_text)} user={user_id} session={session_id}")
+        except Exception:
+            pass
         if not query_text:
             return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
 

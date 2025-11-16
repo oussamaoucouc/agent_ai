@@ -9,7 +9,12 @@ export const useAudioRecorder = () => {
     const startRecording = useCallback(async () => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorderRef.current = new MediaRecorder(stream);
+            const options: MediaRecorderOptions = { mimeType: 'audio/webm' };
+            try {
+                mediaRecorderRef.current = new MediaRecorder(stream, options);
+            } catch {
+                mediaRecorderRef.current = new MediaRecorder(stream);
+            }
             audioChunksRef.current = [];
 
             mediaRecorderRef.current.ondataavailable = (event) => {
@@ -28,7 +33,7 @@ export const useAudioRecorder = () => {
         return new Promise((resolve) => {
             if (mediaRecorderRef.current && isRecording) {
                 mediaRecorderRef.current.onstop = () => {
-                    const blob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+                    const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
                     // Stop all media tracks to turn off the microphone light
                     mediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
                     setIsRecording(false);

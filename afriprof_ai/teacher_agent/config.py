@@ -425,7 +425,7 @@ def get_user_csv_dir(user_id: str) -> Path:
 
 # STT configuration
 # Use environment variable for Vosk model path, with fallback
-VOSK_MODEL_PATH = os.getenv("VOSK_MODEL_PATH", "../model/vosk-model-en-us-0.22")
+VOSK_MODEL_PATH = os.getenv("VOSK_MODEL_PATH", "../../model/vosk-model-en-us-0.22")
 
 # TTS configuration
 TTS_CACHE_DIR = BASE_DIR / "tts_cache"

@@ -110,7 +110,7 @@ export const queryAgentTTS = async (request: QueryRequest, signal?: AbortSignal)
 
 export const fullAgent = async (request: FullAgentRequest, signal?: AbortSignal): Promise<FullAgentResponse> => {
     const formData = new FormData();
-    formData.append('file', request.file, 'recording.wav');
+    formData.append('file', request.file, 'recording.webm');
     formData.append('user_id', request.user_id);
     formData.append('session_id', request.session_id);
     if (request.system_prompt) {
@@ -128,7 +128,7 @@ export const fullAgent = async (request: FullAgentRequest, signal?: AbortSignal)
 
 export const fullAgentMcp = async (request: FullAgentRequest, signal?: AbortSignal): Promise<FullAgentResponse> => {
     const formData = new FormData();
-    formData.append('file', request.file, 'recording.wav');
+    formData.append('file', request.file, 'recording.webm');
     formData.append('user_id', request.user_id);
     formData.append('session_id', request.session_id);
     if (request.system_prompt) {
@@ -146,7 +146,7 @@ export const fullAgentMcp = async (request: FullAgentRequest, signal?: AbortSign
 
 export const fullAgentAgent = async (request: FullAgentRequest, signal?: AbortSignal): Promise<FullAgentResponse> => {
     const formData = new FormData();
-    formData.append('file', request.file, 'recording.wav');
+    formData.append('file', request.file, 'recording.webm');
     formData.append('user_id', request.user_id);
     formData.append('session_id', request.session_id);
     if (request.system_prompt) {
