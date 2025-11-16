@@ -25,18 +25,18 @@ export const AddUserPage: React.FC<AddUserPageProps> = ({ onAddUser, onCancel })
     };
 
     return (
-        <div className="flex items-center justify-center h-screen bg-gradient-to-br from-gray-900 to-gray-800">
-            <div className="w-full max-w-lg p-8 space-y-8 bg-gray-800/50 border border-gray-700 rounded-2xl shadow-2xl">
+        <div className="flex items-center justify-center h-screen">
+            <div className="w-full max-w-lg p-8 space-y-8 bg-slate-900/30 backdrop-blur-2xl border border-slate-500/30 rounded-2xl shadow-2xl">
                 <div className="text-left">
                     <h1 className="text-2xl font-bold text-white">
                         Create New User
                     </h1>
-                    <p className="mt-2 text-gray-400">Fill in the details below to add a new user to the system.</p>
+                    <p className="mt-2 text-slate-400">Fill in the details below to add a new user to the system.</p>
                 </div>
                 <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
                     <div className="rounded-md shadow-sm space-y-4">
                         <div>
-                            <label htmlFor="username" className="block text-sm font-medium text-gray-300 mb-2">Email</label>
+                            <label htmlFor="username" className="block text-sm font-medium text-slate-300 mb-2">Email</label>
                             <input
                                 id="username"
                                 name="username"
@@ -47,7 +47,7 @@ export const AddUserPage: React.FC<AddUserPageProps> = ({ onAddUser, onCancel })
                                 onBlur={() => setTouched(true)}
                                 aria-invalid={touched && !isValidEmail}
                                 aria-describedby="adduser-email-help"
-                                className="appearance-none rounded-lg relative block w-full px-3 py-3 border border-gray-600 bg-gray-900 placeholder-gray-500 text-white focus:outline-none focus:ring-sky-500 focus:border-sky-500 focus:z-10 sm:text-sm"
+                                className="appearance-none rounded-lg relative block w-full px-3 py-3 border border-slate-600 bg-slate-800/50 placeholder-slate-500 text-white focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 focus:z-10 sm:text-sm"
                                 placeholder="Email (e.g., user@example.com)"
                             />
                             {touched && !isValidEmail && (
@@ -55,7 +55,7 @@ export const AddUserPage: React.FC<AddUserPageProps> = ({ onAddUser, onCancel })
                             )}
                         </div>
                         <div>
-                            <label htmlFor="password-create" className="block text-sm font-medium text-gray-300 mb-2">Password</label>
+                            <label htmlFor="password-create" className="block text-sm font-medium text-slate-300 mb-2">Password</label>
                             <input
                                 id="password-create"
                                 name="password"
@@ -63,18 +63,18 @@ export const AddUserPage: React.FC<AddUserPageProps> = ({ onAddUser, onCancel })
                                 required
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className="appearance-none rounded-lg relative block w-full px-3 py-3 border border-gray-600 bg-gray-900 placeholder-gray-500 text-white focus:outline-none focus:ring-sky-500 focus:border-sky-500 focus:z-10 sm:text-sm"
+                                className="appearance-none rounded-lg relative block w-full px-3 py-3 border border-slate-600 bg-slate-800/50 placeholder-slate-500 text-white focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 focus:z-10 sm:text-sm"
                                 placeholder="Enter a strong password"
                             />
                         </div>
                         <div>
-                            <label htmlFor="role" className="block text-sm font-medium text-gray-300 mb-2">Role</label>
+                            <label htmlFor="role" className="block text-sm font-medium text-slate-300 mb-2">Role</label>
                              <select
                                 id="role"
                                 name="role"
                                 value={role}
                                 onChange={(e) => setRole(e.target.value as 'user' | 'admin')}
-                                className="w-full appearance-none px-3 py-3 text-sm rounded-lg transition-colors bg-gray-900 text-white border border-gray-600 focus:outline-none focus:border-sky-500"
+                                className="w-full appearance-none px-3 py-3 text-sm rounded-lg transition-colors bg-slate-800/50 text-white border border-slate-600 focus:outline-none focus:border-sky-500"
                             >
                                 <option value="user">User</option>
                                 <option value="admin">Admin</option>
@@ -86,14 +86,14 @@ export const AddUserPage: React.FC<AddUserPageProps> = ({ onAddUser, onCancel })
                          <button
                             type="button"
                             onClick={onCancel}
-                            className="group relative flex justify-center py-3 px-6 border border-gray-600 text-sm font-medium rounded-lg text-gray-300 bg-transparent hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 focus:ring-offset-gray-900 transition-colors"
+                            className="group relative flex justify-center py-3 px-6 border border-slate-600 text-sm font-medium rounded-lg text-slate-300 bg-slate-800/40 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 focus:ring-offset-slate-900 transition-colors"
                         >
                             Cancel
                         </button>
                         <button
                             type="submit"
                             disabled={touched && (!isValidEmail || !password.trim())}
-                            className="group relative flex justify-center py-3 px-6 border border-transparent text-sm font-medium rounded-lg text-white bg-sky-600 hover:bg-sky-700 disabled:bg-slate-600 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 focus:ring-offset-gray-900 transition-colors"
+                            className="group relative flex justify-center py-3 px-6 border border-transparent text-sm font-medium rounded-lg text-white bg-sky-600 hover:bg-sky-700 disabled:bg-slate-700 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 focus:ring-offset-slate-900 transition-colors"
                         >
                             Save User
                         </button>

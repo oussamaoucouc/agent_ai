@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { MicIcon, StopIcon } from './icons';
 
@@ -25,8 +24,8 @@ export const MicButton: React.FC<MicButtonProps> = ({ isRecording, onStart, onSt
             className={`p-2 rounded-full transition-colors ${
                 isRecording
                     ? 'bg-red-600 hover:bg-red-500 animate-pulse'
-                    : 'bg-gray-700 hover:bg-gray-600'
-            } disabled:bg-gray-600 disabled:cursor-not-allowed`}
+                    : 'bg-white/20 hover:bg-white/30'
+            } disabled:bg-slate-700 disabled:cursor-not-allowed`}
             aria-label={isRecording ? 'Stop recording' : 'Start recording'}
         >
             {isRecording ? <StopIcon className="w-5 h-5 text-white" /> : <MicIcon className="w-5 h-5 text-white" />}

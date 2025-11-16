@@ -23,13 +23,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
     };
 
     return (
-        <div className="flex items-center justify-center h-screen bg-gradient-to-br from-gray-900 to-gray-800">
-            <div className="w-full max-w-md p-8 space-y-8 bg-gray-800/50 border border-gray-700 rounded-2xl shadow-2xl">
+        <div className="flex items-center justify-center h-screen">
+            <div className="w-full max-w-md p-8 space-y-8 bg-slate-900/30 backdrop-blur-2xl border border-slate-500/30 rounded-2xl shadow-2xl">
                 <div className="text-center">
-                    <h1 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-teal-300 to-sky-500">
+                    <h1 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-teal-300 to-sky-400">
                         AI Assistant
                     </h1>
-                    <p className="mt-2 text-gray-400">Please enter your email to begin.</p>
+                    <p className="mt-2 text-slate-400">Please enter your email to begin.</p>
                 </div>
                 <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
                     <div className="rounded-md shadow-sm space-y-4">
@@ -45,7 +45,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                                 onBlur={() => setTouched(true)}
                                 aria-invalid={touched && !isValidEmail}
                                 aria-describedby="email-help"
-                                className="appearance-none rounded-lg relative block w-full px-3 py-3 border border-gray-600 bg-gray-900 placeholder-gray-500 text-white focus:outline-none focus:ring-sky-500 focus:border-sky-500 focus:z-10 sm:text-sm"
+                                className="appearance-none rounded-lg relative block w-full px-3 py-3 border border-slate-600 bg-slate-800/50 placeholder-slate-500 text-white focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 focus:z-10 sm:text-sm"
                                 placeholder="Email (e.g., user@example.com)"
                             />
                             {touched && !isValidEmail && (
@@ -60,7 +60,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                                 type="password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className="appearance-none rounded-lg relative block w-full px-3 py-3 border border-gray-600 bg-gray-900 placeholder-gray-500 text-white focus:outline-none focus:ring-sky-500 focus:border-sky-500 focus:z-10 sm:text-sm"
+                                className="appearance-none rounded-lg relative block w-full px-3 py-3 border border-slate-600 bg-slate-800/50 placeholder-slate-500 text-white focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 focus:z-10 sm:text-sm"
                                 placeholder="Password (required for admin)"
                             />
                         </div>
@@ -70,7 +70,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                         <button
                             type="submit"
                             disabled={touched && !isValidEmail}
-                            className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-sky-600 hover:bg-sky-700 disabled:bg-gray-600 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 focus:ring-offset-gray-900 transition-colors"
+                            className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-sky-600 hover:bg-sky-700 disabled:bg-slate-700 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 focus:ring-offset-slate-900 transition-colors"
                         >
                             Get Started
                         </button>

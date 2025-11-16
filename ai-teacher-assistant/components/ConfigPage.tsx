@@ -10,9 +10,9 @@ interface ConfigPageProps {
 }
 
 // Consistent styling for form elements
-const inputBaseStyle = "w-full px-3 py-2 rounded-md bg-slate-900 text-gray-200 border-2 border-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-colors";
+const inputBaseStyle = "w-full px-3 py-2 rounded-md bg-slate-800/50 text-slate-200 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-colors";
 const buttonAddIconStyle = "p-2 bg-sky-600 hover:bg-sky-700 text-white rounded-md transition-colors disabled:bg-slate-600 disabled:cursor-not-allowed flex-shrink-0";
-const buttonRemoveIconStyle = "p-2 text-gray-400 bg-slate-700 hover:bg-red-600 hover:text-white rounded-md transition-colors flex-shrink-0";
+const buttonRemoveIconStyle = "p-2 text-slate-400 bg-slate-800/40 border border-slate-600/50 hover:bg-red-500/20 hover:text-white rounded-md transition-colors flex-shrink-0";
 // Read-only input style that supports easy full selection
 const readOnlyInputStyle = `${inputBaseStyle} font-mono text-sm truncate cursor-text`;
 
@@ -131,23 +131,23 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
   };
 
   return (
-    <div className="flex h-screen w-full font-sans bg-gradient-to-br from-gray-900 to-gray-800 text-white">
+    <div className="flex h-screen w-full font-sans text-white">
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="flex-shrink-0 flex items-center justify-between p-4 bg-gray-900/50 border-b border-slate-700">
+        <header className="flex-shrink-0 flex items-center justify-between p-4 bg-slate-900/30 backdrop-blur-md">
           <h1 className="flex items-center gap-3 text-2xl font-bold text-white">
             Configuration
           </h1>
           <div className="flex items-center gap-3">
             <button
               onClick={onCancel}
-              className="px-4 py-2 text-sm font-medium text-gray-300 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
+              className="px-4 py-2 text-sm font-medium text-slate-300 bg-slate-800/40 border border-slate-600/50 hover:bg-white/10 rounded-lg transition-colors"
             >
               Back to Dashboard
             </button>
             <button
               onClick={handleSave}
               disabled={saving || loading || !config}
-              className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${saving || loading || !config ? 'bg-slate-700 text-gray-400 cursor-not-allowed' : 'bg-sky-600 hover:bg-sky-700 text-white'}`}
+              className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${saving || loading || !config ? 'bg-slate-700 text-slate-400 cursor-not-allowed' : 'bg-sky-600 hover:bg-sky-700 text-white'}`}
             >
               {saving ? 'Saving…' : 'Save Changes'}
             </button>
@@ -165,10 +165,10 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
           ) : config ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               {/* Models & Voice Card */}
-              <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 space-y-6">
+              <section className="bg-slate-900/30 backdrop-blur-md border border-slate-500/30 rounded-xl p-6 space-y-6">
                 <h2 className="text-xl font-bold">Models & Voice</h2>
                 <div>
-                  <span className="block text-sm font-medium text-gray-400 mb-2">Available Models</span>
+                  <span className="block text-sm font-medium text-slate-400 mb-2">Available Models</span>
                   <div className="space-y-2">
                     {(config.available_models || []).map((m, idx) => (
                       <div key={`${m}-${idx}`} className="flex items-center gap-3">
@@ -194,7 +194,7 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                   </div>
                 </div>
                 <div>
-                  <span className="block text-sm font-medium text-gray-400 mb-2">Available Voices</span>
+                  <span className="block text-sm font-medium text-slate-400 mb-2">Available Voices</span>
                   <div className="space-y-2">
                     {(config.available_voices || []).map((v, idx) => (
                       <div key={`${v}-${idx}`} className="flex items-center gap-3">
@@ -220,11 +220,11 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                   </div>
                 </div>
                 <label className="block">
-                  <span className="block text-sm font-medium text-gray-400 mb-2">AI Base URL</span>
+                  <span className="block text-sm font-medium text-slate-400 mb-2">AI Base URL</span>
                   <input type="text" value={config.ollama_base_url} onChange={(e) => updateField('ollama_base_url', e.target.value)} placeholder="http://localhost:11434" className={inputBaseStyle} onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()} />
                 </label>
                 <label className="block">
-                  <span className="block text-sm font-medium text-gray-400 mb-2">OpenAI API Key (optional)</span>
+                  <span className="block text-sm font-medium text-slate-400 mb-2">OpenAI API Key (optional)</span>
                   <input
                     type="password"
                     value={openaiApiKey}
@@ -234,15 +234,15 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                     onFocus={(e) => e.currentTarget.select()}
                     onMouseUp={(e) => e.preventDefault()}
                   />
-                  <p className="mt-2 text-xs text-gray-500">Stored in memory; never displayed back.</p>
+                  <p className="mt-2 text-xs text-slate-500">Stored in memory; never displayed back.</p>
                 </label>
               </section>
 
               {/* MCP Settings Card */}
-              <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 space-y-6">
+              <section className="bg-slate-900/30 backdrop-blur-md border border-slate-500/30 rounded-xl p-6 space-y-6">
                 <h2 className="text-xl font-bold">MCP Settings</h2>
                 <label className="block">
-                  <span className="block text-sm font-medium text-gray-400 mb-2">Transport</span>
+                  <span className="block text-sm font-medium text-slate-400 mb-2">Transport</span>
                   <select value={config.mcp_transport} onChange={(e) => updateField('mcp_transport', e.target.value)} className={inputBaseStyle} >
                     <option value="streamable-http">streamable-http</option>
                     <option value="stdio">stdio</option>
@@ -250,7 +250,7 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                 </label>
                 {config.mcp_transport === 'streamable-http' && (
                   <div className="space-y-4">
-                    <span className="block text-sm font-medium text-gray-400">MCP Servers</span>
+                    <span className="block text-sm font-medium text-slate-400">MCP Servers</span>
                     <div className="space-y-2">
                         {(config.mcp_servers || []).map((srv, idx) => (
                         <div key={`${srv.url}-${idx}`} className="flex items-center gap-3">
@@ -288,11 +288,11 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                 {config.mcp_transport === 'stdio' && (
                   <div className="space-y-4">
                     <label className="block">
-                      <span className="block text-sm font-medium text-gray-400 mb-2">Stdio Command</span>
+                      <span className="block text-sm font-medium text-slate-400 mb-2">Stdio Command</span>
                       <input type="text" value={config.mcp_stdio_command || ''} onChange={(e) => updateField('mcp_stdio_command', e.target.value)} placeholder="python" className={inputBaseStyle} onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()} />
                     </label>
                     <label className="block">
-                      <span className="block text-sm font-medium text-gray-400 mb-2">Stdio Args (comma-separated)</span>
+                      <span className="block text-sm font-medium text-slate-400 mb-2">Stdio Args (comma-separated)</span>
                       <input type="text" value={(config.mcp_stdio_args || []).join(', ')} onChange={(e) => updateField('mcp_stdio_args', e.target.value.split(',').map(s => s.trim()).filter(Boolean))} placeholder="script.py, --flag" className={inputBaseStyle} onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()} />
                     </label>
                   </div>
@@ -300,7 +300,7 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
               </section>
             </div>
           ) : (
-            <div className="p-8 text-center text-gray-400">No configuration loaded.</div>
+            <div className="p-8 text-center text-slate-400">No configuration loaded.</div>
           )}
         </main>
       </div>

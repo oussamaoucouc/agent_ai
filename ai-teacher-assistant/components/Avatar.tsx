@@ -147,7 +147,7 @@ export const Avatar: React.FC<AvatarProps> = ({ isSpeaking, isLoading, currentVi
     const shapeKey = isListeningIdle ? listeningShape : (apiVisemeToShapeKey[visemeKey] || 'sil');
     const mouthShape = visemeShapes[shapeKey] || visemeShapes['sil'];
 
-    const sizeClasses = size === 'large' ? 'w-64 h-64 border-4' : 'w-12 h-12 border-2';
+    const sizeClasses = size === 'large' ? 'w-64 h-64 border-2' : 'w-12 h-12 border';
 
     let animationClass = '';
     let glowClass = 'shadow-none';
@@ -156,7 +156,7 @@ export const Avatar: React.FC<AvatarProps> = ({ isSpeaking, isLoading, currentVi
             glowClass = 'animate-glow-pulse';
         } else if (isSpeaking) {
             animationClass = 'animate-floating';
-            glowClass = 'shadow-[0_0_40px_rgba(2,179,217,0.8),_0_0_60px_rgba(0,180,255,0.7)]';
+            glowClass = 'shadow-[0_0_40px_rgba(14,165,233,0.7),_0_0_60px_rgba(14,165,233,0.6)]';
         } else {
              animationClass = 'animate-energetic-hover';
         }
@@ -164,7 +164,7 @@ export const Avatar: React.FC<AvatarProps> = ({ isSpeaking, isLoading, currentVi
 
     if (size === 'small' && isLoading) {
         return (
-             <div className={`${sizeClasses} rounded-full bg-gray-700/50 flex items-center justify-center border-gray-600`}>
+             <div className={`${sizeClasses} rounded-full bg-slate-800/20 border-slate-500/30 flex items-center justify-center`}>
                 <div className="w-6 h-6 border-2 border-t-sky-400 border-r-sky-400 border-b-sky-400 border-l-transparent rounded-full animate-spin"></div>
             </div>
         );
@@ -178,7 +178,7 @@ export const Avatar: React.FC<AvatarProps> = ({ isSpeaking, isLoading, currentVi
 
 
     return (
-        <div ref={avatarRef} className={`${sizeClasses} rounded-full bg-gray-700/50 flex items-center justify-center border-gray-600 transition-all duration-500 relative overflow-hidden ${animationClass} ${glowClass}`}>
+        <div ref={avatarRef} className={`${sizeClasses} rounded-full bg-slate-800/20 flex items-center justify-center border-slate-500/30 transition-all duration-500 relative overflow-hidden ${animationClass} ${glowClass}`}>
             <div className={`absolute inset-0 w-full h-full filter transition-all duration-500 ${size === 'large' ? 'blur-xl' : 'blur-sm'}`}>
                 <div className={`absolute w-3/4 h-3/4 bg-gradient-to-tr from-teal-400 to-transparent rounded-full -translate-x-1/4 -translate-y-1/4 transition-transform duration-300 ${isSpeaking ? 'scale-140' : 'scale-100'}`} style={{ animation: 'aurora-1 12s infinite alternate ease-in-out' }}></div>
                 <div className={`absolute w-3/4 h-3/4 bg-gradient-to-bl from-sky-500 to-transparent rounded-full translate-x-1/4 translate-y-1/4 transition-transform duration-300 ${isSpeaking ? 'scale-140' : 'scale-100'}`} style={{ animation: 'aurora-2 15s infinite alternate ease-in-out' }}></div>

@@ -53,6 +53,16 @@ Format your response using clean Markdown exactly as follows:
 
 Remember: Write as if you're speaking directly to a human. Use simple, clear language and avoid any technical formatting or programming syntax.`;
 
+const AuroraBackground = () => (
+    <div aria-hidden="true" className="fixed inset-0 -z-10 overflow-hidden">
+        <div className="aurora-blob aurora-blob-1"></div>
+        <div className="aurora-blob aurora-blob-2"></div>
+        <div className="aurora-blob aurora-blob-3"></div>
+        <div className="aurora-blob aurora-blob-4"></div>
+    </div>
+);
+
+
 const App: React.FC = () => {
     const [currentUser, setCurrentUser] = useState<string | null>(null);
     const [currentUsername, setCurrentUsername] = useState<string | null>(null);
@@ -71,7 +81,7 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
     const [activeAudio, setActiveAudio] = useState<HTMLAudioElement | null>(null);
     const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
     const [spokenResponses, setSpokenResponses] = useState<boolean>(true);
-    const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+    const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(window.innerWidth >= 1024);
     const [queryMode, setQueryMode] = useState<QueryMode>('agent');
 
     // New states for model and voice selection
@@ -144,6 +154,7 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
         if (persistedMode === 'agent' || persistedMode === 'direct' || persistedMode === 'tools') {
             setQueryMode(persistedMode);
         }
+        setSpokenResponses(storage.getSpokenResponses());
     }, []);
 
     useEffect(() => {
@@ -583,6 +594,14 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
         }
     };
 
+    const handleSpokenResponsesToggle = (enabled: boolean) => {
+        setSpokenResponses(enabled);
+        storage.setSpokenResponses(enabled);
+        if (!enabled) {
+            handleStopAudio();
+        }
+    };
+
     const handlePlayAudio = useCallback((message: Message) => {
         if (message.audioUrl && message.visemes) {
             playAudioWithVisemes(message.audioUrl, message.visemes, message.id);
@@ -881,7 +900,11 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
 
     const renderPage = () => {
         if (!isInitialized) {
-            return null; // Or a loading spinner
+            return (
+                 <div className="flex items-center justify-center h-screen">
+                    <div className="w-8 h-8 border-2 border-t-sky-400 border-r-sky-400 border-b-sky-400 border-l-transparent rounded-full animate-spin"></div>
+                </div>
+            );
         }
         
         if (!currentUser) {
@@ -926,10 +949,10 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
         }
     
         return (
-            <div className="flex h-screen w-full font-sans bg-gradient-to-br from-gray-900 to-gray-800 relative overflow-hidden">
+            <div className="flex h-screen w-full font-sans relative overflow-hidden">
                 {isSidebarOpen && (
                     <div 
-                        className="absolute inset-0 bg-black/60 z-30"
+                        className="fixed inset-0 bg-black/60 z-30 lg:hidden"
                         onClick={() => setIsSidebarOpen(false)}
                         aria-hidden="true"
                     ></div>
@@ -954,7 +977,7 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                     availableModels={availableModels}
                     queryMode={queryMode}
                 />
-                <main className="flex flex-col flex-1 h-screen overflow-hidden">
+                <main className={`flex flex-col flex-1 h-screen overflow-hidden transition-all duration-300 ease-in-out ${isSidebarOpen ? 'lg:ml-80' : 'lg:ml-0'}`}>
                     <Header 
                         user={currentUsername ?? currentUser ?? ''} 
                         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
@@ -968,22 +991,24 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                             onStopAudio={handleStopAudio}
                         />
                         <div className="pt-4 flex-shrink-0">
-                            <div className="flex items-center justify-end gap-3 mb-3">
-                                <span className="text-sm font-medium text-gray-400">Spoken Responses</span>
-                                <button
-                                    onClick={() => setSpokenResponses(!spokenResponses)}
-                                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${
-                                        spokenResponses ? 'bg-sky-600' : 'bg-gray-600'
-                                    }`}
-                                    aria-pressed={spokenResponses}
-                                >
-                                    <span
-                                        aria-hidden="true"
-                                        className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                                            spokenResponses ? 'translate-x-5' : 'translate-x-0'
+                            <div className="flex items-center justify-end gap-6 mb-3">
+                                <div className="flex items-center gap-3">
+                                    <span className="text-sm font-medium text-slate-400">Spoken Responses</span>
+                                    <button
+                                        onClick={() => handleSpokenResponsesToggle(!spokenResponses)}
+                                        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-slate-900 ${
+                                            spokenResponses ? 'bg-sky-600' : 'bg-slate-600'
                                         }`}
-                                    />
-                                </button>
+                                        aria-pressed={spokenResponses}
+                                    >
+                                        <span
+                                            aria-hidden="true"
+                                            className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                                spokenResponses ? 'translate-x-5' : 'translate-x-0'
+                                            }`}
+                                        />
+                                    </button>
+                                </div>
                             </div>
                             <InputBar 
                                 onSend={handleSendText} 
@@ -1001,22 +1026,25 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                         </div>
                     </div>
                 </main>
-                <aside className="w-96 flex-shrink-0 bg-gray-800/30 border-l border-gray-700 hidden lg:flex flex-col p-6">
-                    <div className="flex-1 flex items-center justify-center">
-                        <AvatarView 
-                            isSpeaking={isSpeaking} 
-                            currentViseme={currentViseme} 
-                            isLoading={isLoading}
-                            isConversationStarted={isConversationStarted}
-                        />
-                    </div>
-                </aside>
+                {spokenResponses && (
+                    <aside className="w-[28rem] flex-shrink-0 bg-slate-900/30 backdrop-blur-2xl border-l border-slate-500/30 hidden lg:flex flex-col p-6">
+                        <div className="flex-1 flex items-center justify-center">
+                            <AvatarView 
+                                isSpeaking={isSpeaking} 
+                                currentViseme={currentViseme} 
+                                isLoading={isLoading}
+                                isConversationStarted={isConversationStarted}
+                            />
+                        </div>
+                    </aside>
+                )}
             </div>
         );
     };
 
     return (
-        <>
+        <div className="h-screen w-screen bg-slate-900">
+            <AuroraBackground />
             {renderPage()}
             <Modal
                 isOpen={modalConfig.isOpen}
@@ -1028,7 +1056,7 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                 cancelText={modalConfig.cancelText}
                 showCancel={modalConfig.showCancel}
             />
-        </>
+        </div>
     );
 };
 

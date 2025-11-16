@@ -19,6 +19,7 @@ const LS_KEYS = {
   adminView: 'app.adminView',
   token: 'app.authToken',
   queryMode: 'app.queryMode',
+  spokenResponses: 'app.spokenResponses',
 };
 
 const hasSessionStorage = (): boolean => {
@@ -152,4 +153,14 @@ export const getQueryMode = (): QueryMode | null => {
 
 export const setQueryMode = (mode: QueryMode) => {
   lsSet(LS_KEYS.queryMode, mode);
+};
+
+export const getSpokenResponses = (): boolean => {
+    const persisted = lsGet(LS_KEYS.spokenResponses);
+    // Default to true if the value is not found or is not 'false'
+    return persisted !== 'false';
+};
+
+export const setSpokenResponses = (isEnabled: boolean) => {
+    lsSet(LS_KEYS.spokenResponses, String(isEnabled));
 };

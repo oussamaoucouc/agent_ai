@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Message, User } from '../types';
-import { PlayIcon, StopIcon, UserIcon, CopyIcon, CheckIcon } from './icons';
+import { PlayIcon, StopIcon, UserIcon, CopyIcon, CheckIcon, AssistantIcon } from './icons';
 
 interface ChatBubbleProps {
     message: Message;
@@ -14,7 +14,7 @@ const parseInlineMarkdown = (text: string): string => {
     // Links
     finalHtml = finalHtml.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:text-sky-300 hover:underline">$1</a>');
     // Bold
-    finalHtml = finalHtml.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-gray-100">$1</strong>');
+    finalHtml = finalHtml.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-100">$1</strong>');
     // Italic
     finalHtml = finalHtml.replace(/\*(.*?)\*/g, '<em>$1</em>');
     return finalHtml;
@@ -44,12 +44,12 @@ const parseMarkdown = (text: string): string => {
         if (blockType === 'p') {
             html += `<div class="mb-3 leading-relaxed">${currentBlock.join('<br />')}</div>`;
         } else if (blockType === 'ul') {
-            html += `<ul class="list-disc list-inside space-y-2 pl-4 my-3 text-gray-200">${currentBlock.map(li => `<li class="leading-relaxed">${li}</li>`).join('')}</ul>`;
+            html += `<ul class="list-disc list-inside space-y-2 pl-4 my-3 text-slate-200">${currentBlock.map(li => `<li class="leading-relaxed">${li}</li>`).join('')}</ul>`;
         } else if (blockType === 'ol') {
-            html += `<ol class="list-decimal list-inside space-y-2 pl-4 my-3 text-gray-200">${currentBlock.map(li => `<li class="leading-relaxed">${li}</li>`).join('')}</ol>`;
+            html += `<ol class="list-decimal list-inside space-y-2 pl-4 my-3 text-slate-200">${currentBlock.map(li => `<li class="leading-relaxed">${li}</li>`).join('')}</ol>`;
         } else if (blockType === 'table' && tableRows.length > 0) {
             html += `<div class="overflow-x-auto my-4">
-                <table class="min-w-full border-collapse border border-gray-600 bg-gray-800/50 rounded-lg">
+                <table class="min-w-full border-collapse border border-slate-600/50 bg-slate-800/20 rounded-lg">
                     ${tableRows.join('')}
                 </table>
             </div>`;
@@ -64,10 +64,10 @@ const parseMarkdown = (text: string): string => {
         const cells = line.split('|').map(cell => cell.trim()).filter(cell => cell !== '');
         const tag = isHeader ? 'th' : 'td';
         const cellClass = isHeader 
-            ? 'px-4 py-3 text-left font-semibold text-white bg-gray-700 border border-gray-600' 
-            : 'px-4 py-3 text-gray-200 border border-gray-600 hover:bg-gray-700/30';
+            ? 'px-4 py-3 text-left font-semibold text-white bg-white/10 border border-slate-600/50' 
+            : 'px-4 py-3 text-slate-200 border border-slate-600/50';
         
-        return `<tr class="${isHeader ? 'bg-gray-700' : 'hover:bg-gray-700/20'}">
+        return `<tr class="${isHeader ? '' : 'hover:bg-white/5'}">
             ${cells.map(cell => `<${tag} class="${cellClass}">${parseInlineMarkdown(cell)}</${tag}>`).join('')}
         </tr>`;
     };
@@ -84,7 +84,7 @@ const parseMarkdown = (text: string): string => {
         if (match) {
             flushBlock();
             const title = parseInlineMarkdown(match[1].replace(/^\[|\]$/g, '')); // Remove brackets if present
-            html += `<h3 class="text-xl font-bold text-white mt-6 mb-3 pb-2 border-b border-gray-600 first:mt-0">${title}</h3>`;
+            html += `<h3 class="text-xl font-bold text-white mt-6 mb-3 pb-2 border-b border-slate-500/30 first:mt-0">${title}</h3>`;
             continue;
         }
 
@@ -92,7 +92,7 @@ const parseMarkdown = (text: string): string => {
         match = line.match(/^\*\*(.+?):\*\*$/);
         if (match) {
             flushBlock();
-            html += `<h4 class="text-lg font-semibold text-gray-100 mt-4 mb-2">${parseInlineMarkdown(match[1])}:</h4>`;
+            html += `<h4 class="text-lg font-semibold text-slate-100 mt-4 mb-2">${parseInlineMarkdown(match[1])}:</h4>`;
             continue;
         }
 
@@ -100,7 +100,7 @@ const parseMarkdown = (text: string): string => {
         match = line.match(/^\*\*([^:]+):\*\*\s*(.*)/);
         if (match) {
             flushBlock();
-            html += `<div class="mb-2"><span class="font-semibold text-sky-300">${match[1]}:</span> <span class="text-gray-200">${parseInlineMarkdown(match[2])}</span></div>`;
+            html += `<div class="mb-2"><span class="font-semibold text-sky-300">${match[1]}:</span> <span class="text-slate-200">${parseInlineMarkdown(match[2])}</span></div>`;
             continue;
         }
         
@@ -171,23 +171,21 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, onPl
     };
 
     return (
-        <div className={`flex items-start gap-4 ${isUser ? 'justify-end' : ''}`}>
+        <div className={`flex items-start gap-3 ${isUser ? 'justify-end' : ''}`}>
             {!isUser && (
-                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-teal-400 to-sky-600 flex items-center justify-center">
-                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-700/60 flex items-center justify-center shadow-md">
+                    <AssistantIcon className="w-5 h-5 text-teal-300" />
                 </div>
             )}
-            <div className={`grid gap-1.5 max-w-2xl ${isUser ? 'items-end' : ''}`}>
-                <div className={`flex items-center gap-2 ${isUser ? 'justify-end' : ''}`}>
-                    <div className="font-bold text-gray-200">{isUser ? 'You' : 'Assistant'}</div>
-                </div>
-                <div className={`relative text-gray-300 p-4 rounded-xl group ${isUser ? 'bg-sky-700 rounded-br-none' : 'bg-gray-800 rounded-tl-none'}`}>
+            <div className={`flex flex-col gap-1.5 max-w-2xl ${isUser ? 'items-end' : 'items-start'}`}>
+                <div className="font-bold text-slate-200">{isUser ? 'You' : 'Assistant'}</div>
+                <div className={`relative text-slate-200 p-4 group ${isUser ? 'bg-gradient-to-br from-sky-500 to-sky-700 rounded-2xl rounded-br-lg' : 'bg-slate-800/40 backdrop-blur-sm border border-slate-600/50 rounded-2xl rounded-tl-none'}`}>
                     <div 
-                        className={`prose-p:m-0 prose-strong:text-white prose-em:text-gray-300 space-y-3 ${!isUser ? 'pb-8' : ''}`}
+                        className={`prose-p:m-0 prose-strong:text-white prose-em:text-slate-300 space-y-3 ${!isUser ? 'pb-8' : ''}`}
                         dangerouslySetInnerHTML={{ __html: parseMarkdown(message.text) }} 
                     />
                     {!isUser && (
-                        <div className={`absolute bottom-2 right-2 z-10 flex items-center gap-1.5 bg-gray-900/50 backdrop-blur-sm p-1 rounded-lg transition-opacity duration-200 ${
+                        <div className={`absolute bottom-2 right-2 z-10 flex items-center gap-1.5 bg-slate-900/40 backdrop-blur-sm p-1 rounded-lg transition-opacity duration-200 border border-slate-600/50 ${
                             isPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'
                         }`}>
                             {message.audioUrl && (
@@ -204,14 +202,14 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, onPl
                                         <button 
                                             onClick={onPlayAudio} 
                                             title="Play audio" 
-                                            className="p-1.5 flex items-center justify-center rounded-md text-gray-300 hover:bg-gray-700 hover:text-white transition-all"
+                                            className="p-1.5 flex items-center justify-center rounded-md text-slate-300 hover:bg-white/10 hover:text-white transition-all"
                                         >
                                             <PlayIcon className="w-4 h-4" />
                                         </button>
                                     )}
                                 </>
                             )}
-                            <button onClick={handleCopy} title="Copy text" className="p-1.5 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors">
+                            <button onClick={handleCopy} title="Copy text" className="p-1.5 text-slate-300 hover:bg-white/10 hover:text-white rounded-md transition-colors">
                                 {showCopied ? <CheckIcon className="w-4 h-4 text-green-400" /> : <CopyIcon className="w-4 h-4" />}
                             </button>
                         </div>
@@ -219,8 +217,8 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, onPl
                 </div>
             </div>
             {isUser && (
-                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center">
-                    <UserIcon className="w-6 h-6 text-gray-400" />
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-700/60 flex items-center justify-center shadow-md">
+                    <UserIcon className="w-5 h-5 text-sky-300" />
                 </div>
             )}
         </div>

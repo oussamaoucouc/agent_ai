@@ -43,14 +43,14 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
     };
 
     return (
-        <div className="w-full bg-gray-800/50 p-3 rounded-xl border border-gray-700 flex items-end gap-3 shadow-lg">
+        <div className="w-full bg-slate-900/30 p-3 rounded-xl border border-slate-500/30 flex items-end gap-3 shadow-lg backdrop-blur-lg">
             <textarea
                 ref={textareaRef}
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Type your question here or use the microphone..."
-                className="flex-1 bg-transparent resize-none text-gray-200 placeholder-gray-500 focus:outline-none max-h-32 overflow-y-auto"
+                className="flex-1 bg-transparent resize-none text-slate-200 placeholder-slate-500 focus:outline-none max-h-32 overflow-y-auto"
                 rows={1}
                 disabled={isLoading || isRecording}
             />
@@ -82,12 +82,12 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
                             </span>
                         </div>
                         
-                        <div className="bg-gray-700/50 p-0.5 rounded-full flex items-center gap-0.5">
+                        <div className="bg-slate-800/40 border border-slate-600/50 p-0.5 rounded-full flex items-center gap-0.5">
                             <div className="relative group flex flex-col items-center">
                                 <button
                                     onClick={() => onQueryModeChange('agent')}
                                     disabled={isLoading || isRecording}
-                                    className={`p-2 rounded-full ${queryMode === 'agent' ? 'bg-sky-600 hover:bg-sky-500' : 'bg-transparent hover:bg-gray-600'} disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors`}
+                                    className={`p-2 rounded-full ${queryMode === 'agent' ? 'bg-sky-600 hover:bg-sky-500' : 'bg-transparent hover:bg-white/10'} disabled:bg-slate-700 disabled:cursor-not-allowed transition-colors`}
                                     aria-label="Assistant Agent Mode"
                                     aria-pressed={queryMode === 'agent'}
                                 >
@@ -101,7 +101,7 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
                                 <button
                                     onClick={() => onQueryModeChange('direct')}
                                     disabled={isLoading || isRecording}
-                                    className={`p-2 rounded-full ${queryMode === 'direct' ? 'bg-sky-600 hover:bg-sky-500' : 'bg-transparent hover:bg-gray-600'} disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors`}
+                                    className={`p-2 rounded-full ${queryMode === 'direct' ? 'bg-sky-600 hover:bg-sky-500' : 'bg-transparent hover:bg-white/10'} disabled:bg-slate-700 disabled:cursor-not-allowed transition-colors`}
                                     aria-label="Document Search Mode"
                                     aria-pressed={queryMode === 'direct'}
                                 >
@@ -115,7 +115,7 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
                                 <button
                                     onClick={() => onQueryModeChange('tools')}
                                     disabled={isLoading || isRecording}
-                                    className={`p-2 rounded-full ${queryMode === 'tools' ? 'bg-sky-600 hover:bg-sky-500' : 'bg-transparent hover:bg-gray-600'} disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors`}
+                                    className={`p-2 rounded-full ${queryMode === 'tools' ? 'bg-sky-600 hover:bg-sky-500' : 'bg-transparent hover:bg-white/10'} disabled:bg-slate-700 disabled:cursor-not-allowed transition-colors`}
                                     aria-label="Tools Mode"
                                     aria-pressed={queryMode === 'tools'}
                                 >
@@ -131,7 +131,7 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
                             <button
                                 onClick={handleSend}
                                 disabled={isLoading || isRecording || !text.trim()}
-                                className="p-2.5 rounded-full bg-sky-600 hover:bg-sky-500 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+                                className="p-2.5 rounded-full bg-sky-600 hover:bg-sky-500 disabled:bg-slate-700 disabled:cursor-not-allowed transition-colors"
                                 aria-label="Send message"
                             >
                                 <SendIcon className="w-5 h-5 text-white" />
