@@ -11,9 +11,9 @@ import { AddUserPage } from './components/AddUserPage';
 import { EditUserPage } from './components/EditUserPage';
 import { Modal } from './components/Modal';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
-import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, listUserStats, createUser, deleteUser, loginUser, updateUser, getModelsCatalog, getSessionSettings, getMcpToolsCatalog, setMcpTools } from './services/apiService';
+import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, listUserStats, createUser, deleteUser, loginUser, updateUser, getModelsCatalog, getSessionSettings, getMcpToolsCatalog, setMcpTools, getMcpStdioCatalog, setMcpStdioTools, getConfig } from './services/apiService';
 import * as storage from './services/storageService';
-import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice, QueryMode, AdminUser, McpToolItem } from './types';
+import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice, QueryMode, AdminUser, McpToolItem, McpStdioItem } from './types';
 import { API_BASE_URL } from './constants';
 
 // Default delete-after-serve delay (seconds) must match backend config unless overridden per request
@@ -91,6 +91,8 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
     const [selectedMcpTools, setSelectedMcpTools] = useState<string[]>([]);
     const [mcpToolsCatalog, setMcpToolsCatalog] = useState<McpToolItem[]>([]);
     const [isSettingsSyncing, setIsSettingsSyncing] = useState<boolean>(false);
+    const [mcpStdioCatalog, setMcpStdioCatalog] = useState<McpStdioItem[]>([]);
+    const [selectedMcpStdio, setSelectedMcpStdio] = useState<string[]>([]);
 
 
     const [modalConfig, setModalConfig] = useState<{
@@ -180,20 +182,48 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
         const loadCatalogs = async () => {
             if (!currentUser) return;
             try {
-                // Models
-                const { available_models } = await getModelsCatalog(currentUser, controller.signal);
-                const list = Array.isArray(available_models) ? available_models : [];
-                setAvailableModels(list);
-                if (list.length > 0 && !list.includes(currentModel)) {
-                    setCurrentModel(list[0]);
-                }
-                 // Tools
-                const res = await getMcpToolsCatalog(currentUser, controller.signal);
-                const items = Array.isArray(res.tools) ? res.tools : [];
-                setMcpToolsCatalog(items);
-            } catch (err) {
-                console.error('Failed to load catalogs:', err);
-            }
+                const modelsPromise = getModelsCatalog(currentUser, controller.signal)
+                    .then(({ available_models }) => {
+                        const list = Array.isArray(available_models) ? available_models : [];
+                        setAvailableModels(list);
+                        if (list.length > 0 && !list.includes(currentModel)) {
+                            setCurrentModel(list[0]);
+                        }
+                    })
+                    .catch(() => {});
+                const toolsPromise = getMcpToolsCatalog(currentUser, controller.signal)
+                    .then(res => {
+                        const items = Array.isArray(res.tools) ? res.tools : [];
+                        setMcpToolsCatalog(items);
+                    })
+                    .catch(async () => {
+                        try {
+                            const cfg = await getConfig(currentUser, controller.signal);
+                            const servers = Array.isArray(cfg.mcp_servers) ? cfg.mcp_servers : [];
+                            const items = servers.map(s => ({ label: s.label, url: s.url })).filter(i => i.url && i.url.trim());
+                            setMcpToolsCatalog(items);
+                        } catch {}
+                    });
+                const stdioPromise = getMcpStdioCatalog(currentUser, controller.signal)
+                    .then(res => {
+                        const items = Array.isArray(res.tools) ? res.tools : [];
+                        setMcpStdioCatalog(items);
+                    })
+                    .catch(async () => {
+                        try {
+                            const cfg = await getConfig(currentUser, controller.signal);
+                            const tools = Array.isArray((cfg as any).mcp_stdio_tools) ? (cfg as any).mcp_stdio_tools : [];
+                            const items = tools.map((t: any) => ({ label: String(t.label || 'Command'), command: String(t.command || '') })).filter((x: any) => x.command.trim());
+                            if (items.length === 0) {
+                                const cmds = Array.isArray(cfg.mcp_stdio_commands) ? cfg.mcp_stdio_commands : [];
+                                setMcpStdioCatalog(cmds.map((c: any, i: number) => ({ label: `Command ${i+1}`, command: String(c || '') })));
+                            } else {
+                                setMcpStdioCatalog(items);
+                            }
+                        } catch {}
+                    });
+                await Promise.all([modelsPromise, toolsPromise, stdioPromise]);
+            } catch {}
         };
         loadCatalogs();
         return () => controller.abort();
@@ -393,6 +423,8 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                     } else {
                         setSelectedMcpTools([]);
                     }
+                    const cmds = Array.isArray(settings.mcp_stdio_commands) ? settings.mcp_stdio_commands : [];
+                    setSelectedMcpStdio(cmds);
                 } catch (e) {
                     console.warn('Failed to sync session settings.', e);
                     // On error, clear the tools to prevent showing stale state from a previous session.
@@ -597,6 +629,18 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
             } catch (e) {
                 console.warn('Failed to persist MCP tools selection', e);
                 showAlert('Sync Error', 'Could not save your tool selection. Please try again.');
+            }
+        }
+    };
+
+    const handleSelectedMcpStdioChange = async (cmds: string[]) => {
+        setSelectedMcpStdio(cmds);
+        if (currentUser && activeSessionId) {
+            try {
+                await setMcpStdioTools({ user_id: currentUser, session_id: activeSessionId, commands: cmds });
+            } catch (e) {
+                console.warn('Failed to persist MCP stdio selection', e);
+                showAlert('Sync Error', 'Could not save your stdio selection. Please try again.');
             }
         }
     };
@@ -1019,6 +1063,9 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                     mcpToolsCatalog={mcpToolsCatalog}
                     selectedMcpTools={selectedMcpTools}
                     onSelectedMcpToolsChange={handleSelectedMcpToolsChange}
+                    mcpStdioCatalog={mcpStdioCatalog}
+                    selectedMcpStdio={selectedMcpStdio}
+                    onSelectedMcpStdioChange={handleSelectedMcpStdioChange}
                     isSettingsSyncing={isSettingsSyncing}
                 />
                 <main className={`flex flex-col flex-1 h-screen overflow-hidden transition-all duration-300 ease-in-out ${isSidebarOpen ? 'lg:ml-80' : 'lg:ml-0'}`}>

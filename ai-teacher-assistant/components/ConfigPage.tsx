@@ -26,6 +26,7 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
   const [newServer, setNewServer] = useState<{ label: string; url: string }>({ label: '', url: '' });
   const [newModel, setNewModel] = useState<string>('');
   const [newVoice, setNewVoice] = useState<string>('');
+  const [newStdioCommand, setNewStdioCommand] = useState<string>('');
 
   const userId = storage.getCurrentUser() || '';
 
@@ -59,10 +60,9 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
         ollama_base_url: config.ollama_base_url,
         openai_api_key: openaiApiKey || undefined,
         mcp_transport: config.mcp_transport,
-        mcp_stdio_command: config.mcp_stdio_command ?? null,
-        mcp_stdio_args: config.mcp_stdio_args || [],
+        mcp_stdio_commands: config.mcp_stdio_commands || [],
         available_models: config.available_models || [],
-        available_voices: (config as any).available_voices || [],
+        available_voices: config.available_voices || [],
         mcp_servers: config.mcp_servers || [],
       };
       const res = await updateConfig(payload);
@@ -287,14 +287,73 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                 )}
                 {config.mcp_transport === 'stdio' && (
                   <div className="space-y-4">
-                    <label className="block">
-                      <span className="block text-sm font-medium text-slate-400 mb-2">Stdio Command</span>
-                      <input type="text" value={config.mcp_stdio_command || ''} onChange={(e) => updateField('mcp_stdio_command', e.target.value)} placeholder="python" className={inputBaseStyle} onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()} />
-                    </label>
-                    <label className="block">
-                      <span className="block text-sm font-medium text-slate-400 mb-2">Stdio Args (comma-separated)</span>
-                      <input type="text" value={(config.mcp_stdio_args || []).join(', ')} onChange={(e) => updateField('mcp_stdio_args', e.target.value.split(',').map(s => s.trim()).filter(Boolean))} placeholder="script.py, --flag" className={inputBaseStyle} onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()} />
-                    </label>
+                    <div>
+                      <span className="block text-sm font-medium text-slate-400 mb-2">Additional Stdio Tools</span>
+                      <div className="space-y-2">
+                        {((config.mcp_stdio_tools || []) as Array<{label: string; command: string}>).map((tool, idx) => (
+                          <div key={`${tool.command}-${idx}`} className="flex items-center gap-3">
+                            <input
+                              type="text"
+                              value={tool.label}
+                              onChange={(e) => setConfig(prev => prev ? { ...prev, mcp_stdio_tools: (prev.mcp_stdio_tools || []).map((t, i) => i === idx ? { ...t, label: e.target.value } : t) } : prev)}
+                              className={`w-40 ${inputBaseStyle}`}
+                              onFocus={(e) => e.currentTarget.select()}
+                              onMouseUp={(e) => e.preventDefault()}
+                            />
+                            <input
+                              type="text"
+                              value={tool.command}
+                              onChange={(e) => setConfig(prev => prev ? { ...prev, mcp_stdio_tools: (prev.mcp_stdio_tools || []).map((t, i) => i === idx ? { ...t, command: e.target.value } : t) } : prev)}
+                              className={`flex-1 ${inputBaseStyle}`}
+                              onFocus={(e) => e.currentTarget.select()}
+                              onMouseUp={(e) => e.preventDefault()}
+                            />
+                            <button
+                              onClick={() => setConfig(prev => prev ? { ...prev, mcp_stdio_tools: (prev.mcp_stdio_tools || []).filter((_, i) => i !== idx) } : prev)}
+                              className={buttonRemoveIconStyle}
+                              title="Remove Tool"
+                            >
+                              <TrashIcon className="w-5 h-5" />
+                            </button>
+                          </div>
+                        ))}
+                        <div className="flex items-center gap-3 pt-2">
+                          <input
+                            type="text"
+                            value={(newServer as any).label}
+                            onChange={(e) => setNewServer(prev => ({ ...prev, label: e.target.value }))}
+                            placeholder="Label"
+                            className={`w-40 ${inputBaseStyle}`}
+                            onFocus={(e) => e.currentTarget.select()}
+                            onMouseUp={(e) => e.preventDefault()}
+                          />
+                          <input
+                            type="text"
+                            value={newStdioCommand}
+                            onChange={(e) => setNewStdioCommand(e.target.value)}
+                            placeholder="npx -y @modelcontextprotocol/server-brave-search"
+                            className={`flex-1 ${inputBaseStyle}`}
+                            onFocus={(e) => e.currentTarget.select()}
+                            onMouseUp={(e) => e.preventDefault()}
+                          />
+                          <button
+                            onClick={() => {
+                              const cmd = newStdioCommand.trim();
+                              const label = (newServer.label || '').trim() || 'Command';
+                              if (!cmd) return;
+                              setConfig(prev => prev ? { ...prev, mcp_stdio_tools: [ ...(prev.mcp_stdio_tools || []), { label, command: cmd } ] } : prev);
+                              setNewStdioCommand('');
+                              setNewServer({ label: '', url: '' });
+                            }}
+                            className={buttonAddIconStyle}
+                            title="Add Tool"
+                          >
+                            <PlusIcon className="w-5 h-5" />
+                          </button>
+                        </div>
+                        <p className="mt-2 text-xs text-slate-500">Commands run via stdio (e.g., npx/uvx). They will be connected alongside HTTP MCP servers.</p>
+                      </div>
+                    </div>
                   </div>
                 )}
               </section>

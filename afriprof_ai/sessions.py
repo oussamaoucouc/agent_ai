@@ -35,6 +35,8 @@ class SessionSettingsDB(Base):
     model_id = Column(String(128), nullable=True)
     # JSON array of MCP tool URLs selected by the user (stored as text)
     mcp_tools_urls = Column(Text, nullable=True)
+    # JSON array of stdio MCP commands selected by the user (stored as text)
+    mcp_stdio_commands = Column(Text, nullable=True)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -68,6 +70,12 @@ try:
             conn.exec_driver_sql("ALTER TABLE app_session_settings ADD COLUMN mcp_tools_urls TEXT")
             conn.commit()
             logging.info("Added mcp_tools_urls column to app_session_settings (runtime migration)")
+    # Add mcp_stdio_commands if missing
+    if 'mcp_stdio_commands' not in cols:
+        with engine.connect() as conn:
+            conn.exec_driver_sql("ALTER TABLE app_session_settings ADD COLUMN mcp_stdio_commands TEXT")
+            conn.commit()
+            logging.info("Added mcp_stdio_commands column to app_session_settings (runtime migration)")
     # Migrate away from session_id if present to user-level PK
     if 'session_id' in cols:
         with engine.connect() as conn:
@@ -247,6 +255,26 @@ def get_session_mcp_tools_urls(db: SASession, user_id: str, session_id: str) -> 
     # Do not fallback to global config; default to no tools selected
     return urls
 
+def get_session_mcp_stdio_commands(db: SASession, user_id: str, session_id: str) -> list[str]:
+    """Resolve stdio MCP commands by user-level preference (JSON array in mcp_stdio_commands).
+    If the user has not selected any commands, return an empty list (no fallback).
+    """
+    settings = (
+        db.query(SessionSettingsDB)
+        .filter(SessionSettingsDB.user_id == user_id)
+        .order_by(SessionSettingsDB.updated_at.desc())
+        .first()
+    )
+    cmds: list[str] = []
+    if settings and settings.mcp_stdio_commands:
+        try:
+            parsed = _json.loads(settings.mcp_stdio_commands)
+            if isinstance(parsed, list):
+                cmds = [str(c).strip() for c in parsed if isinstance(c, str) and str(c).strip()]
+        except Exception:
+            cmds = []
+    return cmds
+
 
 class CreateSessionRequest(BaseModel):
     user_id: str
@@ -397,6 +425,7 @@ class SessionSettingsResponse(BaseModel):
     model_id: str
     voice: str
     mcp_tools_urls: list[str] = []
+    mcp_stdio_commands: list[str] = []
 
 
 @router.get("/{session_id}/settings", response_model=SessionSettingsResponse)
@@ -413,13 +442,14 @@ async def get_session_settings(session_id: str, user_id: str = Query(None), requ
         resolved_model = get_session_model_id(db, uid, session_id)
         resolved_voice = get_session_voice(db, uid, session_id)
         resolved_tools = get_session_mcp_tools_urls(db, uid, session_id)
+        resolved_stdio = get_session_mcp_stdio_commands(db, uid, session_id)
 
         logging.info(
             f"Settings resolve: user={uid}, session={session_id}, "
             f"model_id={resolved_model}, voice={resolved_voice}, tools={len(resolved_tools)} URLs, exists={bool(settings)} (user-level)"
         )
 
-        return SessionSettingsResponse(model_id=resolved_model, voice=resolved_voice, mcp_tools_urls=resolved_tools)
+        return SessionSettingsResponse(model_id=resolved_model, voice=resolved_voice, mcp_tools_urls=resolved_tools, mcp_stdio_commands=resolved_stdio)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching session settings: {str(e)}")
 

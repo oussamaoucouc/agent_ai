@@ -187,6 +187,8 @@ export interface ConfigResponse {
     mcp_server_url?: string | null;
     mcp_stdio_command?: string | null;
     mcp_stdio_args: string[];
+    mcp_stdio_commands: string[];
+    mcp_stdio_tools?: { label: string; command: string }[];
     available_models: string[];
     available_voices: string[];
     mcp_servers: { label: string; url: string }[];
@@ -202,6 +204,8 @@ export interface ConfigUpdateRequest {
     mcp_server_url?: string | null;
     mcp_stdio_command?: string | null;
     mcp_stdio_args?: string[];
+    mcp_stdio_commands?: string[];
+    mcp_stdio_tools?: { label: string; command: string }[];
     available_models?: string[];
     available_voices?: string[];
     mcp_servers?: { label: string; url: string }[];
@@ -225,6 +229,15 @@ export interface McpToolsCatalogResponse {
     tools: McpToolItem[];
 }
 
+export interface McpStdioItem {
+    label: string;
+    command: string;
+}
+
+export interface McpStdioToolsCatalogResponse {
+    tools: McpStdioItem[];
+}
+
 // Set MCP tools selection for a user (multi-select)
 export interface SetMcpToolsRequest {
     user_id: string;
@@ -243,4 +256,5 @@ export interface SessionSettingsResponse {
     model_id: string;
     voice: string; // matches TTSVoice enum string values
     mcp_tools_urls: string[]; // selected MCP tool URLs for this user/session
+    mcp_stdio_commands: string[]; // selected stdio MCP commands for this user/session
 }

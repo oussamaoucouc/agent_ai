@@ -193,10 +193,11 @@ def create_user(request: UserCreateRequest, http_request: Request, db: SASession
         # Initialize default per-user settings at creation
         try:
             if not db.query(session_mod.SessionSettingsDB).filter(session_mod.SessionSettingsDB.user_id == user_id).first():
+                from teacher_agent.config import get_default_model_id, get_default_voice
                 db.add(session_mod.SessionSettingsDB(
                     user_id=user_id,
-                    voice="af_sky",
-                    model_id="granite4:tiny-h",
+                    voice=get_default_voice(),
+                    model_id=get_default_model_id(),
                     updated_at=datetime.utcnow(),
                 ))
                 db.commit()

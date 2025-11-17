@@ -193,6 +193,8 @@ class ConfigResponse(BaseModel):
     mcp_server_url: Optional[str] = None
     mcp_stdio_command: Optional[str] = None
     mcp_stdio_args: list[str] = []
+    mcp_stdio_commands: list[str] = []
+    mcp_stdio_tools: list[Dict[str, str]] = []
     available_models: list[str] = []
     available_voices: list[str] = []
     mcp_servers: list[Dict[str, str]] = []
@@ -207,6 +209,8 @@ class ConfigUpdateRequest(BaseModel):
     mcp_server_url: Optional[str] = None
     mcp_stdio_command: Optional[str] = None
     mcp_stdio_args: Optional[list[str]] = None
+    mcp_stdio_commands: Optional[list[str]] = None
+    mcp_stdio_tools: Optional[list[Dict[str, str]]] = None
     available_models: Optional[list[str]] = None
     available_voices: Optional[list[str]] = None
     mcp_servers: Optional[list[Dict[str, str]]] = None
@@ -1594,6 +1598,8 @@ async def update_config(request: ConfigUpdateRequest, http_request: Request = No
             "mcp_server_url": request.mcp_server_url,
             "mcp_stdio_command": request.mcp_stdio_command,
             "mcp_stdio_args": request.mcp_stdio_args,
+            "mcp_stdio_commands": request.mcp_stdio_commands,
+            "mcp_stdio_tools": request.mcp_stdio_tools,
             "available_models": request.available_models,
             "available_voices": request.available_voices,
             "mcp_servers": request.mcp_servers,
@@ -1690,6 +1696,13 @@ class McpToolItem(BaseModel):
 class McpToolsCatalogResponse(BaseModel):
     tools: list[McpToolItem]
 
+class McpStdioItem(BaseModel):
+    label: str
+    command: str
+
+class McpStdioToolsCatalogResponse(BaseModel):
+    tools: list[McpStdioItem]
+
 @app.get("/models", response_model=ModelsCatalogResponse)
 async def get_models(user_id: Optional[str] = None, request: Request = None):
     """Return available models catalog to any authenticated user."""
@@ -1763,11 +1776,51 @@ async def get_mcp_tools(user_id: Optional[str] = None, request: Request = None):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching MCP tools: {str(e)}")
 
+@app.get("/mcp_stdio_tools", response_model=McpStdioToolsCatalogResponse)
+async def get_mcp_stdio_tools(user_id: Optional[str] = None, request: Request = None):
+    """Return available stdio MCP commands configured by admin (any authenticated user)."""
+    try:
+        with users.SessionLocal() as db:
+            uid = user_id
+            token_payload = get_user_from_auth_header(request.headers.get("Authorization")) if request else None
+            if token_payload:
+                uid = token_payload.get("uid")
+            u = db.query(users.UserDB).filter(users.UserDB.id == uid).first()
+            if not u:
+                raise HTTPException(status_code=401, detail="Invalid user")
+        from teacher_agent.config import get_runtime_config
+        cfg = get_runtime_config()
+        tools = cfg.get("mcp_stdio_tools", []) or []
+        items: list[McpStdioItem] = []
+        for t in tools:
+            if isinstance(t, dict):
+                label = str(t.get("label", "Command"))
+                command = str(t.get("command", ""))
+                if command.strip():
+                    items.append(McpStdioItem(label=label, command=command))
+        # Backward compatibility: if no labeled tools, fall back to commands list
+        if not items:
+            cmds = cfg.get("mcp_stdio_commands", []) or []
+            for i, c in enumerate(cmds, 1):
+                cs = str(c).strip()
+                if cs:
+                    items.append(McpStdioItem(label=f"Command {i}", command=cs))
+        return McpStdioToolsCatalogResponse(tools=items)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching MCP stdio tools: {str(e)}")
+
 class SetMcpToolsRequest(BaseModel):
     user_id: str
     session_id: str
     tool_labels: Optional[list[str]] = None
     tool_urls: Optional[list[str]] = None
+
+class SetMcpStdioToolsRequest(BaseModel):
+    user_id: str
+    session_id: str
+    commands: Optional[list[str]] = None
 
 @app.post("/set_mcp_tools")
 async def set_mcp_tools(request: SetMcpToolsRequest):
@@ -1810,3 +1863,32 @@ async def set_mcp_tools(request: SetMcpToolsRequest):
         return {"success": True, "count": len(urls)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error setting MCP tools: {str(e)}")
+
+@app.post("/set_mcp_stdio_tools")
+async def set_mcp_stdio_tools(request: SetMcpStdioToolsRequest):
+    """Persist per-user stdio MCP command selection."""
+    try:
+        cmds: list[str] = []
+        if request.commands:
+            cmds = [str(c).strip() for c in request.commands if str(c).strip()]
+        import json as _json
+        with sessions.SessionLocal() as db:
+            settings = (
+                db.query(sessions.SessionSettingsDB)
+                .filter(sessions.SessionSettingsDB.user_id == request.user_id)
+                .order_by(sessions.SessionSettingsDB.updated_at.desc())
+                .first()
+            )
+            now = datetime.utcnow()
+            cmds_json = _json.dumps(cmds or [])
+            if settings:
+                settings.mcp_stdio_commands = cmds_json
+                settings.updated_at = now
+            else:
+                from teacher_agent.config import get_current_voice, get_current_model_id
+                db.add(sessions.SessionSettingsDB(user_id=request.user_id, voice=get_current_voice(), model_id=get_current_model_id(), mcp_stdio_commands=cmds_json, updated_at=now))
+            db.commit()
+        logging.info(f"MCP stdio tools selection persisted: user={request.user_id}, cmds={len(cmds)}")
+        return {"success": True, "count": len(cmds)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error setting MCP stdio tools: {str(e)}")

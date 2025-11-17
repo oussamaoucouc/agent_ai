@@ -4,6 +4,7 @@ Configuration settings for the AI Teacher Assistant application.
 import os
 import sys
 import json
+import re
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -53,6 +54,7 @@ MCP_TRANSPORT = os.getenv("MCP_TRANSPORT", "streamable-http").strip()
 MCP_SERVER_URL = "https://server.smithery.ai/@Aas-ee/open-websearch/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1"
 MCP_STDIO_COMMAND = os.getenv("MCP_STDIO_COMMAND", "").strip()
 _MCP_STDIO_ARGS_RAW = os.getenv("MCP_STDIO_ARGS", "").strip()
+_MCP_STDIO_COMMANDS_RAW = os.getenv("MCP_STDIO_COMMANDS", "").strip()
 
 # Initialize the model
 MODEL = OpenAIChat(id=MODEL_ID, base_url=get_openai_base_url(), api_key=OPENAI_API_KEY or "anything")
@@ -144,10 +146,30 @@ def _parse_stdio_args(raw: str):
 
 MCP_STDIO_ARGS = _parse_stdio_args(_MCP_STDIO_ARGS_RAW)
 
+def _parse_stdio_commands(raw: str) -> list[str]:
+    try:
+        if raw and raw.startswith("["):
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return [str(x).strip() for x in parsed if str(x).strip()]
+            return [str(parsed).strip()]
+        elif raw:
+            # Semicolon or newline separated list fallback
+            parts = [p.strip() for p in re.split(r"[\n;]", raw) if p and p.strip()]
+            return parts
+        else:
+            return []
+    except Exception:
+        return [p.strip() for p in re.split(r"[\n;]", raw) if p and p.strip()]
+
+# Catalogs and lists persisted across restarts
+
 # Catalogs and lists persisted across restarts
 _available_models: list[str] = [_current_model_id]
 _available_voices: list[str] = [_current_voice]
 _mcp_servers: list[dict] = [{"label": "Default MCP", "url": MCP_SERVER_URL}]
+_mcp_stdio_commands: list[str] = _parse_stdio_commands(_MCP_STDIO_COMMANDS_RAW)
+_mcp_stdio_tools: list[dict] = []
 
 def _load_config_state() -> Dict[str, Any]:
     # Prefer new location
@@ -219,6 +241,15 @@ if _state.get("mcp_stdio_args"):
             MCP_STDIO_ARGS = _parse_stdio_args(args_val)
     except Exception:
         pass
+if _state.get("mcp_stdio_commands"):
+    try:
+        cmds_val = _state.get("mcp_stdio_commands")
+        if isinstance(cmds_val, list):
+            _mcp_stdio_commands = [str(x).strip() for x in cmds_val if str(x).strip()] or _mcp_stdio_commands
+        elif isinstance(cmds_val, str):
+            _mcp_stdio_commands = _parse_stdio_commands(cmds_val) or _mcp_stdio_commands
+    except Exception:
+        pass
 if _state.get("available_models"):
     try:
         am = _state.get("available_models")
@@ -245,6 +276,17 @@ if _state.get("mcp_servers"):
             ] or _mcp_servers
     except Exception:
         pass
+if _state.get("mcp_stdio_tools"):
+    try:
+        st = _state.get("mcp_stdio_tools")
+        if isinstance(st, list):
+            _mcp_stdio_tools = [
+                {"label": str(item.get("label", "Command")), "command": str(item.get("command", "")).strip()}
+                for item in st
+                if isinstance(item, dict) and str(item.get("command", "")).strip()
+            ] or _mcp_stdio_tools
+    except Exception:
+        pass
 
 def get_runtime_config() -> Dict[str, Any]:
     return {
@@ -256,6 +298,8 @@ def get_runtime_config() -> Dict[str, Any]:
         "mcp_server_url": MCP_SERVER_URL,
         "mcp_stdio_command": MCP_STDIO_COMMAND,
         "mcp_stdio_args": MCP_STDIO_ARGS,
+        "mcp_stdio_commands": _mcp_stdio_commands,
+        "mcp_stdio_tools": _mcp_stdio_tools,
         "available_models": _available_models,
         "available_voices": _available_voices,
         "mcp_servers": _mcp_servers,
@@ -296,6 +340,29 @@ def set_mcp_stdio_args(args: List[str] | str) -> None:
         raise ValueError("mcp_stdio_args must be a list or string")
     print(f"MCP stdio args changed to: {MCP_STDIO_ARGS}")
 
+def set_mcp_stdio_commands(cmds: List[str] | str) -> None:
+    global _mcp_stdio_commands
+    if isinstance(cmds, list):
+        _mcp_stdio_commands = [str(c).strip() for c in cmds if str(c).strip()]
+    elif isinstance(cmds, str):
+        _mcp_stdio_commands = _parse_stdio_commands(cmds)
+    else:
+        raise ValueError("mcp_stdio_commands must be a list or string")
+    print(f"MCP stdio commands changed to: {_mcp_stdio_commands}")
+
+def set_mcp_stdio_tools(tools: List[Dict[str, str]]) -> None:
+    global _mcp_stdio_tools
+    cleaned: list[dict] = []
+    for t in tools or []:
+        if isinstance(t, dict):
+            label = str(t.get("label", "Command")).strip() or "Command"
+            command = str(t.get("command", "")).strip()
+            if command:
+                cleaned.append({"label": label, "command": command})
+    if cleaned:
+        _mcp_stdio_tools = cleaned
+    print(f"MCP stdio tools changed: {len(_mcp_stdio_tools)} item(s)")
+
 def update_runtime_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     # Apply changes
     if "model" in cfg and cfg["model"]:
@@ -317,6 +384,15 @@ def update_runtime_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
         set_mcp_stdio_command(str(cfg["mcp_stdio_command"]))
     if "mcp_stdio_args" in cfg and cfg["mcp_stdio_args"] is not None:
         set_mcp_stdio_args(cfg["mcp_stdio_args"])  # accepts list or string
+    if "mcp_stdio_commands" in cfg and cfg["mcp_stdio_commands"] is not None:
+        set_mcp_stdio_commands(cfg["mcp_stdio_commands"])  # accepts list or string
+    if "mcp_stdio_tools" in cfg and cfg["mcp_stdio_tools"] is not None:
+        try:
+            tools = cfg["mcp_stdio_tools"]
+            if isinstance(tools, list):
+                set_mcp_stdio_tools(tools)
+        except Exception:
+            pass
 
     # Optional lists management
     global _available_models, _mcp_servers
@@ -362,6 +438,8 @@ def update_runtime_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "mcp_server_url": MCP_SERVER_URL,
         "mcp_stdio_command": MCP_STDIO_COMMAND,
         "mcp_stdio_args": MCP_STDIO_ARGS,
+        "mcp_stdio_commands": _mcp_stdio_commands,
+        "mcp_stdio_tools": _mcp_stdio_tools,
         "available_models": _available_models,
         "available_voices": _available_voices,
         "mcp_servers": _mcp_servers,
@@ -385,7 +463,8 @@ __all__ = [
     'get_current_model', 'get_current_model_id', 'get_default_model_id', 'set_model_id', 
     'get_current_voice', 'get_default_voice', 'set_voice', 'get_user_pdf_dir', 'get_user_docx_dir', 'get_user_text_dir', 'get_user_csv_dir',
     'get_runtime_config', 'update_runtime_config', 'set_ollama_base_url',
-    'set_mcp_transport', 'set_mcp_server_url', 'set_mcp_stdio_command', 'set_mcp_stdio_args'
+    'set_mcp_transport', 'set_mcp_server_url', 'set_mcp_stdio_command', 'set_mcp_stdio_args', 'set_mcp_stdio_commands'
+    , 'set_mcp_stdio_tools'
 ]
 
 # Database configuration

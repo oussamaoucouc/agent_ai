@@ -27,6 +27,9 @@ interface SidebarProps {
     mcpToolsCatalog: McpToolItem[];
     selectedMcpTools: string[];
     onSelectedMcpToolsChange: (labels: string[]) => void;
+    mcpStdioCatalog: { label: string; command: string }[];
+    selectedMcpStdio: string[];
+    onSelectedMcpStdioChange: (cmds: string[]) => void;
     isSettingsSyncing?: boolean;
 }
 
@@ -79,6 +82,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     mcpToolsCatalog,
     selectedMcpTools,
     onSelectedMcpToolsChange,
+    mcpStdioCatalog,
+    selectedMcpStdio,
+    onSelectedMcpStdioChange,
     isSettingsSyncing = false,
 }) => {
     const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
@@ -123,6 +129,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             ? selectedMcpTools.filter(l => l !== label)
             : [...selectedMcpTools, label];
         onSelectedMcpToolsChange(nextLabels);
+    };
+
+    const toggleMcpStdio = (cmd: string) => {
+        if (!canSelectTools) return;
+        const next = selectedMcpStdio.includes(cmd)
+            ? selectedMcpStdio.filter(c => c !== cmd)
+            : [...selectedMcpStdio, cmd];
+        onSelectedMcpStdioChange(next);
     };
 
 
@@ -287,7 +301,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         </div>
                         {/* Tools multi-select below Voices */}
                         <div className={`transition-opacity duration-200 ${isSettingsSyncing ? 'opacity-50 pointer-events-none' : ''}`}>
-                            <h3 className="text-sm font-medium text-slate-400 mb-2">Tools</h3>
+                            <h3 className="text-sm font-medium text-slate-400 mb-2">Web Tools</h3>
                             {/* Wrap grid to enable hover tooltip when disabled */}
                             <div className={`relative ${!canSelectTools ? 'group' : ''}`}>
                               <div className="grid grid-cols-2 gap-2">
@@ -317,6 +331,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 {canSelectTools
                                     ? 'Select tools to use with the Tools agent.'
                                     : 'Switch to Tools mode to select tools.'}
+                            </p>
+                            <h3 className="text-sm font-medium text-slate-400 mt-4 mb-2">Local Tools</h3>
+                            <div className={`relative ${!canSelectTools ? 'group' : ''}`}>
+                              <div className="grid grid-cols-1 gap-2">
+                                {mcpStdioCatalog.map(item => (
+                                    <button
+                                        key={item.command}
+                                        onClick={() => toggleMcpStdio(item.command)}
+                                        disabled={!canSelectTools}
+                                        className={`px-2 py-1.5 text-xs rounded-lg transition-colors border text-left focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-500 ${
+                                            selectedMcpStdio.includes(item.command)
+                                                ? 'bg-sky-500 text-white font-bold border-sky-500'
+                                                : `${canSelectTools ? 'bg-slate-700/50 hover:bg-slate-700' : 'bg-slate-800/50 opacity-50 cursor-not-allowed'} text-slate-300 border-slate-600`
+                                        }`}
+                                        title={item.command}
+                                    >
+                                        {item.label}
+                                    </button>
+                                ))}
+                              </div>
+                              {!canSelectTools && (
+                                <div className="pointer-events-none absolute -bottom-10 left-0 bg-gray-900/90 text-white text-xs px-2 py-1 rounded-md shadow-md opacity-0 group-hover:opacity-100 backdrop-blur-sm">
+                                  {isSettingsSyncing ? 'Loading...' : 'Switch to Tools mode to enable stdio selection'}
+                                </div>
+                              )}
+                            </div>
+                            <p className="mt-2 text-xs text-slate-500">
+                              Stdio tools run locally via commands (e.g., npx/uvx) configured by admin.
                             </p>
                         </div>
                     </div>

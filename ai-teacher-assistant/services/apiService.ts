@@ -1,5 +1,5 @@
 import { API_BASE_URL } from '../constants';
-import { VoicesCatalogResponse, McpToolsCatalogResponse, SetMcpToolsRequest } from '../types';
+import { VoicesCatalogResponse, McpToolsCatalogResponse, SetMcpToolsRequest, McpStdioToolsCatalogResponse } from '../types';
 import { getAuthToken } from './storageService';
 import { 
     QueryRequest, 
@@ -373,6 +373,24 @@ export const getMcpToolsCatalog = async (user_id: string, signal?: AbortSignal):
     url.searchParams.set('ts', Date.now().toString());
     const response = await fetch(url, { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
     return handleResponse<McpToolsCatalogResponse>(response);
+};
+
+export const getMcpStdioCatalog = async (user_id: string, signal?: AbortSignal): Promise<McpStdioToolsCatalogResponse> => {
+    const url = new URL(`${API_BASE_URL}/mcp_stdio_tools`);
+    url.searchParams.set('user_id', user_id);
+    url.searchParams.set('ts', Date.now().toString());
+    const response = await fetch(url, { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
+    return handleResponse<McpStdioToolsCatalogResponse>(response);
+};
+
+export const setMcpStdioTools = async (payload: { user_id: string; session_id: string; commands: string[] }, signal?: AbortSignal): Promise<{success: boolean}> => {
+    const response = await fetch(`${API_BASE_URL}/set_mcp_stdio_tools`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(payload),
+        signal,
+    });
+    return handleResponse<{success: boolean}>(response);
 };
 
 export const getConfigPath = async (user_id: string, signal?: AbortSignal): Promise<ConfigPathResponse> => {
