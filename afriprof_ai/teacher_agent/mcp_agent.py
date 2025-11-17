@@ -149,7 +149,7 @@ async def run_agent_async(query, user_id, session_id):
         add_state_in_messages=True,
         read_chat_history=True,
         add_history_to_messages=True,
-        num_history_responses=2,
+        num_history_responses=3,
         monitoring=True,
         storage=PostgresStorage(table_name="agent_session", db_url=cfg.DB_URL),
         #memory=memory_mcp,

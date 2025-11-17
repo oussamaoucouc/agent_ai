@@ -262,7 +262,7 @@ async def run_rag_agent_async(query, user_id, session_id):
         markdown=True,
         read_chat_history=True,
         add_history_to_messages=True,
-        num_history_responses=2,
+        num_history_responses=3,
         monitoring=True,
         show_tool_calls=True,
         storage = PostgresStorage(table_name="agent_session", db_url=cfg.DB_URL),
