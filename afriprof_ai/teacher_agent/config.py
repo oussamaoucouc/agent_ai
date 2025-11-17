@@ -11,9 +11,7 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-from agno.models.ollama import Ollama
 from agno.models.openai import OpenAIChat
-from urllib.parse import urlparse
 
 # Ollama configuration
 # Use OLLAMA_BASE_URL from environment, with fallback to localhost for local development
@@ -24,20 +22,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 def get_openai_base_url() -> str:
     try:
-        p = urlparse(OLLAMA_BASE_URL)
-        base = f"{p.scheme}://{p.netloc}" if p.scheme and p.netloc else OLLAMA_BASE_URL
-        path = (p.path or "").strip()
-        if path.startswith("/engines/"):
-            parts = [seg for seg in path.split('/') if seg]
-            if len(parts) >= 3 and parts[0] == 'engines' and parts[2] == 'v1':
-                return base + f"/engines/{parts[1]}/v1/"
-            if 'v1' in parts:
-                v1_index = parts.index('v1')
-                return base + '/' + '/'.join(parts[:v1_index+1]) + '/'
-            return base + '/engines/llama.cpp/v1/'
-        if path.startswith('/v1'):
-            return base + '/v1/'
-        return base + '/engines/llama.cpp/v1/'
+        return str(OLLAMA_BASE_URL).strip()
     except Exception:
         return OLLAMA_BASE_URL
 
@@ -218,12 +203,11 @@ if _state.get("voice"):
         print(f"Failed to apply persisted voice: {e}")
 if _state.get("ollama_base_url"):
     try:
-        # Update Ollama host and reinitialize MODEL
         def set_ollama_base_url(new_url: str):
             global OLLAMA_BASE_URL, OLLAMA_HOST, MODEL
             OLLAMA_BASE_URL = new_url
             OLLAMA_HOST = new_url
-            MODEL = Ollama(id=_current_model_id, host=OLLAMA_BASE_URL)
+            MODEL = OpenAIChat(id=_current_model_id, base_url=get_openai_base_url(), api_key=OPENAI_API_KEY or "anything")
             print(f"OLLAMA_BASE_URL changed to: {new_url}")
         set_ollama_base_url(_state["ollama_base_url"])
     except Exception as e:
