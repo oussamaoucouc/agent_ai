@@ -223,6 +223,19 @@ export interface VoicesCatalogResponse {
     available_voices: string[];
 }
 
+export interface LabeledItem {
+    label: string;
+    id: string;
+}
+
+export interface ModelsCatalogLabeledResponse {
+    items: LabeledItem[];
+}
+
+export interface VoicesCatalogLabeledResponse {
+    items: LabeledItem[];
+}
+
 // MCP tools catalog types (admin-configured label + URL)
 export interface McpToolItem {
     label: string;

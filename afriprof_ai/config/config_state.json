@@ -1,25 +1,41 @@
 {
-  "model_id": "ai/granite-4.0-h-tiny:7B",
-  "voice": "bf_emma",
+  "model_id": "ai/granite-4.0-h-tiny:7B-ctx",
+  "voice": "am_adam",
   "ollama_base_url": "http://localhost:12434",
-  "openai_api_key_set": false,
+  "openai_api_key_set": true,
   "mcp_transport": "streamable-http",
   "mcp_server_url": "https://server.smithery.ai/@Aas-ee/open-websearch/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1",
   "mcp_stdio_command": "",
   "mcp_stdio_args": [],
   "mcp_stdio_commands": [],
+  "mcp_stdio_tools": [],
   "available_models": [
-    "ai/granite-4.0-h-tiny:7B",
-    "ai/granite-4.0-nano",
-    "ai/deepseek-r1-distill-llama",
-    "ai/granite-4.0-h-tiny:7B-ctx",
-    "ai/granite-4.0-nano-ctx"
+    "ai/granite-4.0-h-tiny:7B-ctx"
+  ],
+  "available_models_labeled": [
+    {
+      "label": "AI Context",
+      "id": "ai/granite-4.0-h-tiny:7B-ctx"
+    }
   ],
   "available_voices": [
-    "af_sky",
-    "af_nicole",
-    "am_michael",
-    "bm_george"
+    "ff_siwis",
+    "am_adam",
+    "af_sky"
+  ],
+  "available_voices_labeled": [
+    {
+      "label": "Female Fr",
+      "id": "ff_siwis"
+    },
+    {
+      "label": "Male Eng",
+      "id": "am_adam"
+    },
+    {
+      "label": "Female Eng",
+      "id": "af_sky"
+    }
   ],
   "mcp_servers": [
     {

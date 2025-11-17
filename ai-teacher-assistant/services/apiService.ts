@@ -1,5 +1,5 @@
 import { API_BASE_URL } from '../constants';
-import { VoicesCatalogResponse, McpToolsCatalogResponse, SetMcpToolsRequest, McpStdioToolsCatalogResponse } from '../types';
+import { VoicesCatalogResponse, McpToolsCatalogResponse, SetMcpToolsRequest, McpStdioToolsCatalogResponse, ModelsCatalogLabeledResponse, VoicesCatalogLabeledResponse } from '../types';
 import { getAuthToken } from './storageService';
 import { 
     QueryRequest, 
@@ -354,6 +354,14 @@ export const getModelsCatalog = async (user_id: string, signal?: AbortSignal): P
     return { available_models: models };
 };
 
+export const getModelsLabeledCatalog = async (user_id: string, signal?: AbortSignal): Promise<ModelsCatalogLabeledResponse> => {
+    const url = new URL(`${API_BASE_URL}/models_labeled`);
+    url.searchParams.set('user_id', user_id);
+    url.searchParams.set('ts', Date.now().toString());
+    const response = await fetch(url, { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
+    return handleResponse<ModelsCatalogLabeledResponse>(response);
+};
+
 export const getVoicesCatalog = async (user_id: string, signal?: AbortSignal): Promise<VoicesCatalogResponse> => {
     const url = new URL(`${API_BASE_URL}/voices`);
     url.searchParams.set('user_id', user_id);
@@ -365,6 +373,14 @@ export const getVoicesCatalog = async (user_id: string, signal?: AbortSignal): P
     }
     const voices = Array.isArray(raw?.voices) ? raw.voices : [];
     return { available_voices: voices };
+};
+
+export const getVoicesLabeledCatalog = async (user_id: string, signal?: AbortSignal): Promise<VoicesCatalogLabeledResponse> => {
+    const url = new URL(`${API_BASE_URL}/voices_labeled`);
+    url.searchParams.set('user_id', user_id);
+    url.searchParams.set('ts', Date.now().toString());
+    const response = await fetch(url, { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
+    return handleResponse<VoicesCatalogLabeledResponse>(response);
 };
 
 export const getMcpToolsCatalog = async (user_id: string, signal?: AbortSignal): Promise<McpToolsCatalogResponse> => {

@@ -11,7 +11,7 @@ import { AddUserPage } from './components/AddUserPage';
 import { EditUserPage } from './components/EditUserPage';
 import { Modal } from './components/Modal';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
-import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, listUserStats, createUser, deleteUser, loginUser, updateUser, getModelsCatalog, getSessionSettings, getMcpToolsCatalog, setMcpTools, getMcpStdioCatalog, setMcpStdioTools, getConfig, getVoicesCatalog } from './services/apiService';
+import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, listUserStats, createUser, deleteUser, loginUser, updateUser, getModelsCatalog, getModelsLabeledCatalog, getSessionSettings, getMcpToolsCatalog, setMcpTools, getMcpStdioCatalog, setMcpStdioTools, getVoicesCatalog, getVoicesLabeledCatalog } from './services/apiService';
 import * as storage from './services/storageService';
 import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice, QueryMode, AdminUser, McpToolItem, McpStdioItem } from './types';
 import { API_BASE_URL } from './constants';
@@ -194,10 +194,9 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                     })
                     .then(async () => {
                         try {
-                            const cfg = await getConfig(currentUser, controller.signal);
-                            const labeled = Array.isArray((cfg as any).available_models_labeled) ? (cfg as any).available_models_labeled : [];
-                            const items = labeled.map((m: any) => ({ label: String(m.label || m.id), id: String(m.id || '') })).filter((x: any) => x.id);
-                            setAvailableModelsLabeled(items.length ? items : availableModels.map(id => ({ label: id, id })));
+                            const labeledRes = await getModelsLabeledCatalog(currentUser, controller.signal);
+                            const items = Array.isArray(labeledRes.items) ? labeledRes.items : [];
+                            setAvailableModelsLabeled(items);
                         } catch {
                             setAvailableModelsLabeled(availableModels.map(id => ({ label: id, id })));
                         }
@@ -208,38 +207,22 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                         const items = Array.isArray(res.tools) ? res.tools : [];
                         setMcpToolsCatalog(items);
                     })
-                    .catch(async () => {
-                        try {
-                            const cfg = await getConfig(currentUser, controller.signal);
-                            const servers = Array.isArray(cfg.mcp_servers) ? cfg.mcp_servers : [];
-                            const items = servers.map(s => ({ label: s.label, url: s.url })).filter(i => i.url && i.url.trim());
-                            setMcpToolsCatalog(items);
-                        } catch {}
+                    .catch(() => {
+                        setMcpToolsCatalog([]);
                     });
                 const stdioPromise = getMcpStdioCatalog(currentUser, controller.signal)
                     .then(res => {
                         const items = Array.isArray(res.tools) ? res.tools : [];
                         setMcpStdioCatalog(items);
                     })
-                    .catch(async () => {
-                        try {
-                            const cfg = await getConfig(currentUser, controller.signal);
-                            const tools = Array.isArray((cfg as any).mcp_stdio_tools) ? (cfg as any).mcp_stdio_tools : [];
-                            const items = tools.map((t: any) => ({ label: String(t.label || 'Command'), command: String(t.command || '') })).filter((x: any) => x.command.trim());
-                            if (items.length === 0) {
-                                const cmds = Array.isArray(cfg.mcp_stdio_commands) ? cfg.mcp_stdio_commands : [];
-                                setMcpStdioCatalog(cmds.map((c: any, i: number) => ({ label: `Command ${i+1}`, command: String(c || '') })));
-                            } else {
-                                setMcpStdioCatalog(items);
-                            }
-                        } catch {}
+                    .catch(() => {
+                        setMcpStdioCatalog([]);
                     });
                 const voicesPromise = getVoicesCatalog(currentUser, controller.signal)
                     .then(async () => {
                         try {
-                            const cfg = await getConfig(currentUser, controller.signal);
-                            const labeled = Array.isArray((cfg as any).available_voices_labeled) ? (cfg as any).available_voices_labeled : [];
-                            const items = labeled.map((v: any) => ({ label: String(v.label || v.id), id: String(v.id || '') })).filter((x: any) => x.id);
+                            const labeledRes = await getVoicesLabeledCatalog(currentUser, controller.signal);
+                            const items = Array.isArray(labeledRes.items) ? labeledRes.items : [];
                             setAvailableVoicesLabeled(items);
                         } catch {
                             setAvailableVoicesLabeled([]);

@@ -1709,6 +1709,17 @@ class McpStdioItem(BaseModel):
 class McpStdioToolsCatalogResponse(BaseModel):
     tools: list[McpStdioItem]
 
+# Labeled catalogs for non-admin clients
+class LabeledItem(BaseModel):
+    label: str
+    id: str
+
+class ModelsCatalogLabeledResponse(BaseModel):
+    items: list[LabeledItem]
+
+class VoicesCatalogLabeledResponse(BaseModel):
+    items: list[LabeledItem]
+
 @app.get("/models", response_model=ModelsCatalogResponse)
 async def get_models(user_id: Optional[str] = None, request: Request = None):
     """Return available models catalog to any authenticated user."""
@@ -1729,6 +1740,39 @@ async def get_models(user_id: Optional[str] = None, request: Request = None):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching models: {str(e)}")
+
+@app.get("/models_labeled", response_model=ModelsCatalogLabeledResponse)
+async def get_models_labeled(user_id: Optional[str] = None, request: Request = None):
+    try:
+        with users.SessionLocal() as db:
+            uid = user_id
+            token_payload = get_user_from_auth_header(request.headers.get("Authorization")) if request else None
+            if token_payload:
+                uid = token_payload.get("uid")
+            u = db.query(users.UserDB).filter(users.UserDB.id == uid).first()
+            if not u:
+                raise HTTPException(status_code=401, detail="Invalid user")
+        from teacher_agent.config import get_runtime_config
+        cfg = get_runtime_config()
+        labeled = cfg.get("available_models_labeled", []) or []
+        items: list[LabeledItem] = []
+        if labeled:
+            for m in labeled:
+                if isinstance(m, dict):
+                    label = str(m.get("label", "Model"))
+                    mid = str(m.get("id", ""))
+                    if mid.strip():
+                        items.append(LabeledItem(label=label, id=mid))
+        else:
+            for mid in cfg.get("available_models", []) or []:
+                ms = str(mid).strip()
+                if ms:
+                    items.append(LabeledItem(label=ms, id=ms))
+        return ModelsCatalogLabeledResponse(items=items)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching labeled models: {str(e)}")
 
 # Voices catalog for any authenticated user
 @app.get("/voices", response_model=VoicesCatalogResponse)
@@ -1751,6 +1795,39 @@ async def get_voices(user_id: Optional[str] = None, request: Request = None):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching voices: {str(e)}")
+
+@app.get("/voices_labeled", response_model=VoicesCatalogLabeledResponse)
+async def get_voices_labeled(user_id: Optional[str] = None, request: Request = None):
+    try:
+        with users.SessionLocal() as db:
+            uid = user_id
+            token_payload = get_user_from_auth_header(request.headers.get("Authorization")) if request else None
+            if token_payload:
+                uid = token_payload.get("uid")
+            u = db.query(users.UserDB).filter(users.UserDB.id == uid).first()
+            if not u:
+                raise HTTPException(status_code=401, detail="Invalid user")
+        from teacher_agent.config import get_runtime_config
+        cfg = get_runtime_config()
+        labeled = cfg.get("available_voices_labeled", []) or []
+        items: list[LabeledItem] = []
+        if labeled:
+            for v in labeled:
+                if isinstance(v, dict):
+                    label = str(v.get("label", "Voice"))
+                    vid = str(v.get("id", ""))
+                    if vid.strip():
+                        items.append(LabeledItem(label=label, id=vid))
+        else:
+            for vid in cfg.get("available_voices", []) or []:
+                vs = str(vid).strip()
+                if vs:
+                    items.append(LabeledItem(label=vs, id=vs))
+        return VoicesCatalogLabeledResponse(items=items)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching labeled voices: {str(e)}")
 
 # MCP tools catalog for any authenticated user
 @app.get("/mcp_tools", response_model=McpToolsCatalogResponse)
@@ -1898,3 +1975,12 @@ async def set_mcp_stdio_tools(request: SetMcpStdioToolsRequest):
         return {"success": True, "count": len(cmds)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error setting MCP stdio tools: {str(e)}")
+class LabeledItem(BaseModel):
+    label: str
+    id: str
+
+class ModelsCatalogLabeledResponse(BaseModel):
+    items: list[LabeledItem]
+
+class VoicesCatalogLabeledResponse(BaseModel):
+    items: list[LabeledItem]
