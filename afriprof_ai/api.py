@@ -195,7 +195,9 @@ class ConfigResponse(BaseModel):
     mcp_stdio_args: list[str] = []
     mcp_stdio_commands: list[str] = []
     mcp_stdio_tools: list[Dict[str, str]] = []
+    available_models_labeled: Optional[list[Dict[str, str]]] = None
     available_models: list[str] = []
+    available_voices_labeled: Optional[list[Dict[str, str]]] = None
     available_voices: list[str] = []
     mcp_servers: list[Dict[str, str]] = []
 
@@ -211,7 +213,9 @@ class ConfigUpdateRequest(BaseModel):
     mcp_stdio_args: Optional[list[str]] = None
     mcp_stdio_commands: Optional[list[str]] = None
     mcp_stdio_tools: Optional[list[Dict[str, str]]] = None
+    available_models_labeled: Optional[list[Dict[str, str]]] = None
     available_models: Optional[list[str]] = None
+    available_voices_labeled: Optional[list[Dict[str, str]]] = None
     available_voices: Optional[list[str]] = None
     mcp_servers: Optional[list[Dict[str, str]]] = None
 
@@ -1600,7 +1604,9 @@ async def update_config(request: ConfigUpdateRequest, http_request: Request = No
             "mcp_stdio_args": request.mcp_stdio_args,
             "mcp_stdio_commands": request.mcp_stdio_commands,
             "mcp_stdio_tools": request.mcp_stdio_tools,
+            "available_models_labeled": request.available_models_labeled,
             "available_models": request.available_models,
+            "available_voices_labeled": request.available_voices_labeled,
             "available_voices": request.available_voices,
             "mcp_servers": request.mcp_servers,
         })

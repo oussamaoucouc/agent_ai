@@ -22,7 +22,8 @@ interface SidebarProps {
     onModelChange: (model: string) => void;
     currentVoice: TTSVoice;
     onVoiceChange: (voice: TTSVoice) => void;
-    availableModels?: string[];
+    availableModelsLabeled?: { label: string; id: string }[];
+    availableVoicesLabeled?: { label: string; id: string }[];
     queryMode: QueryMode;
     mcpToolsCatalog: McpToolItem[];
     selectedMcpTools: string[];
@@ -46,18 +47,7 @@ const StatusIcon: React.FC<{ status: UploadedFile['status'] }> = ({ status }) =>
     }
 };
 
-const DEFAULT_VOICES: string[] = [
-    TTSVoice.AF_BELLA,
-    TTSVoice.AF_NICOLE,
-    TTSVoice.AF_SARAH,
-    TTSVoice.AF_SKY,
-    TTSVoice.BF_EMMA,
-    TTSVoice.BF_ISABELLA,
-    TTSVoice.AM_ADAM,
-    TTSVoice.AM_MICHAEL,
-    TTSVoice.BM_GEORGE,
-    TTSVoice.BM_LEWIS,
-];
+const DEFAULT_VOICES: string[] = [];
 
 
 export const Sidebar: React.FC<SidebarProps> = ({ 
@@ -77,7 +67,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     onModelChange,
     currentVoice,
     onVoiceChange,
-    availableModels,
+    availableModelsLabeled,
+    availableVoicesLabeled,
     queryMode,
     mcpToolsCatalog,
     selectedMcpTools,
@@ -255,25 +246,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <div>
                             <h3 className="text-sm font-medium text-slate-400 mb-2 flex items-center"><CubeIcon className="w-4 h-4 mr-2" />AI Model</h3>
                             <div className="grid grid-cols-2 gap-2">
-                                {(availableModels && availableModels.length > 0 ? availableModels : [
-                                    'granite4:tiny-h',
-                                    'qwen3:1.7b',
-                                    'qwen2.5:3b',
-                                    'phi4-mini:3.8b ',
-                                    'ai_assistant_qwen'
-                                ]).map((m) => (
+                                {(availableModelsLabeled || []).map((m) => (
                                     <button
-                                        key={m}
-                                        onClick={() => onModelChange(m)}
-                                        title={m}
+                                        key={m.id}
+                                        onClick={() => onModelChange(m.id)}
+                                        title={m.id}
                                         className={`w-full text-center truncate px-2 py-1.5 text-xs rounded-lg transition-colors border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-500 ${
-                                            currentModel === m ? 'bg-sky-500 text-white font-bold border-sky-500' : 'bg-slate-700/50 hover:bg-slate-700 text-slate-300 border-slate-600'
+                                            currentModel === m.id ? 'bg-sky-500 text-white font-bold border-sky-500' : 'bg-slate-700/50 hover:bg-slate-700 text-slate-300 border-slate-600'
                                         }`}
                                     >
-                                        {m}
+                                        {m.label}
                                     </button>
                                 ))}
                             </div>
+                            {(!availableModelsLabeled || availableModelsLabeled.length === 0) && (
+                                <p className="mt-2 text-xs text-slate-500">No models configured.</p>
+                            )}
                             <p className="mt-2 text-xs text-slate-500">
                                 Choose the AI model to power your assistant.
                             </p>
@@ -282,22 +270,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <div>
                              <h3 className="text-sm font-medium text-slate-400 mb-2 flex items-center"><SpeakerIcon className="w-4 h-4 mr-2" />Voices</h3>
                              <div className="grid grid-cols-3 gap-2">
-                                {voices.map(v => (
+                                {(availableVoicesLabeled || []).map(v => (
                                     <button
-                                        key={v}
-                                        onClick={() => onVoiceChange(v as TTSVoice)}
-                                        className={`px-2 py-1.5 text-xs font-mono rounded-lg transition-colors border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-500 ${
-                                            currentVoice === (v as TTSVoice) ? 'bg-sky-500 text-white font-bold border-sky-500' : 'bg-slate-700/50 hover:bg-slate-700 text-slate-300 border-slate-600'
+                                        key={v.id}
+                                        onClick={() => onVoiceChange(v.id as TTSVoice)}
+                                        className={`px-2 py-1.5 text-xs rounded-lg transition-colors border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-500 ${
+                                            currentVoice === (v.id as TTSVoice) ? 'bg-sky-500 text-white font-bold border-sky-500' : 'bg-slate-700/50 hover:bg-slate-700 text-slate-300 border-slate-600'
                                         }`}
                                     >
-                                        {v
-                                            .replace('af_', 'af-')
-                                            .replace('bf_', 'bf-')
-                                            .replace('am_', 'am-')
-                                            .replace('bm_', 'bm-')}
+                                        {v.label}
                                     </button>
                                 ))}
                              </div>
+                             {(!availableVoicesLabeled || availableVoicesLabeled.length === 0) && (
+                               <p className="mt-2 text-xs text-slate-500">No voices configured.</p>
+                             )}
                         </div>
                         {/* Tools multi-select below Voices */}
                         <div className={`transition-opacity duration-200 ${isSettingsSyncing ? 'opacity-50 pointer-events-none' : ''}`}>

@@ -166,7 +166,9 @@ def _parse_stdio_commands(raw: str) -> list[str]:
 
 # Catalogs and lists persisted across restarts
 _available_models: list[str] = [_current_model_id]
+_available_models_labeled: list[dict] = []
 _available_voices: list[str] = [_current_voice]
+_available_voices_labeled: list[dict] = []
 _mcp_servers: list[dict] = [{"label": "Default MCP", "url": MCP_SERVER_URL}]
 _mcp_stdio_commands: list[str] = _parse_stdio_commands(_MCP_STDIO_COMMANDS_RAW)
 _mcp_stdio_tools: list[dict] = []
@@ -257,12 +259,38 @@ if _state.get("available_models"):
             _available_models = [str(x) for x in am if str(x)] or _available_models
     except Exception:
         pass
+# Optional labeled models
+if _state.get("available_models_labeled"):
+    try:
+        aml = _state.get("available_models_labeled")
+        if isinstance(aml, list):
+            _available_models_labeled = [
+                {"label": str(item.get("label", "Model")), "id": str(item.get("id", "")).strip()}
+                for item in aml if isinstance(item, dict) and str(item.get("id", "")).strip()
+            ] or _available_models_labeled
+            if not _available_models:
+                _available_models = [m["id"] for m in _available_models_labeled]
+    except Exception:
+        pass
 # Ensure voices catalog is loaded from persisted state
 if _state.get("available_voices"):
     try:
         av = _state.get("available_voices")
         if isinstance(av, list):
             _available_voices = [str(v) for v in av if str(v)] or _available_voices
+    except Exception:
+        pass
+# Optional labeled voices
+if _state.get("available_voices_labeled"):
+    try:
+        avl = _state.get("available_voices_labeled")
+        if isinstance(avl, list):
+            _available_voices_labeled = [
+                {"label": str(item.get("label", "Voice")), "id": str(item.get("id", "")).strip()}
+                for item in avl if isinstance(item, dict) and str(item.get("id", "")).strip()
+            ] or _available_voices_labeled
+            if not _available_voices:
+                _available_voices = [v["id"] for v in _available_voices_labeled]
     except Exception:
         pass
 if _state.get("mcp_servers"):
@@ -301,7 +329,9 @@ def get_runtime_config() -> Dict[str, Any]:
         "mcp_stdio_commands": _mcp_stdio_commands,
         "mcp_stdio_tools": _mcp_stdio_tools,
         "available_models": _available_models,
+        "available_models_labeled": _available_models_labeled,
         "available_voices": _available_voices,
+        "available_voices_labeled": _available_voices_labeled,
         "mcp_servers": _mcp_servers,
     }
 
@@ -395,7 +425,7 @@ def update_runtime_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
             pass
 
     # Optional lists management
-    global _available_models, _mcp_servers
+    global _available_models, _available_models_labeled, _mcp_servers
     if "available_models" in cfg and cfg["available_models"] is not None:
         try:
             models = cfg["available_models"]
@@ -403,13 +433,45 @@ def update_runtime_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
                 _available_models = [str(m) for m in models if str(m)] or _available_models
         except Exception:
             pass
+    if "available_models_labeled" in cfg and cfg["available_models_labeled"] is not None:
+        try:
+            aml = cfg["available_models_labeled"]
+            if isinstance(aml, list):
+                cleaned = []
+                for item in aml:
+                    if isinstance(item, dict):
+                        label = str(item.get("label", "Model")).strip() or "Model"
+                        mid = str(item.get("id", "")).strip()
+                        if mid:
+                            cleaned.append({"label": label, "id": mid})
+                if cleaned:
+                    _available_models_labeled = cleaned
+                    _available_models = [m["id"] for m in cleaned]
+        except Exception:
+            pass
     # Optional voices list management
-    global _available_voices
+    global _available_voices, _available_voices_labeled
     if "available_voices" in cfg and cfg["available_voices"] is not None:
         try:
             voices = cfg["available_voices"]
             if isinstance(voices, list):
                 _available_voices = [str(v) for v in voices if str(v)] or _available_voices
+        except Exception:
+            pass
+    if "available_voices_labeled" in cfg and cfg["available_voices_labeled"] is not None:
+        try:
+            avl = cfg["available_voices_labeled"]
+            if isinstance(avl, list):
+                cleaned_v = []
+                for item in avl:
+                    if isinstance(item, dict):
+                        label = str(item.get("label", "Voice")).strip() or "Voice"
+                        vid = str(item.get("id", "")).strip()
+                        if vid:
+                            cleaned_v.append({"label": label, "id": vid})
+                if cleaned_v:
+                    _available_voices_labeled = cleaned_v
+                    _available_voices = [v["id"] for v in cleaned_v]
         except Exception:
             pass
     if "mcp_servers" in cfg and cfg["mcp_servers"] is not None:
@@ -441,7 +503,9 @@ def update_runtime_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "mcp_stdio_commands": _mcp_stdio_commands,
         "mcp_stdio_tools": _mcp_stdio_tools,
         "available_models": _available_models,
+        "available_models_labeled": _available_models_labeled,
         "available_voices": _available_voices,
+        "available_voices_labeled": _available_voices_labeled,
         "mcp_servers": _mcp_servers,
     }
     _save_config_state(new_state)

@@ -189,7 +189,9 @@ export interface ConfigResponse {
     mcp_stdio_args: string[];
     mcp_stdio_commands: string[];
     mcp_stdio_tools?: { label: string; command: string }[];
+    available_models_labeled?: { label: string; id: string }[];
     available_models: string[];
+    available_voices_labeled?: { label: string; id: string }[];
     available_voices: string[];
     mcp_servers: { label: string; url: string }[];
 }
@@ -206,7 +208,9 @@ export interface ConfigUpdateRequest {
     mcp_stdio_args?: string[];
     mcp_stdio_commands?: string[];
     mcp_stdio_tools?: { label: string; command: string }[];
+    available_models_labeled?: { label: string; id: string }[];
     available_models?: string[];
+    available_voices_labeled?: { label: string; id: string }[];
     available_voices?: string[];
     mcp_servers?: { label: string; url: string }[];
 }

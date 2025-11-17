@@ -25,7 +25,9 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
   const [openaiApiKey, setOpenaiApiKey] = useState<string>('');
   const [newServer, setNewServer] = useState<{ label: string; url: string }>({ label: '', url: '' });
   const [newModel, setNewModel] = useState<string>('');
+  const [newModelLabel, setNewModelLabel] = useState<string>('');
   const [newVoice, setNewVoice] = useState<string>('');
+  const [newVoiceLabel, setNewVoiceLabel] = useState<string>('');
   const [newStdioCommand, setNewStdioCommand] = useState<string>('');
 
   const userId = storage.getCurrentUser() || '';
@@ -62,7 +64,9 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
         mcp_transport: config.mcp_transport,
         mcp_stdio_commands: config.mcp_stdio_commands || [],
         available_models: config.available_models || [],
+        available_models_labeled: (config.available_models_labeled && config.available_models_labeled.length > 0) ? config.available_models_labeled : (config.available_models || []).map(id => ({ label: id, id })),
         available_voices: config.available_voices || [],
+        available_voices_labeled: (config.available_voices_labeled && config.available_voices_labeled.length > 0) ? config.available_voices_labeled : (config.available_voices || []).map(id => ({ label: id, id })),
         mcp_servers: config.mcp_servers || [],
       };
       const res = await updateConfig(payload);
@@ -170,24 +174,38 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                 <div>
                   <span className="block text-sm font-medium text-slate-400 mb-2">Available Models</span>
                   <div className="space-y-2">
-                    {(config.available_models || []).map((m, idx) => (
-                      <div key={`${m}-${idx}`} className="flex items-center gap-3">
+                    {((config.available_models_labeled || []) as Array<{label: string; id: string}>).map((m, idx) => (
+                      <div key={`${m.id}-${idx}`} className="flex items-center gap-3">
                         <input
                           type="text"
-                          readOnly
-                          value={m}
-                          className={readOnlyInputStyle}
+                          value={m.label}
+                          onChange={(e) => setConfig(prev => prev ? { ...prev, available_models_labeled: (prev.available_models_labeled || []).map((mm, i) => i === idx ? { ...mm, label: e.target.value } : mm) } : prev)}
+                          className={`w-40 ${inputBaseStyle}`}
                           onFocus={(e) => e.currentTarget.select()}
-                          onMouseUp={(e) => e.preventDefault()} // keep selection
+                          onMouseUp={(e) => e.preventDefault()}
                         />
-                        <button onClick={() => removeModel(idx)} className={buttonRemoveIconStyle} title="Remove Model">
+                        <input
+                          type="text"
+                          value={m.id}
+                          onChange={(e) => setConfig(prev => prev ? { ...prev, available_models_labeled: (prev.available_models_labeled || []).map((mm, i) => i === idx ? { ...mm, id: e.target.value } : mm) } : prev)}
+                          className={`flex-1 ${inputBaseStyle}`}
+                          onFocus={(e) => e.currentTarget.select()}
+                          onMouseUp={(e) => e.preventDefault()}
+                        />
+                        <button onClick={() => setConfig(prev => prev ? { ...prev, available_models_labeled: (prev.available_models_labeled || []).filter((_, i) => i !== idx) } : prev)} className={buttonRemoveIconStyle} title="Remove Model">
                             <TrashIcon className="w-5 h-5" />
                         </button>
                       </div>
                     ))}
                     <div className="flex items-center gap-3 pt-2">
-                      <input type="text" value={newModel} onChange={(e) => setNewModel(e.target.value)} placeholder="Add new model id" className={`flex-1 ${inputBaseStyle}`} />
-                      <button onClick={addModel} className={buttonAddIconStyle} title="Add Model">
+                      <input type="text" value={newModelLabel} onChange={(e) => setNewModelLabel(e.target.value)} placeholder="Label" className={`w-40 ${inputBaseStyle}`} />
+                      <input type="text" value={newModel} onChange={(e) => setNewModel(e.target.value)} placeholder="Model id" className={`flex-1 ${inputBaseStyle}`} />
+                      <button onClick={() => {
+                        const id = newModel.trim(); const label = newModelLabel.trim() || newModel.trim();
+                        if (!id) return;
+                        setConfig(prev => prev ? { ...prev, available_models_labeled: [ ...(prev.available_models_labeled || []), { label, id } ] } : prev);
+                        setNewModel(''); setNewModelLabel('');
+                      }} className={buttonAddIconStyle} title="Add Model">
                           <PlusIcon className="w-5 h-5" />
                       </button>
                     </div>
@@ -196,24 +214,38 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                 <div>
                   <span className="block text-sm font-medium text-slate-400 mb-2">Available Voices</span>
                   <div className="space-y-2">
-                    {(config.available_voices || []).map((v, idx) => (
-                      <div key={`${v}-${idx}`} className="flex items-center gap-3">
+                    {((config.available_voices_labeled || []) as Array<{label: string; id: string}>).map((v, idx) => (
+                      <div key={`${v.id}-${idx}`} className="flex items-center gap-3">
                         <input
                           type="text"
-                          readOnly
-                          value={v}
-                          className={readOnlyInputStyle}
+                          value={v.label}
+                          onChange={(e) => setConfig(prev => prev ? { ...prev, available_voices_labeled: (prev.available_voices_labeled || []).map((vv, i) => i === idx ? { ...vv, label: e.target.value } : vv) } : prev)}
+                          className={`w-40 ${inputBaseStyle}`}
                           onFocus={(e) => e.currentTarget.select()}
                           onMouseUp={(e) => e.preventDefault()}
                         />
-                        <button onClick={() => removeVoice(idx)} className={buttonRemoveIconStyle} title="Remove Voice">
+                        <input
+                          type="text"
+                          value={v.id}
+                          onChange={(e) => setConfig(prev => prev ? { ...prev, available_voices_labeled: (prev.available_voices_labeled || []).map((vv, i) => i === idx ? { ...vv, id: e.target.value } : vv) } : prev)}
+                          className={`flex-1 ${inputBaseStyle}`}
+                          onFocus={(e) => e.currentTarget.select()}
+                          onMouseUp={(e) => e.preventDefault()}
+                        />
+                        <button onClick={() => setConfig(prev => prev ? { ...prev, available_voices_labeled: (prev.available_voices_labeled || []).filter((_, i) => i !== idx) } : prev)} className={buttonRemoveIconStyle} title="Remove Voice">
                             <TrashIcon className="w-5 h-5" />
                         </button>
                       </div>
                     ))}
                     <div className="flex items-center gap-3 pt-2">
-                      <input type="text" value={newVoice} onChange={(e) => setNewVoice(e.target.value)} placeholder="Add new voice id" className={`flex-1 ${inputBaseStyle}`} onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()} />
-                      <button onClick={addVoice} className={buttonAddIconStyle} title="Add Voice">
+                      <input type="text" value={newVoiceLabel} onChange={(e) => setNewVoiceLabel(e.target.value)} placeholder="Label" className={`w-40 ${inputBaseStyle}`} onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()} />
+                      <input type="text" value={newVoice} onChange={(e) => setNewVoice(e.target.value)} placeholder="Voice id" className={`flex-1 ${inputBaseStyle}`} onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()} />
+                      <button onClick={() => {
+                        const id = newVoice.trim(); const label = newVoiceLabel.trim() || newVoice.trim();
+                        if (!id) return;
+                        setConfig(prev => prev ? { ...prev, available_voices_labeled: [ ...(prev.available_voices_labeled || []), { label, id } ] } : prev);
+                        setNewVoice(''); setNewVoiceLabel('');
+                      }} className={buttonAddIconStyle} title="Add Voice">
                           <PlusIcon className="w-5 h-5" />
                       </button>
                     </div>

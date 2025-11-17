@@ -11,7 +11,7 @@ import { AddUserPage } from './components/AddUserPage';
 import { EditUserPage } from './components/EditUserPage';
 import { Modal } from './components/Modal';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
-import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, listUserStats, createUser, deleteUser, loginUser, updateUser, getModelsCatalog, getSessionSettings, getMcpToolsCatalog, setMcpTools, getMcpStdioCatalog, setMcpStdioTools, getConfig } from './services/apiService';
+import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, listUserStats, createUser, deleteUser, loginUser, updateUser, getModelsCatalog, getSessionSettings, getMcpToolsCatalog, setMcpTools, getMcpStdioCatalog, setMcpStdioTools, getConfig, getVoicesCatalog } from './services/apiService';
 import * as storage from './services/storageService';
 import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice, QueryMode, AdminUser, McpToolItem, McpStdioItem } from './types';
 import { API_BASE_URL } from './constants';
@@ -87,7 +87,9 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
     // New states for model and voice selection
     const [currentModel, setCurrentModel] = useState<string>('gemini-2.5-pro');
     const [availableModels, setAvailableModels] = useState<string[]>([]);
+    const [availableModelsLabeled, setAvailableModelsLabeled] = useState<Array<{label: string; id: string}>>([]);
     const [currentVoice, setCurrentVoice] = useState<TTSVoice>(TTSVoice.BF_EMMA);
+    const [availableVoicesLabeled, setAvailableVoicesLabeled] = useState<Array<{label: string; id: string}>>([]);
     const [selectedMcpTools, setSelectedMcpTools] = useState<string[]>([]);
     const [mcpToolsCatalog, setMcpToolsCatalog] = useState<McpToolItem[]>([]);
     const [isSettingsSyncing, setIsSettingsSyncing] = useState<boolean>(false);
@@ -190,6 +192,16 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                             setCurrentModel(list[0]);
                         }
                     })
+                    .then(async () => {
+                        try {
+                            const cfg = await getConfig(currentUser, controller.signal);
+                            const labeled = Array.isArray((cfg as any).available_models_labeled) ? (cfg as any).available_models_labeled : [];
+                            const items = labeled.map((m: any) => ({ label: String(m.label || m.id), id: String(m.id || '') })).filter((x: any) => x.id);
+                            setAvailableModelsLabeled(items.length ? items : availableModels.map(id => ({ label: id, id })));
+                        } catch {
+                            setAvailableModelsLabeled(availableModels.map(id => ({ label: id, id })));
+                        }
+                    })
                     .catch(() => {});
                 const toolsPromise = getMcpToolsCatalog(currentUser, controller.signal)
                     .then(res => {
@@ -222,7 +234,19 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                             }
                         } catch {}
                     });
-                await Promise.all([modelsPromise, toolsPromise, stdioPromise]);
+                const voicesPromise = getVoicesCatalog(currentUser, controller.signal)
+                    .then(async () => {
+                        try {
+                            const cfg = await getConfig(currentUser, controller.signal);
+                            const labeled = Array.isArray((cfg as any).available_voices_labeled) ? (cfg as any).available_voices_labeled : [];
+                            const items = labeled.map((v: any) => ({ label: String(v.label || v.id), id: String(v.id || '') })).filter((x: any) => x.id);
+                            setAvailableVoicesLabeled(items);
+                        } catch {
+                            setAvailableVoicesLabeled([]);
+                        }
+                    })
+                    .catch(() => {});
+                await Promise.all([modelsPromise, toolsPromise, stdioPromise, voicesPromise]);
             } catch {}
         };
         loadCatalogs();
@@ -1058,7 +1082,8 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                     currentVoice={currentVoice}
                     onModelChange={handleModelChange}
                     onVoiceChange={handleVoiceChange}
-                    availableModels={availableModels}
+                    availableModelsLabeled={availableModelsLabeled}
+                    availableVoicesLabeled={availableVoicesLabeled}
                     queryMode={queryMode}
                     mcpToolsCatalog={mcpToolsCatalog}
                     selectedMcpTools={selectedMcpTools}
