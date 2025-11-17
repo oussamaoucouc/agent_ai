@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { UploadedFile, Session, TTSVoice, QueryMode } from '../types';
 import * as storage from '../services/storageService';
-import { getVoicesCatalog, getMcpToolsCatalog, setMcpTools, getSessionSettings } from '../services/apiService';
+import { getVoicesCatalog } from '../services/apiService';
 import { McpToolItem } from '../types';
 import { DocumentIcon, UploadIcon, SpinnerIcon, CheckIcon, ErrorIcon, PlusIcon, LogoutIcon, ChatIcon, CloseIcon, EditIcon, TrashIcon, CubeIcon, SpeakerIcon } from './icons';
 
@@ -24,6 +24,10 @@ interface SidebarProps {
     onVoiceChange: (voice: TTSVoice) => void;
     availableModels?: string[];
     queryMode: QueryMode;
+    mcpToolsCatalog: McpToolItem[];
+    selectedMcpTools: string[];
+    onSelectedMcpToolsChange: (labels: string[]) => void;
+    isSettingsSyncing?: boolean;
 }
 
 const StatusIcon: React.FC<{ status: UploadedFile['status'] }> = ({ status }) => {
@@ -71,7 +75,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     currentVoice,
     onVoiceChange,
     availableModels,
-    queryMode
+    queryMode,
+    mcpToolsCatalog,
+    selectedMcpTools,
+    onSelectedMcpToolsChange,
+    isSettingsSyncing = false,
 }) => {
     const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
     const [sessionName, setSessionName] = useState('');
@@ -87,12 +95,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     // Voice catalog state and loader (single dynamic list)
     const [voices, setVoices] = useState<string[]>(DEFAULT_VOICES);
-
-    // MCP tools catalog and per-user selection
-    const [mcpTools, setMcpToolsCatalog] = useState<McpToolItem[]>([]);
-    const [selectedMcpToolLabels, setSelectedMcpToolLabels] = useState<string[]>([]);
-    const canSelectTools = queryMode === 'tools';
-    const canUploadDocs = queryMode === 'direct';
+    const canSelectTools = queryMode === 'tools' && !isSettingsSyncing;
+    const canUploadDocs = queryMode !== 'tools'; // Changed logic to be more permissive
 
     useEffect(() => {
         const controller = new AbortController();
@@ -108,59 +112,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 console.warn('Failed to load voices catalog, using defaults');
             }
         };
-        const loadMcpTools = async () => {
-            try {
-                const userId = storage.getCurrentUser() || '';
-                if (!userId) return;
-                const res = await getMcpToolsCatalog(userId, controller.signal);
-                const items = Array.isArray(res.tools) ? res.tools : [];
-                setMcpToolsCatalog(items);
-            } catch (e) {
-                console.warn('Failed to load MCP tools catalog');
-            }
-        };
         loadVoices();
-        loadMcpTools();
         return () => controller.abort();
     }, []);
 
-    // Load currently selected MCP tools for this user/session
-    useEffect(() => {
-        const controller = new AbortController();
-        const loadSessionSettings = async () => {
-            try {
-                const userId = storage.getCurrentUser() || '';
-                const sessionId = activeSessionId || storage.getActiveSessionId() || '';
-                if (!userId || !sessionId) return;
-                const res = await getSessionSettings(userId, sessionId, controller.signal);
-                const urls = Array.isArray(res.mcp_tools_urls) ? res.mcp_tools_urls : [];
-                // Map URLs to labels for display selection state
-                const byUrl = new Map((mcpTools || []).map(t => [t.url, t.label]));
-                const labels = urls.map(u => byUrl.get(u) || u);
-                setSelectedMcpToolLabels(labels);
-            } catch (e) {
-                // ignore
-            }
-        };
-        loadSessionSettings();
-        return () => controller.abort();
-        // re-run when session changes or catalog fetched
-    }, [activeSessionId, mcpTools.length]);
+    const toggleMcpTool = (label: string) => {
+        if (!canSelectTools) return;
 
-    const toggleMcpTool = async (label: string) => {
-        if (!canSelectTools) return; // gate selection unless Tools mode is active
-        const userId = storage.getCurrentUser() || '';
-        const sessionId = activeSessionId || storage.getActiveSessionId() || '';
-        if (!userId || !sessionId) return;
-        const nextLabels = selectedMcpToolLabels.includes(label)
-            ? selectedMcpToolLabels.filter(l => l !== label)
-            : [...selectedMcpToolLabels, label];
-        setSelectedMcpToolLabels(nextLabels);
-        try {
-            await setMcpTools({ user_id: userId, session_id: sessionId, tool_labels: nextLabels });
-        } catch (e) {
-            console.warn('Failed to persist MCP tools selection');
-        }
+        const nextLabels = selectedMcpTools.includes(label)
+            ? selectedMcpTools.filter(l => l !== label)
+            : [...selectedMcpTools, label];
+        onSelectedMcpToolsChange(nextLabels);
     };
 
 
@@ -222,7 +184,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     onClick={() => {
                                         if (renamingSessionId !== session.id) {
                                             onSelectSession(session.id);
-                                            onClose();
+                                            // Only close sidebar on mobile (lg breakpoint is 1024px)
+                                            if (window.innerWidth < 1024) {
+                                                onClose();
+                                            }
                                         }
                                     }}
                                     className={`w-full text-left flex items-center p-2 rounded-lg transition-colors ${
@@ -321,18 +286,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                              </div>
                         </div>
                         {/* Tools multi-select below Voices */}
-                        <div>
+                        <div className={`transition-opacity duration-200 ${isSettingsSyncing ? 'opacity-50 pointer-events-none' : ''}`}>
                             <h3 className="text-sm font-medium text-slate-400 mb-2">Tools</h3>
                             {/* Wrap grid to enable hover tooltip when disabled */}
                             <div className={`relative ${!canSelectTools ? 'group' : ''}`}>
                               <div className="grid grid-cols-2 gap-2">
-                                {mcpTools.map(tool => (
+                                {mcpToolsCatalog.map(tool => (
                                     <button
                                         key={tool.label}
                                         onClick={() => toggleMcpTool(tool.label)}
                                         disabled={!canSelectTools}
                                         className={`px-2 py-1.5 text-xs rounded-lg transition-colors border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-500 ${
-                                            selectedMcpToolLabels.includes(tool.label)
+                                            selectedMcpTools.includes(tool.label)
                                                 ? 'bg-sky-500 text-white font-bold border-sky-500'
                                                 : `${canSelectTools ? 'bg-slate-700/50 hover:bg-slate-700' : 'bg-slate-800/50 opacity-50 cursor-not-allowed'} text-slate-300 border-slate-600`
                                         }`}
@@ -344,7 +309,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               </div>
                               {!canSelectTools && (
                                 <div className="pointer-events-none absolute -bottom-10 left-0 bg-gray-900/90 text-white text-xs px-2 py-1 rounded-md shadow-md opacity-0 group-hover:opacity-100 backdrop-blur-sm">
-                                  Switch to Tools mode to enable tool selection
+                                  {isSettingsSyncing ? 'Loading...' : 'Switch to Tools mode to enable tool selection'}
                                 </div>
                               )}
                             </div>
@@ -373,13 +338,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       </label>
                       {!canUploadDocs && (
                         <div className="pointer-events-none absolute -bottom-10 left-0 bg-gray-900/90 text-white text-xs px-2 py-1 rounded-md shadow-md opacity-0 group-hover:opacity-100 backdrop-blur-sm">
-                          Switch to Document Search mode to enable uploads
+                          Switch to Agent or Document Search mode to enable uploads
                         </div>
                       )}
                     </div>
                     <input id="file-upload" type="file" accept=".pdf,.doc,.docx,.txt,.md,.csv" className="hidden" onChange={onFileChange} multiple disabled={!canUploadDocs} />
                     {!canUploadDocs && (
-                        <p className="mt-2 text-xs text-slate-500">Switch to Document Search mode to Upload Document.</p>
+                        <p className="mt-2 text-xs text-slate-500">Switch to Agent or Document Search mode to Upload Document.</p>
                     )}
                 
                     <h3 className="text-md font-semibold text-slate-300 mt-4 mb-2">Uploaded Files</h3>

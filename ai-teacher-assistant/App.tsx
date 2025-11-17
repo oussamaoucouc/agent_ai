@@ -11,9 +11,9 @@ import { AddUserPage } from './components/AddUserPage';
 import { EditUserPage } from './components/EditUserPage';
 import { Modal } from './components/Modal';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
-import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, listUserStats, createUser, deleteUser, loginUser, updateUser, getModelsCatalog, getSessionSettings } from './services/apiService';
+import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, listUserStats, createUser, deleteUser, loginUser, updateUser, getModelsCatalog, getSessionSettings, getMcpToolsCatalog, setMcpTools } from './services/apiService';
 import * as storage from './services/storageService';
-import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice, QueryMode, AdminUser } from './types';
+import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice, QueryMode, AdminUser, McpToolItem } from './types';
 import { API_BASE_URL } from './constants';
 
 // Default delete-after-serve delay (seconds) must match backend config unless overridden per request
@@ -81,13 +81,17 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
     const [activeAudio, setActiveAudio] = useState<HTMLAudioElement | null>(null);
     const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
     const [spokenResponses, setSpokenResponses] = useState<boolean>(true);
-    const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(window.innerWidth >= 1024);
+    const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(storage.getSidebarOpen());
     const [queryMode, setQueryMode] = useState<QueryMode>('agent');
 
     // New states for model and voice selection
     const [currentModel, setCurrentModel] = useState<string>('gemini-2.5-pro');
     const [availableModels, setAvailableModels] = useState<string[]>([]);
     const [currentVoice, setCurrentVoice] = useState<TTSVoice>(TTSVoice.BF_EMMA);
+    const [selectedMcpTools, setSelectedMcpTools] = useState<string[]>([]);
+    const [mcpToolsCatalog, setMcpToolsCatalog] = useState<McpToolItem[]>([]);
+    const [isSettingsSyncing, setIsSettingsSyncing] = useState<boolean>(false);
+
 
     const [modalConfig, setModalConfig] = useState<{
         isOpen: boolean;
@@ -148,6 +152,10 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
         }
         setIsInitialized(true);
     }, []);
+    
+    useEffect(() => {
+        storage.setSidebarOpen(isSidebarOpen);
+    }, [isSidebarOpen]);
 
     useEffect(() => {
         const persistedMode = storage.getQueryMode();
@@ -166,23 +174,28 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
         }
     }, [isAdmin]);
 
-    // Fetch public model catalog so admin-added models are visible to all users
+    // Fetch public model and tools catalog so admin-added models/tools are visible to all users
     useEffect(() => {
         const controller = new AbortController();
-        const loadModels = async () => {
+        const loadCatalogs = async () => {
             if (!currentUser) return;
             try {
+                // Models
                 const { available_models } = await getModelsCatalog(currentUser, controller.signal);
                 const list = Array.isArray(available_models) ? available_models : [];
                 setAvailableModels(list);
                 if (list.length > 0 && !list.includes(currentModel)) {
                     setCurrentModel(list[0]);
                 }
+                 // Tools
+                const res = await getMcpToolsCatalog(currentUser, controller.signal);
+                const items = Array.isArray(res.tools) ? res.tools : [];
+                setMcpToolsCatalog(items);
             } catch (err) {
-                console.error('Failed to load models catalog:', err);
+                console.error('Failed to load catalogs:', err);
             }
         };
-        loadModels();
+        loadCatalogs();
         return () => controller.abort();
     }, [currentUser]);
 
@@ -359,6 +372,39 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
         }
     }, [currentUser, isAdmin]);
 
+    // This effect syncs the active session's settings (model, voice, tools)
+    // It runs when the active session changes, or when catalogs (like tools) become available.
+    useEffect(() => {
+        if (currentUser && !isAdmin && activeSessionId) {
+            setIsSettingsSyncing(true);
+            (async () => {
+                try {
+                    const settings = await getSessionSettings(currentUser, activeSessionId);
+                    setCurrentModel(settings.model_id);
+                    setCurrentVoice(settings.voice as TTSVoice);
+
+                    // If the tool catalog is loaded, map the saved tool URLs back to labels for the UI.
+                    // Otherwise, clear the selection; this effect will re-run when the catalog becomes available.
+                    if (mcpToolsCatalog.length > 0) {
+                        const urls = Array.isArray(settings.mcp_tools_urls) ? settings.mcp_tools_urls : [];
+                        const byUrl = new Map(mcpToolsCatalog.map(t => [t.url, t.label]));
+                        const labels = urls.map(u => byUrl.get(u)).filter((l): l is string => !!l);
+                        setSelectedMcpTools(labels);
+                    } else {
+                        setSelectedMcpTools([]);
+                    }
+                } catch (e) {
+                    console.warn('Failed to sync session settings.', e);
+                    // On error, clear the tools to prevent showing stale state from a previous session.
+                    setSelectedMcpTools([]);
+                } finally {
+                    setIsSettingsSyncing(false);
+                }
+            })();
+        }
+    }, [currentUser, isAdmin, activeSessionId, mcpToolsCatalog]);
+
+
     // Save sessions whenever messages change for the active session
     useEffect(() => {
         if (currentUser && !isAdmin && activeSessionId) {
@@ -500,37 +546,18 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
             setActiveSessionId(newSession.id);
             storage.setActiveSessionId(newSession.id);
             setMessages(newSession.messages);
-            // Load per-session settings to reflect model/voice in sidebar
-            try {
-                const settings = await getSessionSettings(currentUser, newSession.id);
-                setCurrentModel(settings.model_id);
-                // Cast voice string to TTSVoice where possible
-                setCurrentVoice(settings.voice as TTSVoice);
-            } catch (e) {
-                console.warn('Failed to load new session settings, using defaults:', e);
-            }
         } catch (err) {
             console.error('Failed to create session:', err);
         }
     };
 
-    const handleSelectSession = async (sessionId: string, currentSessions: Session[]) => {
+    const handleSelectSession = (sessionId: string, currentSessions: Session[]) => {
         handleStopAudio();
         const session = currentSessions.find(s => s.id === sessionId);
         if (session) {
             setActiveSessionId(session.id);
             storage.setActiveSessionId(session.id);
             setMessages(session.messages);
-            // Fetch persisted per-session settings
-            if (currentUser) {
-                try {
-                    const settings = await getSessionSettings(currentUser, session.id);
-                    setCurrentModel(settings.model_id);
-                    setCurrentVoice(settings.voice as TTSVoice);
-                } catch (e) {
-                    console.warn('Failed to load session settings; keeping current selections.', e);
-                }
-            }
         }
     };
     
@@ -559,6 +586,19 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                 }
             }
         );
+    };
+
+    const handleSelectedMcpToolsChange = async (labels: string[]) => {
+        setSelectedMcpTools(labels);
+
+        if (currentUser && activeSessionId) {
+            try {
+                await setMcpTools({ user_id: currentUser, session_id: activeSessionId, tool_labels: labels });
+            } catch (e) {
+                console.warn('Failed to persist MCP tools selection', e);
+                showAlert('Sync Error', 'Could not save your tool selection. Please try again.');
+            }
+        }
     };
 
     const handleRenameSession = async (sessionId: string, newName: string) => {
@@ -976,6 +1016,10 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                     onVoiceChange={handleVoiceChange}
                     availableModels={availableModels}
                     queryMode={queryMode}
+                    mcpToolsCatalog={mcpToolsCatalog}
+                    selectedMcpTools={selectedMcpTools}
+                    onSelectedMcpToolsChange={handleSelectedMcpToolsChange}
+                    isSettingsSyncing={isSettingsSyncing}
                 />
                 <main className={`flex flex-col flex-1 h-screen overflow-hidden transition-all duration-300 ease-in-out ${isSidebarOpen ? 'lg:ml-80' : 'lg:ml-0'}`}>
                     <Header 

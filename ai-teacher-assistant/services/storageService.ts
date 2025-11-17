@@ -20,6 +20,7 @@ const LS_KEYS = {
   token: 'app.authToken',
   queryMode: 'app.queryMode',
   spokenResponses: 'app.spokenResponses',
+  sidebarOpen: 'app.sidebarOpen',
 };
 
 const hasSessionStorage = (): boolean => {
@@ -163,4 +164,17 @@ export const getSpokenResponses = (): boolean => {
 
 export const setSpokenResponses = (isEnabled: boolean) => {
     lsSet(LS_KEYS.spokenResponses, String(isEnabled));
+};
+
+export const getSidebarOpen = (): boolean => {
+    const persisted = lsGet(LS_KEYS.sidebarOpen);
+    // Default to true on desktop if not set, false on mobile
+    if (persisted === null) {
+        return window.innerWidth >= 1024;
+    }
+    return persisted === 'true';
+};
+
+export const setSidebarOpen = (isOpen: boolean) => {
+    lsSet(LS_KEYS.sidebarOpen, String(isOpen));
 };
