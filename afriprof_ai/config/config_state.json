@@ -1,5 +1,5 @@
 {
-  "model_id": "ai/granite-4.0-h-tiny:7B-ctx",
+  "model_id": "ai/granite-4.0-nano:latest",
   "voice": "am_adam",
   "ollama_base_url": "http://localhost:12434",
   "openai_api_key_set": true,
@@ -10,12 +10,22 @@
   "mcp_stdio_commands": [],
   "mcp_stdio_tools": [],
   "available_models": [
-    "ai/granite-4.0-h-tiny:7B-ctx"
+    "ai/granite-4.0-h-tiny:7B-ctx",
+    "ai/granite-4.0-nano:latest",
+    "ai/granite-4.0-micro:3B_ctx"
   ],
   "available_models_labeled": [
     {
       "label": "AI Context",
       "id": "ai/granite-4.0-h-tiny:7B-ctx"
+    },
+    {
+      "label": "AI Low context",
+      "id": "ai/granite-4.0-nano:latest"
+    },
+    {
+      "label": "Granite Micro",
+      "id": "ai/granite-4.0-micro:3B_ctx"
     }
   ],
   "available_voices": [
