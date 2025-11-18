@@ -274,12 +274,12 @@ export const cancelSession = async (request: CancelRequest): Promise<{status: st
 };
 
 // --- User management API ---
-export const listUserStats = async (signal?: AbortSignal): Promise<Array<{ id: string; username: string; role: string; sessions: number; documents: number; mcpTools: number; createdAt: string }>> => {
+export const listUserStats = async (signal?: AbortSignal): Promise<Array<{ id: string; username: string; role: string; sessions: number; documents: number; mcpTools: number; mcpWebTools: number; mcpLocalTools: number; createdAt: string }>> => {
     const url = new URL(`${API_BASE_URL}/users/stats`);
     // Add cache-busting param to avoid stale data across browsers
     url.searchParams.set('ts', Date.now().toString());
     const response = await fetch(url, { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
-    return handleResponse<Array<{ id: string; username: string; role: string; sessions: number; documents: number; mcpTools: number; createdAt: string }>>(response);
+    return handleResponse<Array<{ id: string; username: string; role: string; sessions: number; documents: number; mcpTools: number; mcpWebTools: number; mcpLocalTools: number; createdAt: string }>>(response);
 };
 
 export const createUser = async (username: string, password: string, role: 'admin' | 'user', signal?: AbortSignal): Promise<AdminUser> => {
@@ -291,7 +291,7 @@ export const createUser = async (username: string, password: string, role: 'admi
     });
     const u = await handleResponse<{ id: string; username: string; role: string; createdAt: string }>(response);
     // New users have zero sessions/documents initially
-    return { id: u.id, name: u.username, role: u.role as 'admin' | 'user', sessions: 0, documents: 0, mcpTools: 0, createdAt: u.createdAt };
+    return { id: u.id, name: u.username, role: u.role as 'admin' | 'user', sessions: 0, documents: 0, mcpTools: 0, mcpWebTools: 0, mcpLocalTools: 0, createdAt: u.createdAt };
 };
 
 export const updateUser = async (user_id: string, payload: { password?: string; role?: 'admin' | 'user' }, signal?: AbortSignal): Promise<AdminUser> => {
@@ -303,7 +303,7 @@ export const updateUser = async (user_id: string, payload: { password?: string; 
     });
     const u = await handleResponse<{ id: string; username: string; role: string; createdAt: string }>(response);
     // Caller should refresh stats afterward to get counts
-    return { id: u.id, name: u.username, role: u.role as 'admin' | 'user', sessions: 0, documents: 0, mcpTools: 0, createdAt: u.createdAt };
+    return { id: u.id, name: u.username, role: u.role as 'admin' | 'user', sessions: 0, documents: 0, mcpTools: 0, mcpWebTools: 0, mcpLocalTools: 0, createdAt: u.createdAt };
 };
 
 export const deleteUser = async (user_id: string, signal?: AbortSignal): Promise<{status: string}> => {

@@ -83,6 +83,8 @@ class UserStatsModel(BaseModel):
     sessions: int
     documents: int
     mcpTools: int
+    mcpWebTools: int
+    mcpLocalTools: int
     createdAt: str
 
 
@@ -397,16 +399,25 @@ def user_stats(request: Request, db: SASession = Depends(get_db)):
                         docs_count += len([fpath for fpath in os.listdir(d) if os.path.isfile(os.path.join(d, fpath))])
             except Exception:
                 pass
-            # Count selected MCP tools from session settings (JSON array of URLs)
+            # Count selected MCP tools from session settings
             tools_count = 0
+            web_tools_count = 0
+            local_tools_count = 0
             try:
                 settings = db.query(session_mod.SessionSettingsDB).filter(session_mod.SessionSettingsDB.user_id == u.id).first()
                 if settings and settings.mcp_tools_urls:
                     parsed = _json.loads(settings.mcp_tools_urls)
                     if isinstance(parsed, list):
-                        tools_count = len([str(x).strip() for x in parsed if isinstance(x, str) and str(x).strip()])
+                        web_tools_count = len([str(x).strip() for x in parsed if isinstance(x, str) and str(x).strip()])
+                if settings and settings.mcp_stdio_commands:
+                    parsed_stdio = _json.loads(settings.mcp_stdio_commands)
+                    if isinstance(parsed_stdio, list):
+                        local_tools_count = len([str(x).strip() for x in parsed_stdio if isinstance(x, str) and str(x).strip()])
+                tools_count = web_tools_count + local_tools_count
             except Exception:
                 tools_count = 0
+                web_tools_count = 0
+                local_tools_count = 0
             stats.append(UserStatsModel(
                 id=u.id,
                 username=u.username,
@@ -414,6 +425,8 @@ def user_stats(request: Request, db: SASession = Depends(get_db)):
                 sessions=sess_count,
                 documents=docs_count,
                 mcpTools=tools_count,
+                mcpWebTools=web_tools_count,
+                mcpLocalTools=local_tools_count,
                 createdAt=u.created_at.isoformat()
             ))
         return stats

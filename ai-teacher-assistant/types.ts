@@ -51,6 +51,8 @@ export interface AdminUser {
     sessions: number;
     documents: number;
     mcpTools: number;
+    mcpWebTools?: number;
+    mcpLocalTools?: number;
     createdAt: string;
 }
 

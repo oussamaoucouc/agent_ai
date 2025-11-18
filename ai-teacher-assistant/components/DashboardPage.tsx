@@ -28,7 +28,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ users, onLogout, o
         totalUsers: users.length,
         totalSessions: users.reduce((acc, user) => acc + user.sessions, 0),
         totalDocuments: users.reduce((acc, user) => acc + user.documents, 0),
-        totalMcpTools: users.reduce((acc, user) => acc + (user.mcpTools ?? 0), 0),
+        totalWebTools: users.reduce((acc, user) => acc + (user.mcpWebTools ?? 0), 0),
+        totalLocalTools: users.reduce((acc, user) => acc + (user.mcpLocalTools ?? 0), 0),
     }), [users]);
 
     const filteredUsers = useMemo(() => 
@@ -82,7 +83,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ users, onLogout, o
                             <StatCard title="Total Users" value={stats.totalUsers} icon={<UserOutlineIcon className="w-8 h-8 text-sky-400" />} />
                             <StatCard title="Total Sessions" value={stats.totalSessions} icon={<ChatIcon className="w-8 h-8 text-teal-400" />} />
                             <StatCard title="Total Documents" value={stats.totalDocuments} icon={<FolderOpenIcon className="w-8 h-8 text-indigo-400" />} />
-                            <StatCard title="Total MCP Tools" value={stats.totalMcpTools} icon={<SettingsIcon className="w-8 h-8 text-purple-400" />} />
+                            <StatCard title="Total Web Tools" value={stats.totalWebTools} icon={<SettingsIcon className="w-8 h-8 text-purple-400" />} />
+                            <StatCard title="Total Local Tools" value={stats.totalLocalTools} icon={<SettingsIcon className="w-8 h-8 text-pink-400" />} />
                         </div>
                     </section>
                     
@@ -120,7 +122,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ users, onLogout, o
                                         <th className="p-4">Role</th>
                                         <th className="p-4">Sessions</th>
                                         <th className="p-4">Documents</th>
-                                        <th className="p-4">Tools</th>
+                                        <th className="p-4">Web Tools</th>
+                                        <th className="p-4">Local Tools</th>
                                         <th className="p-4">Joined On</th>
                                         <th className="p-4 text-right">Actions</th>
                                     </tr>
@@ -132,7 +135,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ users, onLogout, o
                                             <td className="p-4"><RoleBadge role={user.role} /></td>
                                             <td className="p-4">{user.sessions}</td>
                                             <td className="p-4">{user.documents}</td>
-                                            <td className="p-4">{user.mcpTools ?? 0}</td>
+                                            <td className="p-4">{user.mcpWebTools ?? 0}</td>
+                                            <td className="p-4">{user.mcpLocalTools ?? 0}</td>
                                             <td className="p-4 text-sm text-slate-400">{new Date(user.createdAt).toLocaleDateString()}</td>
                                             <td className="p-4 text-right">
                                                 <button
