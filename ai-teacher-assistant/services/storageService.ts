@@ -21,6 +21,7 @@ const LS_KEYS = {
   queryMode: 'app.queryMode',
   spokenResponses: 'app.spokenResponses',
   sidebarOpen: 'app.sidebarOpen',
+  configUpdatedTs: 'app.configUpdatedTs',
 };
 
 const hasSessionStorage = (): boolean => {
@@ -91,6 +92,7 @@ export const clearCurrentUser = () => {
   lsRemove(LS_KEYS.activeSession);
   lsRemove(LS_KEYS.adminView);
   lsRemove(LS_KEYS.token);
+  lsRemove(LS_KEYS.configUpdatedTs);
 };
 
 export const getCurrentUserRole = (): 'admin' | 'user' | null => {
@@ -176,5 +178,18 @@ export const getSidebarOpen = (): boolean => {
 };
 
 export const setSidebarOpen = (isOpen: boolean) => {
-    lsSet(LS_KEYS.sidebarOpen, String(isOpen));
+  lsSet(LS_KEYS.sidebarOpen, String(isOpen));
+};
+
+export const getConfigUpdatedTs = (): string | null => {
+  return lsGet(LS_KEYS.configUpdatedTs);
+};
+
+export const setConfigUpdatedTs = (ts: string) => {
+  lsSet(LS_KEYS.configUpdatedTs, ts);
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('configUpdated', { detail: ts }));
+    }
+  } catch {}
 };

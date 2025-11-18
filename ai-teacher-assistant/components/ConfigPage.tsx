@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ConfigResponse } from '../types';
-import { getConfig, updateConfig } from '../services/apiService';
+import { getConfig, updateConfig, setModel, setVoice } from '../services/apiService';
 import * as storage from '../services/storageService';
 import { PlusIcon, TrashIcon } from './icons';
 
@@ -13,8 +13,6 @@ interface ConfigPageProps {
 const inputBaseStyle = "w-full px-3 py-2 rounded-md bg-slate-800/50 text-slate-200 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-colors";
 const buttonAddIconStyle = "p-2 bg-sky-600 hover:bg-sky-700 text-white rounded-md transition-colors disabled:bg-slate-600 disabled:cursor-not-allowed flex-shrink-0";
 const buttonRemoveIconStyle = "p-2 text-slate-400 bg-slate-800/40 border border-slate-600/50 hover:bg-red-500/20 hover:text-white rounded-md transition-colors flex-shrink-0";
-// Read-only input style that supports easy full selection
-const readOnlyInputStyle = `${inputBaseStyle} font-mono text-sm truncate cursor-text`;
 
 
 export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert }) => {
@@ -24,11 +22,9 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [openaiApiKey, setOpenaiApiKey] = useState<string>('');
   const [newServer, setNewServer] = useState<{ label: string; url: string }>({ label: '', url: '' });
-  const [newModel, setNewModel] = useState<string>('');
-  const [newModelLabel, setNewModelLabel] = useState<string>('');
-  const [newVoice, setNewVoice] = useState<string>('');
-  const [newVoiceLabel, setNewVoiceLabel] = useState<string>('');
-  const [newStdioCommand, setNewStdioCommand] = useState<string>('');
+  const [newModel, setNewModel] = useState<{ label: string; id: string }>({ label: '', id: '' });
+  const [newVoice, setNewVoice] = useState<{ label: string; id: string }>({ label: '', id: '' });
+  const [newStdioTool, setNewStdioTool] = useState<{ label: string; command: string }>({ label: '', command: '' });
 
   const userId = storage.getCurrentUser() || '';
 
@@ -38,6 +34,9 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
       try {
         setLoading(true);
         const res = await getConfig(userId, controller.signal);
+        // Ensure labeled lists exist if only unlabeled lists are present
+        res.available_models_labeled = (res.available_models_labeled && res.available_models_labeled.length > 0) ? res.available_models_labeled : (res.available_models || []).map(id => ({ label: id, id }));
+        res.available_voices_labeled = (res.available_voices_labeled && res.available_voices_labeled.length > 0) ? res.available_voices_labeled : (res.available_voices || []).map(id => ({ label: id, id }));
         setConfig(res);
         setError(null);
       } catch (err: any) {
@@ -63,14 +62,27 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
         openai_api_key: openaiApiKey || undefined,
         mcp_transport: config.mcp_transport,
         mcp_stdio_commands: config.mcp_stdio_commands || [],
+        mcp_stdio_tools: config.mcp_stdio_tools || [],
         available_models: config.available_models || [],
-        available_models_labeled: (config.available_models_labeled && config.available_models_labeled.length > 0) ? config.available_models_labeled : (config.available_models || []).map(id => ({ label: id, id })),
+        available_models_labeled: config.available_models_labeled || [],
         available_voices: config.available_voices || [],
-        available_voices_labeled: (config.available_voices_labeled && config.available_voices_labeled.length > 0) ? config.available_voices_labeled : (config.available_voices || []).map(id => ({ label: id, id })),
+        available_voices_labeled: config.available_voices_labeled || [],
         mcp_servers: config.mcp_servers || [],
       };
       const res = await updateConfig(payload);
       setConfig(res);
+      try {
+        const sessionId = storage.getActiveSessionId();
+        if (sessionId) {
+          if (res.model) {
+            await setModel({ user_id: userId, session_id: sessionId, model: res.model });
+          }
+          if (res.voice) {
+            await setVoice({ user_id: userId, session_id: sessionId, voice: res.voice as any });
+          }
+        }
+        storage.setConfigUpdatedTs(String(Date.now()));
+      } catch {}
       onShowAlert('Configuration saved successfully.', 'Success');
     } catch (err: any) {
       console.error('Failed to save config:', err);
@@ -83,8 +95,82 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
   const updateField = (field: keyof ConfigResponse, value: any) => {
     setConfig(prev => prev ? { ...prev, [field]: value } : prev);
   };
+  
+  // --- Synced State Updaters ---
 
-  // Voice options now managed via available_voices in runtime config
+  const updateModelsList = (newLabeledList: Array<{label: string; id: string}>) => {
+    setConfig(prev => {
+        if (!prev) return null;
+        const newUnlabeledList = newLabeledList.map(m => m.id);
+        return {
+            ...prev,
+            available_models_labeled: newLabeledList,
+            available_models: newUnlabeledList
+        };
+    });
+  };
+
+  const updateVoicesList = (newLabeledList: Array<{label: string; id: string}>) => {
+    setConfig(prev => {
+        if (!prev) return null;
+        const newUnlabeledList = newLabeledList.map(v => v.id);
+        return {
+            ...prev,
+            available_voices_labeled: newLabeledList,
+            available_voices: newUnlabeledList
+        };
+    });
+  };
+
+  // --- Handlers ---
+
+  const addModel = () => {
+    const id = newModel.id.trim();
+    const label = newModel.label.trim() || id;
+    if (!id || !config) return;
+    const currentLabeled = config.available_models_labeled || [];
+    if (currentLabeled.some(m => m.id === id)) {
+      onShowAlert(`Model with ID '${id}' already exists.`, 'Duplicate Model');
+      return;
+    }
+    updateModelsList([...currentLabeled, { label, id }]);
+    setNewModel({ label: '', id: '' });
+  };
+  
+  const removeModel = (index: number) => {
+    if (!config) return;
+    updateModelsList((config.available_models_labeled || []).filter((_, i) => i !== index));
+  };
+
+  const updateModel = (index: number, field: 'label' | 'id', value: string) => {
+    if (!config) return;
+    const newList = (config.available_models_labeled || []).map((m, i) => (i === index ? { ...m, [field]: value } : m));
+    updateModelsList(newList);
+  };
+
+  const addVoice = () => {
+    const id = newVoice.id.trim();
+    const label = newVoice.label.trim() || id;
+    if (!id || !config) return;
+    const currentLabeled = config.available_voices_labeled || [];
+    if (currentLabeled.some(v => v.id === id)) {
+      onShowAlert(`Voice with ID '${id}' already exists.`, 'Duplicate Voice');
+      return;
+    }
+    updateVoicesList([...currentLabeled, { label, id }]);
+    setNewVoice({ label: '', id: '' });
+  };
+
+  const removeVoice = (index: number) => {
+    if (!config) return;
+    updateVoicesList((config.available_voices_labeled || []).filter((_, i) => i !== index));
+  };
+  
+  const updateVoice = (index: number, field: 'label' | 'id', value: string) => {
+    if (!config) return;
+    const newList = (config.available_voices_labeled || []).map((v, i) => (i === index ? { ...v, [field]: value } : v));
+    updateVoicesList(newList);
+  };
 
   const addServer = () => {
     const label = newServer.label.trim();
@@ -94,44 +180,43 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
     setNewServer({ label: '', url: '' });
   };
 
-  const updateServerLabel = (index: number, label: string) => {
+  const updateServer = (index: number, field: 'label' | 'url', value: string) => {
     setConfig(prev => prev ? {
       ...prev,
-      mcp_servers: (prev.mcp_servers || []).map((srv, i) => i === index ? { ...srv, label } : srv)
-    } : prev);
-  };
-
-  const updateServerUrl = (index: number, url: string) => {
-    setConfig(prev => prev ? {
-      ...prev,
-      mcp_servers: (prev.mcp_servers || []).map((srv, i) => i === index ? { ...srv, url } : srv)
+      mcp_servers: (prev.mcp_servers || []).map((srv, i) => i === index ? { ...srv, [field]: value } : srv)
     } : prev);
   };
 
   const removeServer = (index: number) => {
     setConfig(prev => prev ? { ...prev, mcp_servers: (prev.mcp_servers || []).filter((_, i) => i !== index) } : prev);
   };
-  
-  const addModel = () => {
-    const model = newModel.trim();
-    if (!model) return;
-    setConfig(prev => prev ? { ...prev, available_models: Array.from(new Set([...(prev.available_models || []), model])) } : prev);
-    setNewModel('');
+
+  const addStdioTool = () => {
+    const command = newStdioTool.command.trim();
+    const label = newStdioTool.label.trim() || command;
+    if (!command) return;
+    setConfig(prev => {
+      if (!prev) return null;
+      const newTools = [...(prev.mcp_stdio_tools || []), { label, command }];
+      return { ...prev, mcp_stdio_tools: newTools };
+    });
+    setNewStdioTool({ label: '', command: '' });
   };
 
-  const removeModel = (index: number) => {
-    setConfig(prev => prev ? { ...prev, available_models: (prev.available_models || []).filter((_, i) => i !== index) } : prev);
+  const updateStdioTool = (index: number, field: 'label' | 'command', value: string) => {
+    setConfig(prev => {
+      if (!prev) return null;
+      const newTools = (prev.mcp_stdio_tools || []).map((tool, i) => i === index ? { ...tool, [field]: value } : tool);
+      return { ...prev, mcp_stdio_tools: newTools };
+    });
   };
 
-  const addVoice = () => {
-    const voice = newVoice.trim();
-    if (!voice) return;
-    setConfig(prev => prev ? { ...prev, available_voices: Array.from(new Set([...(prev.available_voices || []), voice])) } : prev);
-    setNewVoice('');
-  };
-
-  const removeVoice = (index: number) => {
-    setConfig(prev => prev ? { ...prev, available_voices: (prev.available_voices || []).filter((_, i) => i !== index) } : prev);
+  const removeStdioTool = (index: number) => {
+    setConfig(prev => {
+      if (!prev) return null;
+      const newTools = (prev.mcp_stdio_tools || []).filter((_, i) => i !== index);
+      return { ...prev, mcp_stdio_tools: newTools };
+    });
   };
 
   return (
@@ -174,38 +259,19 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                 <div>
                   <span className="block text-sm font-medium text-slate-400 mb-2">Available Models</span>
                   <div className="space-y-2">
-                    {((config.available_models_labeled || []) as Array<{label: string; id: string}>).map((m, idx) => (
-                      <div key={`${m.id}-${idx}`} className="flex items-center gap-3">
-                        <input
-                          type="text"
-                          value={m.label}
-                          onChange={(e) => setConfig(prev => prev ? { ...prev, available_models_labeled: (prev.available_models_labeled || []).map((mm, i) => i === idx ? { ...mm, label: e.target.value } : mm) } : prev)}
-                          className={`w-40 ${inputBaseStyle}`}
-                          onFocus={(e) => e.currentTarget.select()}
-                          onMouseUp={(e) => e.preventDefault()}
-                        />
-                        <input
-                          type="text"
-                          value={m.id}
-                          onChange={(e) => setConfig(prev => prev ? { ...prev, available_models_labeled: (prev.available_models_labeled || []).map((mm, i) => i === idx ? { ...mm, id: e.target.value } : mm) } : prev)}
-                          className={`flex-1 ${inputBaseStyle}`}
-                          onFocus={(e) => e.currentTarget.select()}
-                          onMouseUp={(e) => e.preventDefault()}
-                        />
-                        <button onClick={() => setConfig(prev => prev ? { ...prev, available_models_labeled: (prev.available_models_labeled || []).filter((_, i) => i !== idx) } : prev)} className={buttonRemoveIconStyle} title="Remove Model">
+                    {(config.available_models_labeled || []).map((m, idx) => (
+                      <div key={idx} className="flex items-center gap-3">
+                        <input type="text" value={m.label} onChange={(e) => updateModel(idx, 'label', e.target.value)} className={`w-40 ${inputBaseStyle}`} />
+                        <input type="text" value={m.id} onChange={(e) => updateModel(idx, 'id', e.target.value)} className={`flex-1 ${inputBaseStyle}`} />
+                        <button onClick={() => removeModel(idx)} className={buttonRemoveIconStyle} title="Remove Model">
                             <TrashIcon className="w-5 h-5" />
                         </button>
                       </div>
                     ))}
                     <div className="flex items-center gap-3 pt-2">
-                      <input type="text" value={newModelLabel} onChange={(e) => setNewModelLabel(e.target.value)} placeholder="Label" className={`w-40 ${inputBaseStyle}`} />
-                      <input type="text" value={newModel} onChange={(e) => setNewModel(e.target.value)} placeholder="Model id" className={`flex-1 ${inputBaseStyle}`} />
-                      <button onClick={() => {
-                        const id = newModel.trim(); const label = newModelLabel.trim() || newModel.trim();
-                        if (!id) return;
-                        setConfig(prev => prev ? { ...prev, available_models_labeled: [ ...(prev.available_models_labeled || []), { label, id } ] } : prev);
-                        setNewModel(''); setNewModelLabel('');
-                      }} className={buttonAddIconStyle} title="Add Model">
+                      <input type="text" value={newModel.label} onChange={(e) => setNewModel(prev => ({...prev, label: e.target.value}))} placeholder="Label" className={`w-40 ${inputBaseStyle}`} />
+                      <input type="text" value={newModel.id} onChange={(e) => setNewModel(prev => ({...prev, id: e.target.value}))} placeholder="Model id" className={`flex-1 ${inputBaseStyle}`} />
+                      <button onClick={addModel} className={buttonAddIconStyle} title="Add Model">
                           <PlusIcon className="w-5 h-5" />
                       </button>
                     </div>
@@ -214,38 +280,19 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                 <div>
                   <span className="block text-sm font-medium text-slate-400 mb-2">Available Voices</span>
                   <div className="space-y-2">
-                    {((config.available_voices_labeled || []) as Array<{label: string; id: string}>).map((v, idx) => (
-                      <div key={`${v.id}-${idx}`} className="flex items-center gap-3">
-                        <input
-                          type="text"
-                          value={v.label}
-                          onChange={(e) => setConfig(prev => prev ? { ...prev, available_voices_labeled: (prev.available_voices_labeled || []).map((vv, i) => i === idx ? { ...vv, label: e.target.value } : vv) } : prev)}
-                          className={`w-40 ${inputBaseStyle}`}
-                          onFocus={(e) => e.currentTarget.select()}
-                          onMouseUp={(e) => e.preventDefault()}
-                        />
-                        <input
-                          type="text"
-                          value={v.id}
-                          onChange={(e) => setConfig(prev => prev ? { ...prev, available_voices_labeled: (prev.available_voices_labeled || []).map((vv, i) => i === idx ? { ...vv, id: e.target.value } : vv) } : prev)}
-                          className={`flex-1 ${inputBaseStyle}`}
-                          onFocus={(e) => e.currentTarget.select()}
-                          onMouseUp={(e) => e.preventDefault()}
-                        />
-                        <button onClick={() => setConfig(prev => prev ? { ...prev, available_voices_labeled: (prev.available_voices_labeled || []).filter((_, i) => i !== idx) } : prev)} className={buttonRemoveIconStyle} title="Remove Voice">
+                    {(config.available_voices_labeled || []).map((v, idx) => (
+                      <div key={idx} className="flex items-center gap-3">
+                        <input type="text" value={v.label} onChange={(e) => updateVoice(idx, 'label', e.target.value)} className={`w-40 ${inputBaseStyle}`} />
+                        <input type="text" value={v.id} onChange={(e) => updateVoice(idx, 'id', e.target.value)} className={`flex-1 ${inputBaseStyle}`} />
+                        <button onClick={() => removeVoice(idx)} className={buttonRemoveIconStyle} title="Remove Voice">
                             <TrashIcon className="w-5 h-5" />
                         </button>
                       </div>
                     ))}
                     <div className="flex items-center gap-3 pt-2">
-                      <input type="text" value={newVoiceLabel} onChange={(e) => setNewVoiceLabel(e.target.value)} placeholder="Label" className={`w-40 ${inputBaseStyle}`} onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()} />
-                      <input type="text" value={newVoice} onChange={(e) => setNewVoice(e.target.value)} placeholder="Voice id" className={`flex-1 ${inputBaseStyle}`} onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()} />
-                      <button onClick={() => {
-                        const id = newVoice.trim(); const label = newVoiceLabel.trim() || newVoice.trim();
-                        if (!id) return;
-                        setConfig(prev => prev ? { ...prev, available_voices_labeled: [ ...(prev.available_voices_labeled || []), { label, id } ] } : prev);
-                        setNewVoice(''); setNewVoiceLabel('');
-                      }} className={buttonAddIconStyle} title="Add Voice">
+                      <input type="text" value={newVoice.label} onChange={(e) => setNewVoice(prev => ({...prev, label: e.target.value}))} placeholder="Label" className={`w-40 ${inputBaseStyle}`} />
+                      <input type="text" value={newVoice.id} onChange={(e) => setNewVoice(prev => ({...prev, id: e.target.value}))} placeholder="Voice id" className={`flex-1 ${inputBaseStyle}`} />
+                      <button onClick={addVoice} className={buttonAddIconStyle} title="Add Voice">
                           <PlusIcon className="w-5 h-5" />
                       </button>
                     </div>
@@ -253,7 +300,7 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                 </div>
                 <label className="block">
                   <span className="block text-sm font-medium text-slate-400 mb-2">AI Base URL</span>
-                  <input type="text" value={config.ollama_base_url} onChange={(e) => updateField('ollama_base_url', e.target.value)} placeholder="http://localhost:11434" className={inputBaseStyle} onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()} />
+                  <input type="text" value={config.ollama_base_url} onChange={(e) => updateField('ollama_base_url', e.target.value)} placeholder="http://localhost:11434" className={inputBaseStyle} />
                 </label>
                 <label className="block">
                   <span className="block text-sm font-medium text-slate-400 mb-2">OpenAI API Key (optional)</span>
@@ -263,8 +310,6 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                     onChange={(e) => setOpenaiApiKey(e.target.value)}
                     placeholder={config.openai_api_key_set ? 'Key is set (enter to replace)' : 'sk-... or any string'}
                     className={inputBaseStyle}
-                    onFocus={(e) => e.currentTarget.select()}
-                    onMouseUp={(e) => e.preventDefault()}
                   />
                   <p className="mt-2 text-xs text-slate-500">Stored in memory; never displayed back.</p>
                 </label>
@@ -285,23 +330,9 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                     <span className="block text-sm font-medium text-slate-400">MCP Servers</span>
                     <div className="space-y-2">
                         {(config.mcp_servers || []).map((srv, idx) => (
-                        <div key={`${srv.url}-${idx}`} className="flex items-center gap-3">
-                            <input
-                              type="text"
-                              value={srv.label}
-                              onChange={(e) => updateServerLabel(idx, e.target.value)}
-                              className={`w-40 ${inputBaseStyle}`}
-                              onFocus={(e) => e.currentTarget.select()}
-                              onMouseUp={(e) => e.preventDefault()}
-                            />
-                            <input
-                              type="text"
-                              value={srv.url}
-                              onChange={(e) => updateServerUrl(idx, e.target.value)}
-                              className={`flex-1 ${inputBaseStyle}`}
-                              onFocus={(e) => e.currentTarget.select()}
-                              onMouseUp={(e) => e.preventDefault()}
-                            />
+                        <div key={idx} className="flex items-center gap-3">
+                            <input type="text" value={srv.label} onChange={(e) => updateServer(idx, 'label', e.target.value)} className={`w-40 ${inputBaseStyle}`} />
+                            <input type="text" value={srv.url} onChange={(e) => updateServer(idx, 'url', e.target.value)} className={`flex-1 ${inputBaseStyle}`} />
                             <button onClick={() => removeServer(idx)} className={buttonRemoveIconStyle} title="Remove Server">
                                 <TrashIcon className="w-5 h-5" />
                             </button>
@@ -309,8 +340,8 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                         ))}
                     </div>
                     <div className="flex items-center gap-3 pt-2">
-                      <input type="text" value={newServer.label} onChange={(e) => setNewServer(prev => ({ ...prev, label: e.target.value }))} placeholder="Label" className={`w-40 ${inputBaseStyle}`} onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()} />
-                      <input type="text" value={newServer.url} onChange={(e) => setNewServer(prev => ({ ...prev, url: e.target.value }))} placeholder="https://..." className={`flex-1 ${inputBaseStyle}`} onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()} />
+                      <input type="text" value={newServer.label} onChange={(e) => setNewServer(prev => ({ ...prev, label: e.target.value }))} placeholder="Label" className={`w-40 ${inputBaseStyle}`} />
+                      <input type="text" value={newServer.url} onChange={(e) => setNewServer(prev => ({ ...prev, url: e.target.value }))} placeholder="https://..." className={`flex-1 ${inputBaseStyle}`} />
                       <button onClick={addServer} className={buttonAddIconStyle} title="Add Server">
                           <PlusIcon className="w-5 h-5" />
                       </button>
@@ -320,66 +351,21 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                 {config.mcp_transport === 'stdio' && (
                   <div className="space-y-4">
                     <div>
-                      <span className="block text-sm font-medium text-slate-400 mb-2">Additional Stdio Tools</span>
+                      <span className="block text-sm font-medium text-slate-400 mb-2">Stdio Tools</span>
                       <div className="space-y-2">
-                        {((config.mcp_stdio_tools || []) as Array<{label: string; command: string}>).map((tool, idx) => (
-                          <div key={`${tool.command}-${idx}`} className="flex items-center gap-3">
-                            <input
-                              type="text"
-                              value={tool.label}
-                              onChange={(e) => setConfig(prev => prev ? { ...prev, mcp_stdio_tools: (prev.mcp_stdio_tools || []).map((t, i) => i === idx ? { ...t, label: e.target.value } : t) } : prev)}
-                              className={`w-40 ${inputBaseStyle}`}
-                              onFocus={(e) => e.currentTarget.select()}
-                              onMouseUp={(e) => e.preventDefault()}
-                            />
-                            <input
-                              type="text"
-                              value={tool.command}
-                              onChange={(e) => setConfig(prev => prev ? { ...prev, mcp_stdio_tools: (prev.mcp_stdio_tools || []).map((t, i) => i === idx ? { ...t, command: e.target.value } : t) } : prev)}
-                              className={`flex-1 ${inputBaseStyle}`}
-                              onFocus={(e) => e.currentTarget.select()}
-                              onMouseUp={(e) => e.preventDefault()}
-                            />
-                            <button
-                              onClick={() => setConfig(prev => prev ? { ...prev, mcp_stdio_tools: (prev.mcp_stdio_tools || []).filter((_, i) => i !== idx) } : prev)}
-                              className={buttonRemoveIconStyle}
-                              title="Remove Tool"
-                            >
+                        {(config.mcp_stdio_tools || []).map((tool, idx) => (
+                          <div key={idx} className="flex items-center gap-3">
+                            <input type="text" value={tool.label} onChange={(e) => updateStdioTool(idx, 'label', e.target.value)} className={`w-40 ${inputBaseStyle}`} />
+                            <input type="text" value={tool.command} onChange={(e) => updateStdioTool(idx, 'command', e.target.value)} className={`flex-1 ${inputBaseStyle}`} />
+                            <button onClick={() => removeStdioTool(idx)} className={buttonRemoveIconStyle} title="Remove Tool">
                               <TrashIcon className="w-5 h-5" />
                             </button>
                           </div>
                         ))}
                         <div className="flex items-center gap-3 pt-2">
-                          <input
-                            type="text"
-                            value={(newServer as any).label}
-                            onChange={(e) => setNewServer(prev => ({ ...prev, label: e.target.value }))}
-                            placeholder="Label"
-                            className={`w-40 ${inputBaseStyle}`}
-                            onFocus={(e) => e.currentTarget.select()}
-                            onMouseUp={(e) => e.preventDefault()}
-                          />
-                          <input
-                            type="text"
-                            value={newStdioCommand}
-                            onChange={(e) => setNewStdioCommand(e.target.value)}
-                            placeholder="npx -y @modelcontextprotocol/server-brave-search"
-                            className={`flex-1 ${inputBaseStyle}`}
-                            onFocus={(e) => e.currentTarget.select()}
-                            onMouseUp={(e) => e.preventDefault()}
-                          />
-                          <button
-                            onClick={() => {
-                              const cmd = newStdioCommand.trim();
-                              const label = (newServer.label || '').trim() || 'Command';
-                              if (!cmd) return;
-                              setConfig(prev => prev ? { ...prev, mcp_stdio_tools: [ ...(prev.mcp_stdio_tools || []), { label, command: cmd } ] } : prev);
-                              setNewStdioCommand('');
-                              setNewServer({ label: '', url: '' });
-                            }}
-                            className={buttonAddIconStyle}
-                            title="Add Tool"
-                          >
+                          <input type="text" value={newStdioTool.label} onChange={(e) => setNewStdioTool(prev => ({ ...prev, label: e.target.value }))} placeholder="Label" className={`w-40 ${inputBaseStyle}`} />
+                          <input type="text" value={newStdioTool.command} onChange={(e) => setNewStdioTool(prev => ({ ...prev, command: e.target.value }))} placeholder="npx -y @..." className={`flex-1 ${inputBaseStyle}`} />
+                          <button onClick={addStdioTool} className={buttonAddIconStyle} title="Add Tool">
                             <PlusIcon className="w-5 h-5" />
                           </button>
                         </div>

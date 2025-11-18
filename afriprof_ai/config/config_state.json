@@ -1,6 +1,6 @@
 {
   "model_id": "ai/granite-4.0-h-tiny:7B-ctx",
-  "voice": "am_adam",
+  "voice": "af_sky",
   "ollama_base_url": "http://localhost:12434/engines/llama.cpp/v1",
   "openai_api_key_set": true,
   "mcp_transport": "streamable-http",
@@ -49,10 +49,6 @@
   ],
   "mcp_servers": [
     {
-      "label": "Web Browsing",
-      "url": "https://server.smithery.ai/@Aas-ee/open-websearch/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1"
-    },
-    {
       "label": "Google Scholar search",
       "url": "https://server.smithery.ai/@mochow13/google-scholar-mcp/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1"
     },
@@ -77,8 +73,8 @@
       "url": "https://remote.mcpservers.org/sequentialthinking/mcp"
     },
     {
-      "label": "Financial adviser",
-      "url": "https://server.smithery.ai/@imbenrabi/financial-modeling-prep-mcp-server/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1"
+      "label": "Docker MCP",
+      "url": "http://localhost:8089/mcp"
     }
   ]
 }

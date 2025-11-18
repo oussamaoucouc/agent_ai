@@ -1,3 +1,5 @@
+
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -11,7 +13,7 @@ import { AddUserPage } from './components/AddUserPage';
 import { EditUserPage } from './components/EditUserPage';
 import { Modal } from './components/Modal';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
-import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, listUserStats, createUser, deleteUser, loginUser, updateUser, getModelsCatalog, getModelsLabeledCatalog, getSessionSettings, getMcpToolsCatalog, setMcpTools, getMcpStdioCatalog, setMcpStdioTools, getVoicesCatalog, getVoicesLabeledCatalog } from './services/apiService';
+import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, listUserStats, createUser, deleteUser, loginUser, updateUser, getSessionSettings, getMcpToolsCatalog, setMcpTools, getMcpStdioCatalog, setMcpStdioTools, getConfig, getModelsLabeledCatalog, getVoicesLabeledCatalog } from './services/apiService';
 import * as storage from './services/storageService';
 import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice, QueryMode, AdminUser, McpToolItem, McpStdioItem } from './types';
 import { API_BASE_URL } from './constants';
@@ -86,7 +88,6 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
 
     // New states for model and voice selection
     const [currentModel, setCurrentModel] = useState<string>('gemini-2.5-pro');
-    const [availableModels, setAvailableModels] = useState<string[]>([]);
     const [availableModelsLabeled, setAvailableModelsLabeled] = useState<Array<{label: string; id: string}>>([]);
     const [currentVoice, setCurrentVoice] = useState<TTSVoice>(TTSVoice.BF_EMMA);
     const [availableVoicesLabeled, setAvailableVoicesLabeled] = useState<Array<{label: string; id: string}>>([]);
@@ -95,6 +96,7 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
     const [isSettingsSyncing, setIsSettingsSyncing] = useState<boolean>(false);
     const [mcpStdioCatalog, setMcpStdioCatalog] = useState<McpStdioItem[]>([]);
     const [selectedMcpStdio, setSelectedMcpStdio] = useState<string[]>([]);
+    const isRefreshingRef = useRef<boolean>(false);
 
 
     const [modalConfig, setModalConfig] = useState<{
@@ -178,63 +180,61 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
         }
     }, [isAdmin]);
 
-    // Fetch public model and tools catalog so admin-added models/tools are visible to all users
-    useEffect(() => {
-        const controller = new AbortController();
-        const loadCatalogs = async () => {
-            if (!currentUser) return;
-            try {
-                const modelsPromise = getModelsCatalog(currentUser, controller.signal)
-                    .then(({ available_models }) => {
-                        const list = Array.isArray(available_models) ? available_models : [];
-                        setAvailableModels(list);
-                        if (list.length > 0 && !list.includes(currentModel)) {
-                            setCurrentModel(list[0]);
-                        }
-                    })
-                    .then(async () => {
-                        try {
-                            const labeledRes = await getModelsLabeledCatalog(currentUser, controller.signal);
-                            const items = Array.isArray(labeledRes.items) ? labeledRes.items : [];
-                            setAvailableModelsLabeled(items);
-                        } catch {
-                            setAvailableModelsLabeled(availableModels.map(id => ({ label: id, id })));
-                        }
-                    })
-                    .catch(() => {});
-                const toolsPromise = getMcpToolsCatalog(currentUser, controller.signal)
-                    .then(res => {
-                        const items = Array.isArray(res.tools) ? res.tools : [];
-                        setMcpToolsCatalog(items);
-                    })
-                    .catch(() => {
-                        setMcpToolsCatalog([]);
-                    });
-                const stdioPromise = getMcpStdioCatalog(currentUser, controller.signal)
-                    .then(res => {
-                        const items = Array.isArray(res.tools) ? res.tools : [];
-                        setMcpStdioCatalog(items);
-                    })
-                    .catch(() => {
-                        setMcpStdioCatalog([]);
-                    });
-                const voicesPromise = getVoicesCatalog(currentUser, controller.signal)
-                    .then(async () => {
-                        try {
-                            const labeledRes = await getVoicesLabeledCatalog(currentUser, controller.signal);
-                            const items = Array.isArray(labeledRes.items) ? labeledRes.items : [];
-                            setAvailableVoicesLabeled(items);
-                        } catch {
-                            setAvailableVoicesLabeled([]);
-                        }
-                    })
-                    .catch(() => {});
-                await Promise.all([modelsPromise, toolsPromise, stdioPromise, voicesPromise]);
-            } catch {}
-        };
-        loadCatalogs();
-        return () => controller.abort();
+    // ** Consolidated Configuration Loading **
+    // Fetches all configuration catalogs (models, voices, tools) in a single, atomic API call
+    // to prevent race conditions and ensure UI consistency.
+    const loadAppConfiguration = useCallback(async () => {
+        if (!currentUser || isRefreshingRef.current) return;
+        isRefreshingRef.current = true;
+        try {
+            // Fetch individual, user-authorized catalogs in parallel.
+            // This fixes a 403 error caused by calling the admin-only getConfig endpoint for all users.
+            const [
+                modelsLabeledRes,
+                voicesLabeledRes,
+                toolsRes,
+                stdioRes,
+            ] = await Promise.all([
+                getModelsLabeledCatalog(currentUser),
+                getVoicesLabeledCatalog(currentUser),
+                getMcpToolsCatalog(currentUser),
+                getMcpStdioCatalog(currentUser),
+            ]);
+    
+            const labeledModelsList = Array.isArray(modelsLabeledRes.items) ? modelsLabeledRes.items : [];
+            const voicesLabeledList = Array.isArray(voicesLabeledRes.items) ? voicesLabeledRes.items : [];
+            const toolsList = Array.isArray(toolsRes.tools) ? toolsRes.tools : [];
+            const stdioList = Array.isArray(stdioRes.tools) ? stdioRes.tools : [];
+    
+            setAvailableModelsLabeled(labeledModelsList);
+            setAvailableVoicesLabeled(voicesLabeledList);
+            setMcpToolsCatalog(toolsList);
+            setMcpStdioCatalog(stdioList);
+    
+        } catch (e) {
+            console.error("Failed to load app configuration:", e);
+            showAlert('Configuration Error', 'Could not load application configuration from the server.');
+        } finally {
+            isRefreshingRef.current = false;
+        }
     }, [currentUser]);
+    
+    useEffect(() => {
+        // Load config when user is available.
+        if (currentUser) {
+            loadAppConfiguration();
+        }
+    }, [currentUser, loadAppConfiguration]);
+    
+    useEffect(() => {
+        // Reload config when updated from admin page.
+        const handler = () => {
+            loadAppConfiguration();
+        };
+        window.addEventListener('configUpdated', handler as any);
+        return () => window.removeEventListener('configUpdated', handler as any);
+    }, [loadAppConfiguration]);
+
 
     const refreshAdminUsers = useCallback(async () => {
         try {
