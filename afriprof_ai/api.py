@@ -45,8 +45,10 @@ app = FastAPI(
 
 # CORS configuration
 origins = [
-    "http://localhost:3000",  # Adjust if your frontend runs on a different port
+    "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
 ]
 
 app.add_middleware(
@@ -1644,7 +1646,7 @@ async def root():
     return {
         "message": "AI Teacher Assistant API",
         "status": "running",
-        "timestamp": datetime.datetime.now().isoformat(),
+        "timestamp": datetime.now().isoformat(),
         "docs": "/docs"
     }
 
@@ -1669,7 +1671,7 @@ async def health_check():
         # You can add more health checks here (database, services, etc.)
         return {
             "status": "healthy",
-            "timestamp": datetime.datetime.now().isoformat(),
+            "timestamp": datetime.now().isoformat(),
             "services": {
                 "api": "running",
                 "database": "connected",  # You can add actual DB check
@@ -1685,7 +1687,7 @@ async def deployment_status():
     """Deployment status endpoint"""
     return {
         "deployment": "completed",
-        "build_time": datetime.datetime.now().isoformat(),
+        "build_time": datetime.now().isoformat(),
         "environment": "production",
         "version": "1.0.0"
     }

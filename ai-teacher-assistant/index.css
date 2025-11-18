@@ -1,0 +1,5 @@
+@import "tailwindcss";
+
+/* App-level tweaks */
+html, body, #root { height: 100%; }
+body { @apply text-white selection:bg-sky-500/30; }

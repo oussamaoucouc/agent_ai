@@ -10,7 +10,7 @@ interface ConfigPageProps {
 }
 
 // Consistent styling for form elements
-const inputBaseStyle = "w-full px-3 py-2 rounded-md bg-slate-800/50 text-slate-200 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-colors";
+const inputBaseStyle = "px-3 py-2 rounded-md bg-slate-800/50 text-slate-200 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-colors";
 const buttonAddIconStyle = "p-2 bg-sky-600 hover:bg-sky-700 text-white rounded-md transition-colors disabled:bg-slate-600 disabled:cursor-not-allowed flex-shrink-0";
 const buttonRemoveIconStyle = "p-2 text-slate-400 bg-slate-800/40 border border-slate-600/50 hover:bg-red-500/20 hover:text-white rounded-md transition-colors flex-shrink-0";
 
@@ -300,7 +300,7 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                 </div>
                 <label className="block">
                   <span className="block text-sm font-medium text-slate-400 mb-2">AI Base URL</span>
-                  <input type="text" value={config.ollama_base_url} onChange={(e) => updateField('ollama_base_url', e.target.value)} placeholder="http://localhost:11434" className={inputBaseStyle} />
+                  <input type="text" value={config.ollama_base_url} onChange={(e) => updateField('ollama_base_url', e.target.value)} placeholder="http://localhost:11434" className={`w-full ${inputBaseStyle}`} />
                 </label>
                 <label className="block">
                   <span className="block text-sm font-medium text-slate-400 mb-2">OpenAI API Key (optional)</span>
@@ -309,7 +309,7 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                     value={openaiApiKey}
                     onChange={(e) => setOpenaiApiKey(e.target.value)}
                     placeholder={config.openai_api_key_set ? 'Key is set (enter to replace)' : 'sk-... or any string'}
-                    className={inputBaseStyle}
+                    className={`w-full ${inputBaseStyle}`}
                   />
                   <p className="mt-2 text-xs text-slate-500">Stored in memory; never displayed back.</p>
                 </label>
@@ -320,7 +320,7 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                 <h2 className="text-xl font-bold">MCP Settings</h2>
                 <label className="block">
                   <span className="block text-sm font-medium text-slate-400 mb-2">Transport</span>
-                  <select value={config.mcp_transport} onChange={(e) => updateField('mcp_transport', e.target.value)} className={inputBaseStyle} >
+                  <select value={config.mcp_transport} onChange={(e) => updateField('mcp_transport', e.target.value)} className={`w-full ${inputBaseStyle}`} >
                     <option value="streamable-http">streamable-http</option>
                     <option value="stdio">stdio</option>
                   </select>
