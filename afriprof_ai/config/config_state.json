@@ -12,14 +12,6 @@
     {
       "label": "docker MCP",
       "command": "docker mcp gateway run"
-    },
-    {
-      "label": "test",
-      "command": "test"
-    },
-    {
-      "label": "test3",
-      "command": "test3"
     }
   ],
   "available_models": [

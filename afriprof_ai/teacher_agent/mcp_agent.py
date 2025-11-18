@@ -160,41 +160,61 @@ async def run_agent_async(query, user_id, session_id):
     try:
         runtime_cfg = cfg.get_runtime_config()
         servers = runtime_cfg.get("mcp_servers", []) or []
-        urls = [str(s.get("url", "")).strip() for s in servers if isinstance(s, dict) and str(s.get("url", "")).strip()]
+        runtime_urls = [str(s.get("url", "")).strip() for s in servers if isinstance(s, dict) and str(s.get("url", "")).strip()]
+        selected_urls = []
+        selected_cmds = []
         try:
             import sessions as session_mod
             with session_mod.SessionLocal() as db:
-                selected_urls = session_mod.get_session_mcp_tools_urls(db, user_id, session_id)
-                selected_cmds = session_mod.get_session_mcp_stdio_commands(db, user_id, session_id)
-            if selected_urls and len(selected_urls) > 0:
-                urls = selected_urls
-                logger.info(f"Using user-selected MCP tools: {len(urls)} URLs")
-            if selected_cmds and len(selected_cmds) > 0:
-                cmds = [c for c in selected_cmds if c.strip()]
-                logger.info(f"Using user-selected MCP stdio commands: {len(cmds)}")
+                selected_urls = session_mod.get_session_mcp_tools_urls(db, user_id, session_id) or []
+                selected_cmds = session_mod.get_session_mcp_stdio_commands(db, user_id, session_id) or []
         except Exception as e:
             logger.warning(f"Failed to resolve user-selected MCP tools; using runtime config. err={e}")
-        if not urls and cfg.MCP_SERVER_URL:
-            urls = [cfg.MCP_SERVER_URL]
+
+        urls = []
         cmds = []
-        mcp_cmds = runtime_cfg.get("mcp_stdio_commands", []) or []
-        # Also include labeled stdio tools from config
-        mcp_tools = runtime_cfg.get("mcp_stdio_tools", []) or []
-        for t in mcp_tools:
-            if isinstance(t, dict):
-                c = str(t.get("command", "")).strip()
-                if c:
-                    cmds.append(c)
-        for c in mcp_cmds:
-            if c.strip():
-                cmds.append(c.strip())
-        if cfg.MCP_STDIO_COMMAND and not cmds:
-            if cfg.MCP_STDIO_ARGS:
-                cmds.append(" ".join([cfg.MCP_STDIO_COMMAND] + cfg.MCP_STDIO_ARGS))
-            else:
-                cmds.append(cfg.MCP_STDIO_COMMAND)
+
+        if selected_urls:
+            urls = [u for u in selected_urls if str(u).strip()]
+            logger.info(f"Using user-selected MCP tools: {len(urls)} URLs")
+        else:
+            urls = runtime_urls
+            if not urls and cfg.MCP_SERVER_URL:
+                urls = [cfg.MCP_SERVER_URL]
+
+        if selected_cmds:
+            cmds = [c for c in selected_cmds if str(c).strip()]
+            logger.info(f"Using user-selected MCP stdio commands: {len(cmds)}")
+        else:
+            mcp_cmds = runtime_cfg.get("mcp_stdio_commands", []) or []
+            mcp_tools = runtime_cfg.get("mcp_stdio_tools", []) or []
+            for t in mcp_tools:
+                if isinstance(t, dict):
+                    c = str(t.get("command", "")).strip()
+                    if c:
+                        cmds.append(c)
+            for c in mcp_cmds:
+                cs = str(c).strip()
+                if cs:
+                    cmds.append(cs)
+            if not cmds and cfg.MCP_STDIO_COMMAND:
+                if cfg.MCP_STDIO_ARGS:
+                    cmds.append(" ".join([cfg.MCP_STDIO_COMMAND] + cfg.MCP_STDIO_ARGS))
+                else:
+                    cmds.append(cfg.MCP_STDIO_COMMAND)
+
+        allowed_execs = {"npx","pnpm","node","yarn","python3","uvx","pipx","bun","npm","uv","java","deno","python","ruby"}
+        if cmds:
+            filtered_cmds = []
+            for c in cmds:
+                head = str(c).strip().split()[0] if str(c).strip() else ""
+                if head in allowed_execs:
+                    filtered_cmds.append(c)
+            cmds = filtered_cmds
+
         if not urls and not cmds:
             raise RuntimeError("No MCP servers configured")
+
         multi_mcp_tools = MultiMCPTools(
             commands=cmds if cmds else None,
             urls=urls if urls else None,
