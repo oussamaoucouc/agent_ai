@@ -3,12 +3,25 @@
   "voice": "af_sky",
   "ollama_base_url": "http://localhost:12434/engines/llama.cpp/v1",
   "openai_api_key_set": true,
-  "mcp_transport": "streamable-http",
+  "mcp_transport": "stdio",
   "mcp_server_url": "https://server.smithery.ai/@Aas-ee/open-websearch/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1",
   "mcp_stdio_command": "",
   "mcp_stdio_args": [],
   "mcp_stdio_commands": [],
-  "mcp_stdio_tools": [],
+  "mcp_stdio_tools": [
+    {
+      "label": "docker MCP",
+      "command": "docker mcp gateway run"
+    },
+    {
+      "label": "test",
+      "command": "test"
+    },
+    {
+      "label": "test3",
+      "command": "test3"
+    }
+  ],
   "available_models": [
     "ai/granite-4.0-h-tiny:7B-ctx",
     "ai/granite-4.0-nano:latest",
@@ -73,7 +86,7 @@
       "url": "https://remote.mcpservers.org/sequentialthinking/mcp"
     },
     {
-      "label": "Docker MCP",
+      "label": "Docker tools",
       "url": "http://localhost:8089/mcp"
     }
   ]

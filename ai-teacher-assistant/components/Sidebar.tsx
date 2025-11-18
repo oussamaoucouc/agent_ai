@@ -319,23 +319,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     ? 'Select tools to use with the Tools agent.'
                                     : 'Switch to Tools mode to select tools.'}
                             </p>
-                            <h3 className="text-sm font-medium text-slate-400 mt-4 mb-2">Local Tools</h3>
+                            <h3 className="text-sm font-medium text-slate-400 mb-2">Local Tools</h3>
                             <div className={`relative ${!canSelectTools ? 'group' : ''}`}>
-                              <div className="grid grid-cols-1 gap-2">
+                              <div className="grid grid-cols-2 gap-2">
                                 {mcpStdioCatalog.map(item => (
-                                    <button
-                                        key={item.command}
-                                        onClick={() => toggleMcpStdio(item.command)}
-                                        disabled={!canSelectTools}
-                                        className={`px-2 py-1.5 text-xs rounded-lg transition-colors border text-left focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-500 ${
-                                            selectedMcpStdio.includes(item.command)
-                                                ? 'bg-sky-500 text-white font-bold border-sky-500'
-                                                : `${canSelectTools ? 'bg-slate-700/50 hover:bg-slate-700' : 'bg-slate-800/50 opacity-50 cursor-not-allowed'} text-slate-300 border-slate-600`
+                                  <button
+                                    key={item.command}
+                                    onClick={() => toggleMcpStdio(item.command)}
+                                    disabled={!canSelectTools}
+                                    className={`px-2 py-1.5 text-xs rounded-lg transition-colors border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-500 ${
+                                        selectedMcpStdio.includes(item.command)
+                                            ? 'bg-sky-500 text-white font-bold border-sky-500'
+                                            : `${canSelectTools ? 'bg-slate-700/50 hover:bg-slate-700' : 'bg-slate-800/50 opacity-50 cursor-not-allowed'} text-slate-300 border-slate-600`
                                         }`}
-                                        title={item.command}
-                                    >
-                                        {item.label}
-                                    </button>
+                                    title={item.command}
+                                  >
+                                    {item.label}
+                                  </button>
                                 ))}
                               </div>
                               {!canSelectTools && (
@@ -345,7 +345,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               )}
                             </div>
                             <p className="mt-2 text-xs text-slate-500">
-                              Stdio tools run locally via commands (e.g., npx/uvx) configured by admin.
+                              Local tools run locally configured by the administrator.
                             </p>
                         </div>
                     </div>
