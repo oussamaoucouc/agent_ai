@@ -1,6 +1,6 @@
 import { API_BASE_URL } from '../constants';
 import { VoicesCatalogResponse, McpToolsCatalogResponse, SetMcpToolsRequest, McpStdioToolsCatalogResponse, ModelsCatalogLabeledResponse, VoicesCatalogLabeledResponse } from '../types';
-import { getAuthToken } from './storageService';
+import { getAuthToken, setAuthToken } from './storageService';
 import { 
     QueryRequest, 
     QueryTTSResponse, 
@@ -33,6 +33,23 @@ const authHeaders = (): Record<string, string> => {
     return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
+const authedFetch = async (url: string, init: RequestInit = {}): Promise<Response> => {
+    const res = await fetch(url, init);
+    if (res.status !== 401) return res;
+    try {
+        const refreshRes = await fetch(`${API_BASE_URL}/auth/refresh`, { method: 'POST', credentials: 'include' });
+        if (!refreshRes.ok) return res;
+        const data = await refreshRes.json().catch(() => null) as any;
+        const newToken = data?.access_token;
+        if (!newToken) return res;
+        setAuthToken(newToken);
+        const newInit: RequestInit = { ...init, headers: { ...(init.headers as any || {}), ...authHeaders() } };
+        return fetch(url, newInit);
+    } catch {
+        return res;
+    }
+};
+
 const handleResponse = async <T,>(response: Response): Promise<T> => {
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({ detail: 'Unknown error occurred' }));
@@ -48,7 +65,7 @@ const handleResponse = async <T,>(response: Response): Promise<T> => {
 };
 
 export const query = async (request: QueryRequest, signal?: AbortSignal): Promise<QueryResponse> => {
-    const response = await fetch(`${API_BASE_URL}/query_direct`, {
+    const response = await authedFetch(`${API_BASE_URL}/query_direct`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
@@ -58,7 +75,7 @@ export const query = async (request: QueryRequest, signal?: AbortSignal): Promis
 };
 
 export const queryMcp = async (request: QueryRequest, signal?: AbortSignal): Promise<QueryResponse> => {
-    const response = await fetch(`${API_BASE_URL}/query_mcp_direct`, {
+    const response = await authedFetch(`${API_BASE_URL}/query_mcp_direct`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
@@ -68,7 +85,7 @@ export const queryMcp = async (request: QueryRequest, signal?: AbortSignal): Pro
 };
 
 export const queryAgent = async (request: QueryRequest, signal?: AbortSignal): Promise<QueryResponse> => {
-    const response = await fetch(`${API_BASE_URL}/query_assistant_direct`, {
+    const response = await authedFetch(`${API_BASE_URL}/query_assistant_direct`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
@@ -78,7 +95,7 @@ export const queryAgent = async (request: QueryRequest, signal?: AbortSignal): P
 };
 
 export const queryTTS = async (request: QueryRequest, signal?: AbortSignal): Promise<QueryTTSResponse> => {
-    const response = await fetch(`${API_BASE_URL}/query_tts_direct`, {
+    const response = await authedFetch(`${API_BASE_URL}/query_tts_direct`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
@@ -88,7 +105,7 @@ export const queryTTS = async (request: QueryRequest, signal?: AbortSignal): Pro
 };
 
 export const queryMcpTTS = async (request: QueryRequest, signal?: AbortSignal): Promise<QueryTTSResponse> => {
-    const response = await fetch(`${API_BASE_URL}/query_mcp_tts_direct`, {
+    const response = await authedFetch(`${API_BASE_URL}/query_mcp_tts_direct`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
@@ -98,7 +115,7 @@ export const queryMcpTTS = async (request: QueryRequest, signal?: AbortSignal): 
 };
 
 export const queryAgentTTS = async (request: QueryRequest, signal?: AbortSignal): Promise<QueryTTSResponse> => {
-    const response = await fetch(`${API_BASE_URL}/query_assistant_tts_direct`, {
+    const response = await authedFetch(`${API_BASE_URL}/query_assistant_tts_direct`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
@@ -117,7 +134,7 @@ export const fullAgent = async (request: FullAgentRequest, signal?: AbortSignal)
         formData.append('system_prompt', request.system_prompt);
     }
 
-    const response = await fetch(`${API_BASE_URL}/stt_query_tts_direct`, {
+    const response = await authedFetch(`${API_BASE_URL}/stt_query_tts_direct`, {
         method: 'POST',
         body: formData,
         headers: authHeaders(),
@@ -135,7 +152,7 @@ export const fullAgentMcp = async (request: FullAgentRequest, signal?: AbortSign
         formData.append('system_prompt', request.system_prompt);
     }
 
-    const response = await fetch(`${API_BASE_URL}/stt_query_mcp_tts_direct`, {
+    const response = await authedFetch(`${API_BASE_URL}/stt_query_mcp_tts_direct`, {
         method: 'POST',
         body: formData,
         headers: authHeaders(),
@@ -153,7 +170,7 @@ export const fullAgentAgent = async (request: FullAgentRequest, signal?: AbortSi
         formData.append('system_prompt', request.system_prompt);
     }
 
-    const response = await fetch(`${API_BASE_URL}/stt_query_assistant_tts_direct`, {
+    const response = await authedFetch(`${API_BASE_URL}/stt_query_assistant_tts_direct`, {
         method: 'POST',
         body: formData,
         headers: authHeaders(),
@@ -169,7 +186,7 @@ export const uploadDocument = async (request: UploadDocumentRequest, signal?: Ab
     formData.append('session_id', request.session_id);
 
     // Assuming a new endpoint for document uploads exists on the backend
-    const response = await fetch(`${API_BASE_URL}/upload_document`, {
+    const response = await authedFetch(`${API_BASE_URL}/upload_document`, {
         method: 'POST',
         body: formData,
         headers: authHeaders(),
@@ -182,7 +199,7 @@ export const listDocuments = async (user_id: string, signal?: AbortSignal): Prom
     const url = new URL(`${API_BASE_URL}/list_documents`);
     url.searchParams.set('user_id', user_id);
     url.searchParams.set('ts', Date.now().toString());
-    const response = await fetch(url, { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
+    const response = await authedFetch(url.toString(), { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
     return handleResponse<ListDocumentsResponse>(response);
 };
 
@@ -191,12 +208,12 @@ export const deleteDocument = async (request: DeleteDocumentRequest, signal?: Ab
     url.searchParams.set('user_id', request.user_id);
     url.searchParams.set('filename', request.filename);
     if (request.kind) url.searchParams.set('kind', request.kind);
-    const response = await fetch(url.toString(), { method: 'DELETE', headers: authHeaders(), signal });
+    const response = await authedFetch(url.toString(), { method: 'DELETE', headers: authHeaders(), signal });
     return handleResponse<DeleteDocumentResponse>(response);
 };
 
 export const setModel = async (request: SetModelRequest, signal?: AbortSignal): Promise<{success: boolean}> => {
-    const response = await fetch(`${API_BASE_URL}/set_model`, {
+    const response = await authedFetch(`${API_BASE_URL}/set_model`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
@@ -206,7 +223,7 @@ export const setModel = async (request: SetModelRequest, signal?: AbortSignal): 
 };
 
 export const setVoice = async (request: SetVoiceRequest, signal?: AbortSignal): Promise<{success: boolean}> => {
-    const response = await fetch(`${API_BASE_URL}/set_voice`, {
+    const response = await authedFetch(`${API_BASE_URL}/set_voice`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
@@ -220,12 +237,12 @@ export const getSessions = async (user_id: string, signal?: AbortSignal): Promis
     const url = new URL(`${API_BASE_URL}/sessions`);
     url.searchParams.set('user_id', user_id);
     url.searchParams.set('ts', Date.now().toString());
-    const response = await fetch(url, { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
+    const response = await authedFetch(url.toString(), { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
     return handleResponse<Session[]>(response);
 };
 
 export const createSession = async (request: CreateSessionRequest, signal?: AbortSignal): Promise<Session> => {
-    const response = await fetch(`${API_BASE_URL}/sessions`, {
+    const response = await authedFetch(`${API_BASE_URL}/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
@@ -235,7 +252,7 @@ export const createSession = async (request: CreateSessionRequest, signal?: Abor
 };
 
 export const renameSession = async (sessionId: string, request: RenameSessionRequest, signal?: AbortSignal): Promise<Session> => {
-    const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/rename`, {
+    const response = await authedFetch(`${API_BASE_URL}/sessions/${sessionId}/rename`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
@@ -245,7 +262,7 @@ export const renameSession = async (sessionId: string, request: RenameSessionReq
 };
 
 export const deleteSession = async (sessionId: string, request: DeleteSessionRequest, signal?: AbortSignal): Promise<{status: string}> => {
-    const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}`, {
+    const response = await authedFetch(`${API_BASE_URL}/sessions/${sessionId}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
@@ -255,7 +272,7 @@ export const deleteSession = async (sessionId: string, request: DeleteSessionReq
 };
 
 export const saveSessionMessages = async (sessionId: string, request: SaveMessagesRequest, signal?: AbortSignal): Promise<Session> => {
-    const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/messages`, {
+    const response = await authedFetch(`${API_BASE_URL}/sessions/${sessionId}/messages`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
@@ -265,7 +282,7 @@ export const saveSessionMessages = async (sessionId: string, request: SaveMessag
 };
 
 export const cancelSession = async (request: CancelRequest): Promise<{status: string}> => {
-    const response = await fetch(`${API_BASE_URL}/cancel`, {
+    const response = await authedFetch(`${API_BASE_URL}/cancel`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
@@ -278,12 +295,12 @@ export const listUserStats = async (signal?: AbortSignal): Promise<Array<{ id: s
     const url = new URL(`${API_BASE_URL}/users/stats`);
     // Add cache-busting param to avoid stale data across browsers
     url.searchParams.set('ts', Date.now().toString());
-    const response = await fetch(url, { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
+    const response = await authedFetch(url.toString(), { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
     return handleResponse<Array<{ id: string; username: string; role: string; sessions: number; documents: number; mcpTools: number; mcpWebTools: number; mcpLocalTools: number; createdAt: string }>>(response);
 };
 
 export const createUser = async (username: string, password: string, role: 'admin' | 'user', signal?: AbortSignal): Promise<AdminUser> => {
-    const response = await fetch(`${API_BASE_URL}/users`, {
+    const response = await authedFetch(`${API_BASE_URL}/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ username, password, role }),
@@ -295,7 +312,7 @@ export const createUser = async (username: string, password: string, role: 'admi
 };
 
 export const updateUser = async (user_id: string, payload: { password?: string; role?: 'admin' | 'user' }, signal?: AbortSignal): Promise<AdminUser> => {
-    const response = await fetch(`${API_BASE_URL}/users/${user_id}`, {
+    const response = await authedFetch(`${API_BASE_URL}/users/${user_id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(payload),
@@ -307,7 +324,7 @@ export const updateUser = async (user_id: string, payload: { password?: string; 
 };
 
 export const deleteUser = async (user_id: string, signal?: AbortSignal): Promise<{status: string}> => {
-    const response = await fetch(`${API_BASE_URL}/users/${user_id}`, { method: 'DELETE', headers: authHeaders(), signal });
+    const response = await authedFetch(`${API_BASE_URL}/users/${user_id}`, { method: 'DELETE', headers: authHeaders(), signal });
     return handleResponse<{status: string}>(response);
 };
 
@@ -326,12 +343,12 @@ export const getConfig = async (user_id: string, signal?: AbortSignal): Promise<
     const url = new URL(`${API_BASE_URL}/config`);
     url.searchParams.set('user_id', user_id);
     url.searchParams.set('ts', Date.now().toString());
-    const response = await fetch(url, { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
+    const response = await authedFetch(url.toString(), { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
     return handleResponse<ConfigResponse>(response);
 };
 
 export const updateConfig = async (payload: ConfigUpdateRequest, signal?: AbortSignal): Promise<ConfigResponse> => {
-    const response = await fetch(`${API_BASE_URL}/config`, {
+    const response = await authedFetch(`${API_BASE_URL}/config`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(payload),
@@ -344,7 +361,7 @@ export const getModelsCatalog = async (user_id: string, signal?: AbortSignal): P
     const url = new URL(`${API_BASE_URL}/models`);
     url.searchParams.set('user_id', user_id);
     url.searchParams.set('ts', Date.now().toString());
-    const response = await fetch(url, { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
+    const response = await authedFetch(url.toString(), { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
     // Backend returns { models: string[] }; normalize to { available_models: string[] }
     const raw = await response.json();
     if (!response.ok) {
@@ -358,7 +375,7 @@ export const getModelsLabeledCatalog = async (user_id: string, signal?: AbortSig
     const url = new URL(`${API_BASE_URL}/models_labeled`);
     url.searchParams.set('user_id', user_id);
     url.searchParams.set('ts', Date.now().toString());
-    const response = await fetch(url, { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
+    const response = await authedFetch(url.toString(), { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
     return handleResponse<ModelsCatalogLabeledResponse>(response);
 };
 
@@ -366,7 +383,7 @@ export const getVoicesCatalog = async (user_id: string, signal?: AbortSignal): P
     const url = new URL(`${API_BASE_URL}/voices`);
     url.searchParams.set('user_id', user_id);
     url.searchParams.set('ts', Date.now().toString());
-    const response = await fetch(url, { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
+    const response = await authedFetch(url.toString(), { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
     const raw = await response.json();
     if (!response.ok) {
         throw new Error(raw?.detail || `Failed to fetch voices catalog: ${response.status}`);
@@ -400,7 +417,7 @@ export const getMcpStdioCatalog = async (user_id: string, signal?: AbortSignal):
 };
 
 export const setMcpStdioTools = async (payload: { user_id: string; session_id: string; commands: string[] }, signal?: AbortSignal): Promise<{success: boolean}> => {
-    const response = await fetch(`${API_BASE_URL}/set_mcp_stdio_tools`, {
+    const response = await authedFetch(`${API_BASE_URL}/set_mcp_stdio_tools`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(payload),
@@ -413,7 +430,7 @@ export const getConfigPath = async (user_id: string, signal?: AbortSignal): Prom
     const url = new URL(`${API_BASE_URL}/config_path`);
     url.searchParams.set('user_id', user_id);
     url.searchParams.set('ts', Date.now().toString());
-    const response = await fetch(url, { method: 'GET', signal, cache: 'no-store' });
+    const response = await authedFetch(url.toString(), { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
     return handleResponse<ConfigPathResponse>(response);
 };
 
@@ -422,13 +439,13 @@ export const getSessionSettings = async (user_id: string, session_id: string, si
     const url = new URL(`${API_BASE_URL}/sessions/${session_id}/settings`);
     url.searchParams.set('user_id', user_id);
     url.searchParams.set('ts', Date.now().toString());
-    const response = await fetch(url, { method: 'GET', signal, cache: 'no-store' });
+    const response = await authedFetch(url.toString(), { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
     return handleResponse<SessionSettingsResponse>(response);
 };
 
 // Persist per-user MCP tools selection (multi-select)
 export const setMcpTools = async (payload: SetMcpToolsRequest, signal?: AbortSignal): Promise<{success: boolean}> => {
-    const response = await fetch(`${API_BASE_URL}/set_mcp_tools`, {
+    const response = await authedFetch(`${API_BASE_URL}/set_mcp_tools`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(payload),

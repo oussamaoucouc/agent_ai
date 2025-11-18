@@ -301,9 +301,8 @@ router = APIRouter(prefix="/sessions", tags=["sessions"])
 @router.get("", response_model=list[SessionModel])
 async def list_sessions(user_id: str = Query(None), request: Request = None, db: SASession = Depends(get_db)):
     try:
-        # Derive identity from bearer token if present
         token_payload = get_user_from_auth_header(request.headers.get("Authorization")) if request else None
-        uid = user_id or (token_payload.get("uid") if token_payload else None)
+        uid = token_payload.get("uid") if token_payload else None
         if not uid:
             raise HTTPException(status_code=401, detail="Unauthorized")
         sessions = db.query(SessionDB).filter(SessionDB.user_id == uid).order_by(SessionDB.created_at.desc()).all()
@@ -316,7 +315,7 @@ async def list_sessions(user_id: str = Query(None), request: Request = None, db:
 async def create_session(request: CreateSessionRequest, http_request: Request = None, db: SASession = Depends(get_db)):
     try:
         token_payload = get_user_from_auth_header(http_request.headers.get("Authorization")) if http_request else None
-        uid = (token_payload.get("uid") if token_payload else request.user_id)
+        uid = token_payload.get("uid") if token_payload else None
         if not uid:
             raise HTTPException(status_code=401, detail="Unauthorized")
         session_id = str(uuid.uuid4())
@@ -357,7 +356,7 @@ async def create_session(request: CreateSessionRequest, http_request: Request = 
 async def rename_session(session_id: str, request: RenameSessionRequest, http_request: Request = None, db: SASession = Depends(get_db)):
     try:
         token_payload = get_user_from_auth_header(http_request.headers.get("Authorization")) if http_request else None
-        uid = (token_payload.get("uid") if token_payload else request.user_id)
+        uid = token_payload.get("uid") if token_payload else None
         if not uid:
             raise HTTPException(status_code=401, detail="Unauthorized")
         s = db.query(SessionDB).filter(SessionDB.id == session_id, SessionDB.user_id == uid).first()
@@ -378,7 +377,7 @@ async def rename_session(session_id: str, request: RenameSessionRequest, http_re
 async def delete_session(session_id: str, request: DeleteSessionRequest, http_request: Request = None, db: SASession = Depends(get_db)):
     try:
         token_payload = get_user_from_auth_header(http_request.headers.get("Authorization")) if http_request else None
-        uid = (token_payload.get("uid") if token_payload else request.user_id)
+        uid = token_payload.get("uid") if token_payload else None
         if not uid:
             raise HTTPException(status_code=401, detail="Unauthorized")
         s = db.query(SessionDB).filter(SessionDB.id == session_id, SessionDB.user_id == uid).first()
@@ -433,7 +432,7 @@ async def get_session_settings(session_id: str, user_id: str = Query(None), requ
     """Return per-session settings (model and voice), falling back to global defaults if unset."""
     try:
         token_payload = get_user_from_auth_header(request.headers.get("Authorization")) if request else None
-        uid = user_id or (token_payload.get("uid") if token_payload else None)
+        uid = token_payload.get("uid") if token_payload else None
         if not uid:
             raise HTTPException(status_code=401, detail="Unauthorized")
         settings = db.query(SessionSettingsDB).filter(SessionSettingsDB.user_id == uid).first()
@@ -458,7 +457,7 @@ async def get_session_settings(session_id: str, user_id: str = Query(None), requ
 async def save_session_messages(session_id: str, request: SaveMessagesRequest, http_request: Request = None, db: SASession = Depends(get_db)):
     try:
         token_payload = get_user_from_auth_header(http_request.headers.get("Authorization")) if http_request else None
-        uid = (token_payload.get("uid") if token_payload else request.user_id)
+        uid = token_payload.get("uid") if token_payload else None
         if not uid:
             raise HTTPException(status_code=401, detail="Unauthorized")
         s = db.query(SessionDB).filter(SessionDB.id == session_id, SessionDB.user_id == uid).first()

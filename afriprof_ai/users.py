@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, constr
 import json as _json
 from sqlalchemy import create_engine, Column, String, DateTime, Integer, UniqueConstraint, text
@@ -6,12 +6,14 @@ from sqlalchemy.orm import sessionmaker, declarative_base, Session as SASession
 from datetime import datetime
 import uuid
 import hashlib
+import binascii
+import secrets
 import os
 
 from teacher_agent.config import DB_URL, get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir
 import sessions as session_mod
 from fastapi import Request
-from auth import issue_token, get_user_from_auth_header
+from auth import issue_token, get_user_from_auth_header, issue_access_token, issue_refresh_token, verify_refresh_token, APP_ENV
 
 
 # Local SQLAlchemy base separate from sessions.py to avoid circular import
@@ -88,9 +90,27 @@ class UserStatsModel(BaseModel):
     createdAt: str
 
 
-def _hash_password(password: str) -> str:
-    # Lightweight hash for demo purposes; replace with bcrypt/argon2 in production
+def _hash_password_sha256(password: str) -> str:
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
+
+def _hash_password_secure(password: str, iterations: int = 200_000) -> str:
+    salt = secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, iterations)
+    return f"pbkdf2_sha256${iterations}${binascii.hexlify(salt).decode()}${binascii.hexlify(dk).decode()}"
+
+def _verify_password(password: str, stored_hash: str) -> bool:
+    try:
+        if stored_hash.startswith('pbkdf2_sha256$'):
+            _, iter_str, salt_hex, hash_hex = stored_hash.split('$', 3)
+            iterations = int(iter_str)
+            salt = binascii.unhexlify(salt_hex.encode())
+            expected = binascii.unhexlify(hash_hex.encode())
+            dk = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, iterations)
+            return hmac.compare_digest(dk, expected)
+        # Fallback for legacy SHA-256
+        return _hash_password_sha256(password) == stored_hash
+    except Exception:
+        return False
 
 
 def _db_to_user_model(u: UserDB) -> UserModel:
@@ -178,7 +198,7 @@ def create_user(request: UserCreateRequest, http_request: Request, db: SASession
         u = UserDB(
             id=user_id,
             username=request.username,
-            password_hash=_hash_password(request.password),
+            password_hash=_hash_password_secure(request.password),
             role=request.role if request.role in ("admin", "user") else "user",
             created_at=datetime.utcnow(),
         )
@@ -230,7 +250,7 @@ def update_user(user_id: str, request: UserUpdateRequest, http_request: Request,
         if not u:
             raise HTTPException(status_code=404, detail="User not found")
         if request.password:
-            u.password_hash = _hash_password(request.password)
+            u.password_hash = _hash_password_secure(request.password)
         if request.role:
             u.role = request.role if request.role in ("admin", "user") else u.role
         db.commit()
@@ -351,17 +371,22 @@ def delete_user(user_id: str, http_request: Request, db: SASession = Depends(get
 
 
 @router.post("/login", response_model=LoginResponse)
-def user_login(request: LoginRequest, db: SASession = Depends(get_db)):
+def user_login(request: LoginRequest, response: Response, db: SASession = Depends(get_db)):
     try:
         u = db.query(UserDB).filter(UserDB.username == request.username).first()
-        if not u or u.password_hash != _hash_password(request.password):
+        if not u or not _verify_password(request.password, u.password_hash):
             raise HTTPException(status_code=401, detail="Invalid username or password")
-
-        # Do NOT auto-create a session on login.
-        # Frontend will load sessions and create one only if needed.
-        # For admins, this prevents inflating session counts when viewing the dashboard.
-        token = issue_token(u.id, u.role)
-        return LoginResponse(user_id=u.id, session_id="", username=u.username, role=u.role, token=token)
+        access = issue_access_token(u.id, u.role)
+        refresh = issue_refresh_token(u.id, u.role)
+        try:
+            payload = verify_refresh_token(refresh)
+            exp = datetime.utcfromtimestamp(int(payload.get("exp", 0))) if payload else datetime.utcnow()
+            store_refresh(db, u.id, payload.get("jti"), exp)  # type: ignore
+        except Exception:
+            pass
+        secure_flag = True if (APP_ENV == "production") else False
+        response.set_cookie(key="refresh_token", value=refresh, httponly=True, secure=secure_flag, samesite="lax", path="/")
+        return LoginResponse(user_id=u.id, session_id="", username=u.username, role=u.role, token=access)
     except HTTPException:
         raise
     except Exception as e:
@@ -432,3 +457,32 @@ def user_stats(request: Request, db: SASession = Depends(get_db)):
         return stats
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error computing user stats: {str(e)}")
+class RefreshTokenDB(Base):
+    __tablename__ = "refresh_tokens"
+    id = Column(String(64), primary_key=True)
+    user_id = Column(String(64), index=True, nullable=False)
+    jti = Column(String(64), unique=True, nullable=False)
+    issued_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    revoked = Column(Integer, nullable=False, default=0)
+    replaced_by = Column(String(64), nullable=True)
+
+Base.metadata.create_all(bind=engine)
+
+def store_refresh(db: SASession, user_id: str, jti: str, expires_at: datetime):
+    rt = RefreshTokenDB(id=str(uuid.uuid4()), user_id=user_id, jti=jti, issued_at=datetime.utcnow(), expires_at=expires_at, revoked=0, replaced_by=None)
+    db.add(rt)
+    db.commit()
+
+def revoke_refresh(db: SASession, jti: str, replaced_by: str | None = None):
+    rt = db.query(RefreshTokenDB).filter(RefreshTokenDB.jti == jti).first()
+    if rt:
+        rt.revoked = 1
+        rt.replaced_by = replaced_by
+        db.commit()
+
+def is_refresh_valid(db: SASession, jti: str) -> bool:
+    rt = db.query(RefreshTokenDB).filter(RefreshTokenDB.jti == jti).first()
+    if not rt or rt.revoked:
+        return False
+    return rt.expires_at > datetime.utcnow()

@@ -32,6 +32,9 @@ import sessions
 import users
 import logging
 from auth import get_user_from_auth_header
+from auth import verify_refresh_token, issue_access_token, issue_refresh_token, APP_ENV
+from users import SessionLocal as _UserSessionLocal
+from users import RefreshTokenDB, store_refresh, revoke_refresh, is_refresh_valid
 
 
 # Sessions persistence moved to sessions.py
@@ -471,11 +474,19 @@ async def delete_document(user_id: Optional[str] = None, filename: str = "", kin
 
 #LLM QUERY
 @app.post("/query", response_model=QueryResponse)
-async def query_agent(request: QueryRequest):
+async def query_agent(request: QueryRequest, http_request: Request):
     try:
-        response = await run_rag_agent(request.query, request.user_id, request.session_id)
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
+        response = await run_rag_agent(request.query, uid, request.session_id)
         return QueryResponse(
-            user_id=request.user_id,
+            user_id=uid,
             session_id=request.session_id,
             response=response
         )
@@ -484,12 +495,20 @@ async def query_agent(request: QueryRequest):
 
 # MCP LLM QUERY
 @app.post("/query_mcp", response_model=QueryResponse)
-async def query_mcp(request: QueryRequest):
+async def query_mcp(request: QueryRequest, http_request: Request):
     try:
-        response = await run_mcp_agent(request.query, request.user_id, request.session_id)
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
+        response = await run_mcp_agent(request.query, uid, request.session_id)
         response = clean_model_output(response)
         return QueryResponse(
-            user_id=request.user_id,
+            user_id=uid,
             session_id=request.session_id,
             response=response
         )
@@ -498,11 +517,19 @@ async def query_mcp(request: QueryRequest):
 
 # ASSISTANT LLM QUERY
 @app.post("/query_assistant", response_model=QueryResponse)
-async def query_assistant(request: QueryRequest):
+async def query_assistant(request: QueryRequest, http_request: Request):
     try:
-        response = await run_assistant_agent(request.query, request.user_id, request.session_id)
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
+        response = await run_assistant_agent(request.query, uid, request.session_id)
         return QueryResponse(
-            user_id=request.user_id,
+            user_id=uid,
             session_id=request.session_id,
             response=response
         )
@@ -511,15 +538,23 @@ async def query_assistant(request: QueryRequest):
 
 # ASSISTANT LLM QUERY not displayed Reasoning
 @app.post("/query_assistant_direct", response_model=QueryResponse)
-async def query_assistant_direct(request: QueryRequest):
+async def query_assistant_direct(request: QueryRequest, http_request: Request):
     key = f"{request.user_id}:{request.session_id}"
     active_tasks[key] = asyncio.current_task()
     try:
-        response = await run_assistant_agent(request.query, request.user_id, request.session_id)
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
+        response = await run_assistant_agent(request.query, uid, request.session_id)
         response = clean_model_output(response)
 
         return QueryResponse(
-            user_id=request.user_id,
+            user_id=uid,
             session_id=request.session_id,
             response=response
         )
@@ -532,7 +567,7 @@ async def query_assistant_direct(request: QueryRequest):
 
 # MCP LLM QUERY not displayed Reasoning
 @app.post("/query_mcp_direct", response_model=QueryResponse)
-async def query_mcp_direct(request: QueryRequest):
+async def query_mcp_direct(request: QueryRequest, http_request: Request):
     key = f"{request.user_id}:{request.session_id}"
     try:
         # Track the current handler task for cancellation as well
@@ -540,11 +575,19 @@ async def query_mcp_direct(request: QueryRequest):
         if current:
             active_tasks[key] = current
         # Run MCP agent as a cancellable task
-        task = asyncio.create_task(run_mcp_agent(request.query, request.user_id, request.session_id))
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
+        task = asyncio.create_task(run_mcp_agent(request.query, uid, request.session_id))
         response = await task
         response = clean_model_output(response)
         return QueryResponse(
-            user_id=request.user_id,
+            user_id=uid,
             session_id=request.session_id,
             response=response
         )
@@ -560,9 +603,18 @@ async def query_mcp_direct(request: QueryRequest):
 async def stt_query_mcp_endpoint(
     file: UploadFile = File(...),
     user_id: str = Form(...),
-    session_id: str = Form(...)
+    session_id: str = Form(...),
+    request: Request = None,
 ):
     try:
+        token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
         # First transcribe the audio
         stt_result = await stt_endpoint(file, user_id, session_id)
         if stt_result["status"] != "success":
@@ -595,9 +647,18 @@ async def stt_query_mcp_endpoint(
 async def stt_query_assistant_endpoint(
     file: UploadFile = File(...),
     user_id: str = Form(...),
-    session_id: str = Form(...)
+    session_id: str = Form(...),
+    request: Request = None,
 ):
     try:
+        token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
         stt_result = await stt_endpoint(file, user_id, session_id)
         if stt_result["status"] != "success":
             return stt_result
@@ -627,9 +688,18 @@ async def stt_query_assistant_endpoint(
 async def stt_query_assistant_direct_endpoint(
     file: UploadFile = File(...),
     user_id: str = Form(...),
-    session_id: str = Form(...)
+    session_id: str = Form(...),
+    request: Request = None,
 ):
     try:
+        token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
         stt_result = await stt_endpoint(file, user_id, session_id)
         if stt_result["status"] != "success":
             return stt_result
@@ -656,9 +726,18 @@ async def stt_query_assistant_direct_endpoint(
 async def stt_query_mcp_direct_endpoint(
     file: UploadFile = File(...),
     user_id: str = Form(...),
-    session_id: str = Form(...)
+    session_id: str = Form(...),
+    request: Request = None,
 ):
     try:
+        token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
         # First transcribe the audio
         stt_result = await stt_endpoint(file, user_id, session_id)
         if stt_result["status"] != "success":
@@ -689,12 +768,20 @@ async def stt_query_mcp_direct_endpoint(
 
 # MCP Query then TTS
 @app.post("/query_mcp_tts")
-async def query_mcp_tts_endpoint(request: QueryRequest):
+async def query_mcp_tts_endpoint(request: QueryRequest, http_request: Request):
     """
     Returns a JSON with the MCP text response, audio filename, and viseme data.
     """
     try:
-        response_text = await run_mcp_agent(request.query, request.user_id, request.session_id)
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
+        response_text = await run_mcp_agent(request.query, uid, request.session_id)
         response_text = clean_model_output(response_text)
 
         # Generate audio and visemes
@@ -708,7 +795,7 @@ async def query_mcp_tts_endpoint(request: QueryRequest):
             audio_filename = os.path.basename(audio_path)
 
         return {
-            "user_id": request.user_id,
+            "user_id": uid,
             "session_id": request.session_id,
             "response": response_text,
             "audio_filename": audio_filename,
@@ -720,12 +807,20 @@ async def query_mcp_tts_endpoint(request: QueryRequest):
 
 # ASSISTANT Query then TTS
 @app.post("/query_assistant_tts")
-async def query_assistant_tts_endpoint(request: QueryRequest):
+async def query_assistant_tts_endpoint(request: QueryRequest, http_request: Request):
     """
     Returns a JSON with the assistant text response, audio filename, and viseme data.
     """
     try:
-        response_text = await run_assistant_agent(request.query, request.user_id, request.session_id)
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
+        response_text = await run_assistant_agent(request.query, uid, request.session_id)
 
         with sessions.SessionLocal() as db:
             sessions.apply_session_voice(db, request.user_id, request.session_id)
@@ -736,7 +831,7 @@ async def query_assistant_tts_endpoint(request: QueryRequest):
             audio_filename = os.path.basename(audio_path)
 
         return {
-            "user_id": request.user_id,
+            "user_id": uid,
             "session_id": request.session_id,
             "response": response_text,
             "audio_filename": audio_filename,
@@ -748,14 +843,22 @@ async def query_assistant_tts_endpoint(request: QueryRequest):
 
 # ASSISTANT Query direct then TTS (filtered reasoning)
 @app.post("/query_assistant_tts_direct")
-async def query_assistant_tts_direct(request: QueryRequest):
+async def query_assistant_tts_direct(request: QueryRequest, http_request: Request):
     """
     Returns a JSON with the filtered assistant text response, audio filename, and viseme data.
     """
     key = f"{request.user_id}:{request.session_id}"
     active_tasks[key] = asyncio.current_task()
     try:
-        response_text = await run_assistant_agent(request.query, request.user_id, request.session_id)
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
+        response_text = await run_assistant_agent(request.query, uid, request.session_id)
         response_text = clean_model_output(response_text)
 
         with sessions.SessionLocal() as db:
@@ -767,7 +870,7 @@ async def query_assistant_tts_direct(request: QueryRequest):
             audio_filename = os.path.basename(audio_path)
 
         return {
-            "user_id": request.user_id,
+            "user_id": uid,
             "session_id": request.session_id,
             "response": response_text,
             "audio_filename": audio_filename,
@@ -783,14 +886,22 @@ async def query_assistant_tts_direct(request: QueryRequest):
 
 # MCP Query direct then TTS (filtered reasoning)
 @app.post("/query_mcp_tts_direct")
-async def query_mcp_tts_direct(request: QueryRequest):
+async def query_mcp_tts_direct(request: QueryRequest, http_request: Request):
     """
     Returns a JSON with the filtered MCP text response, audio filename, and viseme data.
     """
     key = f"{request.user_id}:{request.session_id}"
     active_tasks[key] = asyncio.current_task()
     try:
-        response_text = await run_mcp_agent(request.query, request.user_id, request.session_id)
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
+        response_text = await run_mcp_agent(request.query, uid, request.session_id)
         response_text = clean_model_output(response_text)
 
         # Generate audio and visemes
@@ -804,7 +915,7 @@ async def query_mcp_tts_direct(request: QueryRequest):
             audio_filename = os.path.basename(audio_path)
 
         return {
-            "user_id": request.user_id,
+            "user_id": uid,
             "session_id": request.session_id,
             "response": response_text,
             "audio_filename": audio_filename,
@@ -823,12 +934,21 @@ async def query_mcp_tts_direct(request: QueryRequest):
 async def stt_query_mcp_tts_endpoint(
     file: UploadFile = File(...),
     user_id: str = Form(...),
-    session_id: str = Form(...)
+    session_id: str = Form(...),
+    request: Request = None,
 ):
     """
     Combined STT, MCP query, and TTS endpoint that returns viseme data and audio filename.
     """
     try:
+        token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
         # First transcribe the audio
         stt_result = await stt_endpoint(file, user_id, session_id)
         if stt_result["status"] != "success":
@@ -844,7 +964,7 @@ async def stt_query_mcp_tts_endpoint(
             return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
 
         # Process the query using the MCP agent
-        response_text = await run_mcp_agent(query_text, user_id, session_id)
+        response_text = await run_mcp_agent(query_text, uid, session_id)
 
         # Generate audio and visemes
         # Apply per-session voice before generating audio
@@ -861,7 +981,7 @@ async def stt_query_mcp_tts_endpoint(
             "response": response_text,
             "audio_filename": audio_filename,
             "visemes": viseme_data,
-            "user_id": user_id,
+            "user_id": uid,
             "session_id": session_id,
             "status": "success"
         }
@@ -873,12 +993,21 @@ async def stt_query_mcp_tts_endpoint(
 async def stt_query_assistant_tts_endpoint(
     file: UploadFile = File(...),
     user_id: str = Form(...),
-    session_id: str = Form(...)
+    session_id: str = Form(...),
+    request: Request = None,
 ):
     """
     Combined STT, assistant query, and TTS endpoint that returns viseme data and audio filename.
     """
     try:
+        token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
         stt_result = await stt_endpoint(file, user_id, session_id)
         if stt_result["status"] != "success":
             return stt_result
@@ -887,7 +1016,7 @@ async def stt_query_assistant_tts_endpoint(
         if not query_text:
             return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
 
-        response_text = await run_assistant_agent(query_text, user_id, session_id)
+        response_text = await run_assistant_agent(query_text, uid, session_id)
 
         with sessions.SessionLocal() as db:
             sessions.apply_session_voice(db, user_id, session_id)
@@ -902,7 +1031,7 @@ async def stt_query_assistant_tts_endpoint(
             "response": response_text,
             "audio_filename": audio_filename,
             "visemes": viseme_data,
-            "user_id": user_id,
+            "user_id": uid,
             "session_id": session_id,
             "status": "success"
         }
@@ -914,7 +1043,8 @@ async def stt_query_assistant_tts_endpoint(
 async def stt_query_assistant_tts_direct_endpoint(
     file: UploadFile = File(...),
     user_id: str = Form(...),
-    session_id: str = Form(...)
+    session_id: str = Form(...),
+    request: Request = None,
 ):
     """
     Combined STT, filtered assistant query, and TTS endpoint that returns viseme data and audio filename.
@@ -922,6 +1052,14 @@ async def stt_query_assistant_tts_direct_endpoint(
     key = f"{user_id}:{session_id}"
     active_tasks[key] = asyncio.current_task()
     try:
+        token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
         stt_result = await stt_endpoint(file, user_id, session_id)
         if stt_result["status"] != "success":
             return stt_result
@@ -930,7 +1068,7 @@ async def stt_query_assistant_tts_direct_endpoint(
         if not query_text:
             return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
 
-        response_text = await run_assistant_agent(query_text, user_id, session_id)
+        response_text = await run_assistant_agent(query_text, uid, session_id)
         response_text = clean_model_output(response_text)
 
         with sessions.SessionLocal() as db:
@@ -946,7 +1084,7 @@ async def stt_query_assistant_tts_direct_endpoint(
             "response": response_text,
             "audio_filename": audio_filename,
             "visemes": viseme_data,
-            "user_id": user_id,
+            "user_id": uid,
             "session_id": session_id,
             "status": "success"
         }
@@ -961,7 +1099,8 @@ async def stt_query_assistant_tts_direct_endpoint(
 async def stt_query_mcp_tts_direct_endpoint(
     file: UploadFile = File(...),
     user_id: str = Form(...),
-    session_id: str = Form(...)
+    session_id: str = Form(...),
+    request: Request = None,
 ):
     """
     Combined STT, filtered MCP query, and TTS endpoint that returns viseme data and audio filename.
@@ -969,6 +1108,14 @@ async def stt_query_mcp_tts_direct_endpoint(
     key = f"{user_id}:{session_id}"
     active_tasks[key] = asyncio.current_task()
     try:
+        token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
         # First transcribe the audio
         stt_result = await stt_endpoint(file, user_id, session_id)
         if stt_result["status"] != "success":
@@ -984,7 +1131,7 @@ async def stt_query_mcp_tts_direct_endpoint(
             return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
 
         # Process the query using the MCP agent with filtering
-        response_text = await run_mcp_agent(query_text, user_id, session_id)
+        response_text = await run_mcp_agent(query_text, uid, session_id)
         response_text = clean_model_output(response_text)
 
         # Generate audio and visemes
@@ -1002,7 +1149,7 @@ async def stt_query_mcp_tts_direct_endpoint(
             "response": response_text,
             "audio_filename": audio_filename,
             "visemes": viseme_data,
-            "user_id": user_id,
+            "user_id": uid,
             "session_id": session_id,
             "status": "success"
         }
@@ -1014,16 +1161,24 @@ async def stt_query_mcp_tts_direct_endpoint(
         active_tasks.pop(key, None)
 #LLM QUERY not displayed Reasoning
 @app.post("/query_direct", response_model=QueryResponse)
-async def query_direct(request: QueryRequest):
+async def query_direct(request: QueryRequest, http_request: Request):
     key = f"{request.user_id}:{request.session_id}"
     active_tasks[key] = asyncio.current_task()
     try:
-        response = await run_rag_agent(request.query, request.user_id, request.session_id)
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
+        response = await run_rag_agent(request.query, uid, request.session_id)
         # Clean model output to remove think/tool traces and formatting
         response = clean_model_output(response)
 
         return QueryResponse(
-            user_id=request.user_id,
+            user_id=uid,
             session_id=request.session_id,
             response=response
         )
@@ -1155,7 +1310,8 @@ def tts_endpoint(request: TTSRequest):
 async def stt_query_endpoint(
     file: UploadFile = File(...),
     user_id: str = Form(...),
-    session_id: str = Form(...)
+    session_id: str = Form(...),
+    request: Request = None,
 ):
     """
     Combined STT and query endpoint that:
@@ -1164,6 +1320,14 @@ async def stt_query_endpoint(
     3. Returns both the transcribed text and the query response
     """
     try:
+        token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
         # First transcribe the audio
         stt_result = await stt_endpoint(file, user_id, session_id)
         if stt_result["status"] != "success":
@@ -1179,12 +1343,12 @@ async def stt_query_endpoint(
             return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
 
         # Process the query using the RAG agent
-        response = await run_rag_agent(query_text, user_id, session_id)
+        response = await run_rag_agent(query_text, uid, session_id)
 
         return {
             "text": query_text,
             "response": response,
-            "user_id": user_id,
+            "user_id": uid,
             "session_id": session_id,
             "status": "success"
         }
@@ -1196,7 +1360,8 @@ async def stt_query_endpoint(
 async def stt_query_direct_endpoint(
     file: UploadFile = File(...),
     user_id: str = Form(...),
-    session_id: str = Form(...)
+    session_id: str = Form(...),
+    request: Request = None,
 ):
     """
     Combined STT and filtered query endpoint that:
@@ -1205,6 +1370,14 @@ async def stt_query_direct_endpoint(
     3. Returns both the transcribed text and the filtered query response
     """
     try:
+        token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
         # First transcribe the audio
         stt_result = await stt_endpoint(file, user_id, session_id)
         if stt_result["status"] != "success":
@@ -1220,13 +1393,13 @@ async def stt_query_direct_endpoint(
             return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
 
         # Process the query using the RAG agent and clean output
-        response = await run_rag_agent(query_text, user_id, session_id)
+        response = await run_rag_agent(query_text, uid, session_id)
         response = clean_model_output(response)
 
         return {
             "text": query_text,
             "response": response,
-            "user_id": user_id,
+            "user_id": uid,
             "session_id": session_id,
             "status": "success"
         }
@@ -1235,12 +1408,20 @@ async def stt_query_direct_endpoint(
 
 #Query to speach to text 
 @app.post("/query_tts")
-async def query_tts_endpoint(request: QueryRequest):
+async def query_tts_endpoint(request: QueryRequest, http_request: Request):
     """
     Returns a JSON with the text response, audio filename, and viseme data.
     """
     try:
-        response_text = await run_rag_agent(request.query, request.user_id, request.session_id)
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
+        response_text = await run_rag_agent(request.query, uid, request.session_id)
         
         # Generate audio and visemes
         # Apply per-session voice before generating audio
@@ -1253,7 +1434,7 @@ async def query_tts_endpoint(request: QueryRequest):
             audio_filename = os.path.basename(audio_path)
 
         return {
-            "user_id": request.user_id,
+            "user_id": uid,
             "session_id": request.session_id,
             "response": response_text,
             "audio_filename": audio_filename,
@@ -1265,14 +1446,22 @@ async def query_tts_endpoint(request: QueryRequest):
 
 #Query text to speach direct disabled Reasoning
 @app.post("/query_tts_direct")
-async def query_tts_direct(request: QueryRequest):
+async def query_tts_direct(request: QueryRequest, http_request: Request):
     """
     Returns a JSON with the filtered text response, audio filename, and viseme data.
     """
     key = f"{request.user_id}:{request.session_id}"
     active_tasks[key] = asyncio.current_task()
     try:
-        response_text = await run_rag_agent(request.query, request.user_id, request.session_id)
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
+        response_text = await run_rag_agent(request.query, uid, request.session_id)
         # Clean model output to remove think/tool traces and formatting
         response_text = clean_model_output(response_text)
 
@@ -1287,7 +1476,7 @@ async def query_tts_direct(request: QueryRequest):
             audio_filename = os.path.basename(audio_path)
 
         return {
-            "user_id": request.user_id,
+            "user_id": uid,
             "session_id": request.session_id,
             "response": response_text,
             "audio_filename": audio_filename,
@@ -1306,12 +1495,21 @@ async def query_tts_direct(request: QueryRequest):
 async def stt_query_tts_endpoint(
     file: UploadFile = File(...),
     user_id: str = Form(...),
-    session_id: str = Form(...)
+    session_id: str = Form(...),
+    request: Request = None,
 ):
     """
     Combined STT, query, and TTS endpoint that returns viseme data and audio filename.
     """
     try:
+        token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
         # First transcribe the audio
         stt_result = await stt_endpoint(file, user_id, session_id)
         if stt_result["status"] != "success":
@@ -1323,7 +1521,7 @@ async def stt_query_tts_endpoint(
             return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
 
         # Process the query using the RAG agent
-        response_text = await run_rag_agent(query_text, user_id, session_id)
+        response_text = await run_rag_agent(query_text, uid, session_id)
 
         # Generate audio and visemes
         # Apply per-session voice before generating audio
@@ -1340,7 +1538,7 @@ async def stt_query_tts_endpoint(
             "response": response_text,
             "audio_filename": audio_filename,
             "visemes": viseme_data,
-            "user_id": user_id,
+            "user_id": uid,
             "session_id": session_id,
             "status": "success"
         }
@@ -1352,7 +1550,8 @@ async def stt_query_tts_endpoint(
 async def stt_query_tts_direct_endpoint(
     file: UploadFile = File(...),
     user_id: str = Form(...),
-    session_id: str = Form(...)
+    session_id: str = Form(...),
+    request: Request = None,
 ):
     """
     Combined STT, filtered query, and TTS endpoint that returns viseme data and audio filename.
@@ -1360,6 +1559,14 @@ async def stt_query_tts_direct_endpoint(
     key = f"{user_id}:{session_id}"
     active_tasks[key] = asyncio.current_task()
     try:
+        token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
         # First transcribe the audio
         stt_result = await stt_endpoint(file, user_id, session_id)
         if stt_result["status"] != "success":
@@ -1371,7 +1578,7 @@ async def stt_query_tts_direct_endpoint(
             return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
 
         # Process the query using the RAG agent
-        response_text = await run_rag_agent(query_text, user_id, session_id)
+        response_text = await run_rag_agent(query_text, uid, session_id)
         response_text = clean_model_output(response_text)
 
         # Generate audio and visemes
@@ -1389,7 +1596,7 @@ async def stt_query_tts_direct_endpoint(
             "response": response_text,
             "audio_filename": audio_filename,
             "visemes": viseme_data,
-            "user_id": user_id,
+            "user_id": uid,
             "session_id": session_id,
             "status": "success"
         }
@@ -1986,3 +2193,35 @@ class ModelsCatalogLabeledResponse(BaseModel):
 
 class VoicesCatalogLabeledResponse(BaseModel):
     items: list[LabeledItem]
+# Refresh endpoint
+@app.post("/auth/refresh")
+async def auth_refresh(request: Request):
+    try:
+        token = request.cookies.get("refresh_token")
+        if not token:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        payload = verify_refresh_token(token)
+        if not payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = str(payload.get("uid"))
+        role = str(payload.get("role"))
+        jti = str(payload.get("jti"))
+        from fastapi import Response
+        response = Response()
+        with _UserSessionLocal() as db:
+            if not is_refresh_valid(db, jti):
+                raise HTTPException(status_code=401, detail="Unauthorized")
+            new_access = issue_access_token(uid, role)
+            new_refresh = issue_refresh_token(uid, role)
+            new_payload = verify_refresh_token(new_refresh)
+            new_jti = str(new_payload.get("jti")) if new_payload else ""
+            exp = datetime.datetime.utcfromtimestamp(int(new_payload.get("exp", 0))) if new_payload else datetime.datetime.utcnow()
+            revoke_refresh(db, jti, replaced_by=new_jti)
+            store_refresh(db, uid, new_jti, exp)
+        secure_flag = True if (APP_ENV == "production") else False
+        response.set_cookie(key="refresh_token", value=new_refresh, httponly=True, secure=secure_flag, samesite="lax", path="/")
+        return {"access_token": new_access}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error refreshing token: {str(e)}")
