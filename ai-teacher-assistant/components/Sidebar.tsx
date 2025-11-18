@@ -250,7 +250,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     <button
                                         key={m.id}
                                         onClick={() => onModelChange(m.id)}
-                                        title={m.id}
+                                        title={m.label}
                                         className={`w-full text-center truncate px-2 py-1.5 text-xs rounded-lg transition-colors border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-500 ${
                                             currentModel === m.id ? 'bg-sky-500 text-white font-bold border-sky-500' : 'bg-slate-700/50 hover:bg-slate-700 text-slate-300 border-slate-600'
                                         }`}
@@ -302,7 +302,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                                 ? 'bg-sky-500 text-white font-bold border-sky-500'
                                                 : `${canSelectTools ? 'bg-slate-700/50 hover:bg-slate-700' : 'bg-slate-800/50 opacity-50 cursor-not-allowed'} text-slate-300 border-slate-600`
                                         }`}
-                                        title={tool.url}
+                                        title={tool.label}
                                     >
                                         {tool.label}
                                     </button>
@@ -332,7 +332,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                             ? 'bg-sky-500 text-white font-bold border-sky-500'
                                             : `${canSelectTools ? 'bg-slate-700/50 hover:bg-slate-700' : 'bg-slate-800/50 opacity-50 cursor-not-allowed'} text-slate-300 border-slate-600`
                                         }`}
-                                    title={item.command}
+                                    title={item.label}
                                   >
                                     {item.label}
                                   </button>

@@ -2059,9 +2059,14 @@ async def get_mcp_tools(user_id: Optional[str] = None, request: Request = None):
         for s in servers:
             if isinstance(s, dict):
                 label = str(s.get("label", "Server"))
-                url = str(s.get("url", ""))
-                if url.strip():
-                    items.append(McpToolItem(label=label, url=url))
+                raw_url = str(s.get("url", ""))
+                if raw_url.strip():
+                    try:
+                        # Sanitize: remove query string to avoid exposing secrets
+                        base = raw_url.split("?")[0]
+                        items.append(McpToolItem(label=label, url=base))
+                    except Exception:
+                        items.append(McpToolItem(label=label, url=""))
         return McpToolsCatalogResponse(tools=items)
     except HTTPException:
         raise
@@ -2084,19 +2089,35 @@ async def get_mcp_stdio_tools(user_id: Optional[str] = None, request: Request = 
         cfg = get_runtime_config()
         tools = cfg.get("mcp_stdio_tools", []) or []
         items: list[McpStdioItem] = []
+        def _mask(cmd: str) -> str:
+            try:
+                import re
+                s = str(cmd)
+                patterns = [
+                    r"(?i)(api_key=)([^&\s]+)",
+                    r"(?i)(apikey=)([^&\s]+)",
+                    r"(?i)(token=)([^&\s]+)",
+                    r"(?i)(--api-key\s+)([^\s]+)",
+                    r"(?i)(--token\s+)([^\s]+)",
+                ]
+                for p in patterns:
+                    s = re.sub(p, lambda m: m.group(1) + "<redacted>", s)
+                return s
+            except Exception:
+                return str(cmd)
         for t in tools:
             if isinstance(t, dict):
                 label = str(t.get("label", "Command"))
                 command = str(t.get("command", ""))
                 if command.strip():
-                    items.append(McpStdioItem(label=label, command=command))
+                    items.append(McpStdioItem(label=label, command=_mask(command)))
         # Backward compatibility: if no labeled tools, fall back to commands list
         if not items:
             cmds = cfg.get("mcp_stdio_commands", []) or []
             for i, c in enumerate(cmds, 1):
                 cs = str(c).strip()
                 if cs:
-                    items.append(McpStdioItem(label=f"Command {i}", command=cs))
+                    items.append(McpStdioItem(label=f"Command {i}", command=_mask(cs)))
         return McpStdioToolsCatalogResponse(tools=items)
     except HTTPException:
         raise
