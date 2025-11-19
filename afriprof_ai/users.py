@@ -6,6 +6,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base, Session as SASession
 from datetime import datetime
 import uuid
 import hashlib
+import hmac
 import binascii
 import secrets
 import os
@@ -33,6 +34,17 @@ class UserDB(Base):
     )
 
 
+class RefreshTokenDB(Base):
+    __tablename__ = "refresh_tokens"
+    id = Column(String(64), primary_key=True)
+    user_id = Column(String(64), index=True, nullable=False)
+    jti = Column(String(64), unique=True, nullable=False)
+    issued_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    revoked = Column(Integer, nullable=False, default=0)
+    replaced_by = Column(String(64), nullable=True)
+
+
 engine = create_engine(DB_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base.metadata.create_all(bind=engine)
@@ -44,6 +56,27 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def store_refresh(db: SASession, user_id: str, jti: str, expires_at: datetime):
+    rt = RefreshTokenDB(id=str(uuid.uuid4()), user_id=user_id, jti=jti, issued_at=datetime.utcnow(), expires_at=expires_at, revoked=0, replaced_by=None)
+    db.add(rt)
+    db.commit()
+
+
+def revoke_refresh(db: SASession, jti: str, replaced_by: str | None = None):
+    rt = db.query(RefreshTokenDB).filter(RefreshTokenDB.jti == jti).first()
+    if rt:
+        rt.revoked = 1
+        rt.replaced_by = replaced_by
+        db.commit()
+
+
+def is_refresh_valid(db: SASession, jti: str) -> bool:
+    rt = db.query(RefreshTokenDB).filter(RefreshTokenDB.jti == jti).first()
+    if not rt or rt.revoked:
+        return False
+    return rt.expires_at > datetime.utcnow()
 
 
 # --- Schemas ---
@@ -109,7 +142,10 @@ def _verify_password(password: str, stored_hash: str) -> bool:
             return hmac.compare_digest(dk, expected)
         # Fallback for legacy SHA-256
         return _hash_password_sha256(password) == stored_hash
-    except Exception:
+    except Exception as e:
+        print(f"❌ _verify_password exception: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -139,7 +175,7 @@ def ensure_admin_seed():
         u = UserDB(
             id=user_id,
             username=admin_username,
-            password_hash=_hash_password(admin_password),
+            password_hash=_hash_password_secure(admin_password),
             role="admin",
             created_at=datetime.utcnow(),
         )
@@ -373,9 +409,30 @@ def delete_user(user_id: str, http_request: Request, db: SASession = Depends(get
 @router.post("/login", response_model=LoginResponse)
 def user_login(request: LoginRequest, response: Response, db: SASession = Depends(get_db)):
     try:
+        print(f"\n=== LOGIN ATTEMPT ===")
+        print(f"Username received: '{request.username}'")
+        print(f"Password received: '{request.password}'")
+        
         u = db.query(UserDB).filter(UserDB.username == request.username).first()
-        if not u or not _verify_password(request.password, u.password_hash):
+        
+        if not u:
+            print(f"❌ User not found in database: '{request.username}'")
+            # Show available users for debugging
+            all_users = db.query(UserDB).all()
+            print(f"Available users: {[user.username for user in all_users]}")
             raise HTTPException(status_code=401, detail="Invalid username or password")
+        
+        print(f"✓ User found: {u.username} (ID: {u.id})")
+        print(f"  Password hash: {u.password_hash[:50]}...")
+        
+        password_valid = _verify_password(request.password, u.password_hash)
+        print(f"  Password verification: {'✓ PASSED' if password_valid else '❌ FAILED'}")
+        
+        if not password_valid:
+            raise HTTPException(status_code=401, detail="Invalid username or password")
+        
+        print(f"✓ Login successful for user: {u.username}")
+        
         access = issue_access_token(u.id, u.role)
         refresh = issue_refresh_token(u.id, u.role)
         try:
@@ -390,8 +447,12 @@ def user_login(request: LoginRequest, response: Response, db: SASession = Depend
     except HTTPException:
         raise
     except Exception as e:
+        print(f"❌ Login error: {e}")
+        import traceback
+        traceback.print_exc()
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error during login: {str(e)}")
+
 
 
 @router.get("/stats", response_model=list[UserStatsModel])
@@ -457,32 +518,3 @@ def user_stats(request: Request, db: SASession = Depends(get_db)):
         return stats
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error computing user stats: {str(e)}")
-class RefreshTokenDB(Base):
-    __tablename__ = "refresh_tokens"
-    id = Column(String(64), primary_key=True)
-    user_id = Column(String(64), index=True, nullable=False)
-    jti = Column(String(64), unique=True, nullable=False)
-    issued_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    expires_at = Column(DateTime, nullable=False)
-    revoked = Column(Integer, nullable=False, default=0)
-    replaced_by = Column(String(64), nullable=True)
-
-Base.metadata.create_all(bind=engine)
-
-def store_refresh(db: SASession, user_id: str, jti: str, expires_at: datetime):
-    rt = RefreshTokenDB(id=str(uuid.uuid4()), user_id=user_id, jti=jti, issued_at=datetime.utcnow(), expires_at=expires_at, revoked=0, replaced_by=None)
-    db.add(rt)
-    db.commit()
-
-def revoke_refresh(db: SASession, jti: str, replaced_by: str | None = None):
-    rt = db.query(RefreshTokenDB).filter(RefreshTokenDB.jti == jti).first()
-    if rt:
-        rt.revoked = 1
-        rt.replaced_by = replaced_by
-        db.commit()
-
-def is_refresh_valid(db: SASession, jti: str) -> bool:
-    rt = db.query(RefreshTokenDB).filter(RefreshTokenDB.jti == jti).first()
-    if not rt or rt.revoked:
-        return False
-    return rt.expires_at > datetime.utcnow()
