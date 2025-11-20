@@ -31,6 +31,7 @@ from agno.tools.thinking import ThinkingTools
 from agno.tools.knowledge import KnowledgeTools
 from agno.storage.sqlite import SqliteStorage
 from . import config as cfg
+from . import model_factory
 from .locks import get_user_kb_lock
 
 import logging
@@ -237,7 +238,13 @@ async def run_rag_agent_async(query, user_id, session_id):
         with session_mod.SessionLocal() as db:
             session_model_id = session_mod.get_session_model_id(db, user_id, session_id)
         logging.info(f"RAG agent model selected: user={user_id}, session={session_id}, model_id={session_model_id}")
-        session_model = OpenAIChat(id=session_model_id, base_url=cfg.get_openai_base_url(), api_key=cfg.OPENAI_API_KEY or "anything")
+        session_model = model_factory.create_model(
+            model_id=session_model_id,
+            openai_api_key=cfg.OPENAI_API_KEY,
+            google_api_key=cfg.GOOGLE_API_KEY,
+            ollama_base_url=cfg.OLLAMA_BASE_URL,
+            gemini_search_enabled=cfg.GEMINI_SEARCH_ENABLED
+        )
     except Exception as e:
         logging.warning(f"Falling back to current model due to error resolving session model: {e}")
         session_model = cfg.get_current_model()

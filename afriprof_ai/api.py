@@ -194,6 +194,8 @@ class ConfigResponse(BaseModel):
     voice: str
     ollama_base_url: str
     openai_api_key_set: bool = False
+    google_api_key_set: bool = False
+    gemini_search_enabled: bool = False
     mcp_transport: str
     mcp_server_url: Optional[str] = None
     mcp_stdio_command: Optional[str] = None
@@ -212,6 +214,8 @@ class ConfigUpdateRequest(BaseModel):
     voice: Optional[str] = None
     ollama_base_url: Optional[str] = None
     openai_api_key: Optional[str] = None
+    google_api_key: Optional[str] = None
+    gemini_search_enabled: Optional[bool] = None
     mcp_transport: Optional[str] = None
     mcp_server_url: Optional[str] = None
     mcp_stdio_command: Optional[str] = None
@@ -1736,6 +1740,9 @@ async def set_model_endpoint(request: SetModelRequest):
         logging.info(f"Model change persisted (user-level): user={request.user_id}, model_id={request.model}")
         return {"success": True, "message": f"Model changed to {request.model}"}
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        logging.error(f"Error setting model: {str(e)}\n{error_details}")
         raise HTTPException(status_code=500, detail=f"Error setting model: {str(e)}")
 
 @app.post("/set_voice")
@@ -1807,6 +1814,8 @@ async def update_config(request: ConfigUpdateRequest, http_request: Request = No
             "voice": request.voice,
             "ollama_base_url": request.ollama_base_url,
             "openai_api_key": request.openai_api_key,
+            "google_api_key": request.google_api_key,
+            "gemini_search_enabled": request.gemini_search_enabled,
             "mcp_transport": request.mcp_transport,
             "mcp_server_url": request.mcp_server_url,
             "mcp_stdio_command": request.mcp_stdio_command,

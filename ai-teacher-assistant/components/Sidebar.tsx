@@ -22,7 +22,7 @@ interface SidebarProps {
     onModelChange: (model: string) => void;
     currentVoice: TTSVoice;
     onVoiceChange: (voice: TTSVoice) => void;
-    availableModelsLabeled?: { label: string; id: string }[];
+    availableModelsLabeled?: { label: string; id: string; provider?: string }[];
     availableVoicesLabeled?: { label: string; id: string }[];
     queryMode: QueryMode;
     mcpToolsCatalog: McpToolItem[];
@@ -50,14 +50,14 @@ const StatusIcon: React.FC<{ status: UploadedFile['status'] }> = ({ status }) =>
 const DEFAULT_VOICES: string[] = [];
 
 
-export const Sidebar: React.FC<SidebarProps> = ({ 
-    uploadedFiles, 
-    onFileChange, 
+export const Sidebar: React.FC<SidebarProps> = ({
+    uploadedFiles,
+    onFileChange,
     onDeleteDocument,
-    sessions, 
-    activeSessionId, 
-    onNewSession, 
-    onSelectSession, 
+    sessions,
+    activeSessionId,
+    onNewSession,
+    onSelectSession,
     onRenameSession,
     onDeleteSession,
     onLogout,
@@ -80,7 +80,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
     const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
     const [sessionName, setSessionName] = useState('');
-    
+    const [selectedProvider, setSelectedProvider] = useState<string>('');
+
     const renameInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -135,7 +136,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         setRenamingSessionId(session.id);
         setSessionName(session.name);
     };
-    
+
     const handleFinishRename = () => {
         if (renamingSessionId) {
             onRenameSession(renamingSessionId, sessionName);
@@ -151,12 +152,47 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }
     };
 
+    // Group models by provider and infer provider if missing
+    const modelsByProvider = (availableModelsLabeled || []).reduce((acc, m) => {
+        // Infer provider from model ID if not set
+        let provider = m.provider;
+        if (!provider) {
+            if (m.id.startsWith('gemini')) {
+                provider = 'google';
+            } else if (m.id.startsWith('gpt-') || m.id.startsWith('o1-') || m.id.startsWith('o3-')) {
+                provider = 'openai';
+            } else {
+                provider = 'ollama';
+            }
+        }
+        if (!acc[provider]) acc[provider] = [];
+        acc[provider].push(m);
+        return acc;
+    }, {} as Record<string, Array<{ label: string; id: string; provider?: string }>>);
+
+    const providers = Object.keys(modelsByProvider);
+
+    // Set initial selected provider when models load
+    useEffect(() => {
+        if (providers.length > 0 && !selectedProvider) {
+            // Try to find provider of current model
+            let initialProvider = providers[0];
+            for (const [prov, models] of Object.entries(modelsByProvider)) {
+                if (models.some(m => m.id === currentModel)) {
+                    initialProvider = prov;
+                    break;
+                }
+            }
+            setSelectedProvider(initialProvider);
+        }
+    }, [availableModelsLabeled, currentModel]);
+
     return (
         <aside className={`w-80 flex-shrink-0 bg-slate-900/30 backdrop-blur-2xl border-r border-slate-500/30 flex flex-col fixed inset-y-0 left-0 z-40 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
             {/* Header */}
             <div className="flex items-center justify-between p-4 flex-shrink-0">
                 <h2 className="text-xl font-bold text-slate-200">Menu</h2>
-                <button 
+                <button
                     onClick={onClose}
                     className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-md transition-colors lg:hidden"
                     aria-label="Close sidebar"
@@ -164,17 +200,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <CloseIcon className="w-5 h-5" />
                 </button>
             </div>
-             
-             {/* Divider */}
-             <div className="border-t border-slate-500/30 flex-shrink-0 mx-4"></div>
 
-             {/* Scrollable Content */}
-             <div className="flex-1 overflow-y-auto p-4 space-y-8">
+            {/* Divider */}
+            <div className="border-t border-slate-500/30 flex-shrink-0 mx-4"></div>
+
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-8">
                 {/* Sessions */}
                 <div>
                     <div className="flex items-center justify-between mb-3">
                         <h2 className="text-lg font-semibold text-slate-200">Sessions</h2>
-                        <button 
+                        <button
                             onClick={() => { onNewSession(); }}
                             className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-md transition-colors"
                             title="New Session"
@@ -195,11 +231,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                             }
                                         }
                                     }}
-                                    className={`w-full text-left flex items-center p-2 rounded-lg transition-colors ${
-                                        session.id === activeSessionId
-                                            ? 'bg-sky-500/30 text-sky-300'
-                                            : 'text-slate-300 hover:bg-white/10 hover:text-white'
-                                    }`}
+                                    className={`w-full text-left flex items-center p-2 rounded-lg transition-colors ${session.id === activeSessionId
+                                        ? 'bg-sky-500/30 text-sky-300'
+                                        : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                                        }`}
                                 >
                                     <ChatIcon className="w-4 h-4 mr-3 flex-shrink-0" />
                                     {renamingSessionId === session.id ? (
@@ -245,15 +280,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <div className="space-y-6">
                         <div>
                             <h3 className="text-sm font-medium text-slate-400 mb-2 flex items-center"><CubeIcon className="w-4 h-4 mr-2" />AI Model</h3>
+
+                            {/* Provider Selection */}
+                            {providers.length > 0 && (
+                                <div className="mb-3">
+                                    <label className="text-xs text-slate-500 mb-1 block">Provider</label>
+                                    <select
+                                        value={selectedProvider}
+                                        onChange={(e) => setSelectedProvider(e.target.value)}
+                                        className="w-full bg-slate-800/50 text-slate-300 text-xs rounded-lg border border-slate-600 px-2 py-1.5 focus:outline-none focus:border-sky-500"
+                                    >
+                                        {providers.map(p => (
+                                            <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
                             <div className="grid grid-cols-2 gap-2">
-                                {(availableModelsLabeled || []).map((m) => (
+                                {(modelsByProvider[selectedProvider] || []).map((m) => (
                                     <button
                                         key={m.id}
                                         onClick={() => onModelChange(m.id)}
                                         title={m.label}
-                                        className={`w-full text-center truncate px-2 py-1.5 text-xs rounded-lg transition-colors border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-500 ${
-                                            currentModel === m.id ? 'bg-sky-500 text-white font-bold border-sky-500' : 'bg-slate-700/50 hover:bg-slate-700 text-slate-300 border-slate-600'
-                                        }`}
+                                        className={`w-full text-center truncate px-2 py-1.5 text-xs rounded-lg transition-colors border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-500 ${currentModel === m.id ? 'bg-sky-500 text-white font-bold border-sky-500' : 'bg-slate-700/50 hover:bg-slate-700 text-slate-300 border-slate-600'
+                                            }`}
                                     >
                                         {m.label}
                                     </button>
@@ -268,51 +319,49 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         </div>
                         {/* Voices at top */}
                         <div>
-                             <h3 className="text-sm font-medium text-slate-400 mb-2 flex items-center"><SpeakerIcon className="w-4 h-4 mr-2" />Voices</h3>
-                             <div className="grid grid-cols-3 gap-2">
+                            <h3 className="text-sm font-medium text-slate-400 mb-2 flex items-center"><SpeakerIcon className="w-4 h-4 mr-2" />Voices</h3>
+                            <div className="grid grid-cols-3 gap-2">
                                 {(availableVoicesLabeled || []).map(v => (
                                     <button
                                         key={v.id}
                                         onClick={() => onVoiceChange(v.id as TTSVoice)}
-                                        className={`px-2 py-1.5 text-xs rounded-lg transition-colors border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-500 ${
-                                            currentVoice === (v.id as TTSVoice) ? 'bg-sky-500 text-white font-bold border-sky-500' : 'bg-slate-700/50 hover:bg-slate-700 text-slate-300 border-slate-600'
-                                        }`}
+                                        className={`px-2 py-1.5 text-xs rounded-lg transition-colors border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-500 ${currentVoice === (v.id as TTSVoice) ? 'bg-sky-500 text-white font-bold border-sky-500' : 'bg-slate-700/50 hover:bg-slate-700 text-slate-300 border-slate-600'
+                                            }`}
                                     >
                                         {v.label}
                                     </button>
                                 ))}
-                             </div>
-                             {(!availableVoicesLabeled || availableVoicesLabeled.length === 0) && (
-                               <p className="mt-2 text-xs text-slate-500">No voices configured.</p>
-                             )}
+                            </div>
+                            {(!availableVoicesLabeled || availableVoicesLabeled.length === 0) && (
+                                <p className="mt-2 text-xs text-slate-500">No voices configured.</p>
+                            )}
                         </div>
                         {/* Tools multi-select below Voices */}
                         <div className={`transition-opacity duration-200 ${isSettingsSyncing ? 'opacity-50 pointer-events-none' : ''}`}>
                             <h3 className="text-sm font-medium text-slate-400 mb-2">Web Tools</h3>
                             {/* Wrap grid to enable hover tooltip when disabled */}
                             <div className={`relative ${!canSelectTools ? 'group' : ''}`}>
-                              <div className="grid grid-cols-2 gap-2">
-                                {mcpToolsCatalog.map(tool => (
-                                    <button
-                                        key={tool.label}
-                                        onClick={() => toggleMcpTool(tool.label)}
-                                        disabled={!canSelectTools}
-                                        className={`px-2 py-1.5 text-xs rounded-lg transition-colors border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-500 ${
-                                            selectedMcpTools.includes(tool.label)
+                                <div className="grid grid-cols-2 gap-2">
+                                    {mcpToolsCatalog.map(tool => (
+                                        <button
+                                            key={tool.label}
+                                            onClick={() => toggleMcpTool(tool.label)}
+                                            disabled={!canSelectTools}
+                                            className={`px-2 py-1.5 text-xs rounded-lg transition-colors border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-500 ${selectedMcpTools.includes(tool.label)
                                                 ? 'bg-sky-500 text-white font-bold border-sky-500'
                                                 : `${canSelectTools ? 'bg-slate-700/50 hover:bg-slate-700' : 'bg-slate-800/50 opacity-50 cursor-not-allowed'} text-slate-300 border-slate-600`
-                                        }`}
-                                        title={tool.label}
-                                    >
-                                        {tool.label}
-                                    </button>
-                                ))}
-                              </div>
-                              {!canSelectTools && (
-                                <div className="pointer-events-none absolute -bottom-10 left-0 bg-gray-900/90 text-white text-xs px-2 py-1 rounded-md shadow-md opacity-0 group-hover:opacity-100 backdrop-blur-sm">
-                                  {isSettingsSyncing ? 'Loading...' : 'Switch to Tools mode to enable tool selection'}
+                                                }`}
+                                            title={tool.label}
+                                        >
+                                            {tool.label}
+                                        </button>
+                                    ))}
                                 </div>
-                              )}
+                                {!canSelectTools && (
+                                    <div className="pointer-events-none absolute -bottom-10 left-0 bg-gray-900/90 text-white text-xs px-2 py-1 rounded-md shadow-md opacity-0 group-hover:opacity-100 backdrop-blur-sm">
+                                        {isSettingsSyncing ? 'Loading...' : 'Switch to Tools mode to enable tool selection'}
+                                    </div>
+                                )}
                             </div>
                             <p className="mt-2 text-xs text-slate-500">
                                 {canSelectTools
@@ -321,31 +370,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             </p>
                             <h3 className="text-sm font-medium text-slate-400 mb-2">Local Tools</h3>
                             <div className={`relative ${!canSelectTools ? 'group' : ''}`}>
-                              <div className="grid grid-cols-2 gap-2">
-                                {mcpStdioCatalog.map(item => (
-                                  <button
-                                    key={item.command}
-                                    onClick={() => toggleMcpStdio(item.command)}
-                                    disabled={!canSelectTools}
-                                    className={`px-2 py-1.5 text-xs rounded-lg transition-colors border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-500 ${
-                                        selectedMcpStdio.includes(item.command)
-                                            ? 'bg-sky-500 text-white font-bold border-sky-500'
-                                            : `${canSelectTools ? 'bg-slate-700/50 hover:bg-slate-700' : 'bg-slate-800/50 opacity-50 cursor-not-allowed'} text-slate-300 border-slate-600`
-                                        }`}
-                                    title={item.label}
-                                  >
-                                    {item.label}
-                                  </button>
-                                ))}
-                              </div>
-                              {!canSelectTools && (
-                                <div className="pointer-events-none absolute -bottom-10 left-0 bg-gray-900/90 text-white text-xs px-2 py-1 rounded-md shadow-md opacity-0 group-hover:opacity-100 backdrop-blur-sm">
-                                  {isSettingsSyncing ? 'Loading...' : 'Switch to Tools mode to enable stdio selection'}
+                                <div className="grid grid-cols-2 gap-2">
+                                    {mcpStdioCatalog.map(item => (
+                                        <button
+                                            key={item.command}
+                                            onClick={() => toggleMcpStdio(item.command)}
+                                            disabled={!canSelectTools}
+                                            className={`px-2 py-1.5 text-xs rounded-lg transition-colors border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-500 ${selectedMcpStdio.includes(item.command)
+                                                ? 'bg-sky-500 text-white font-bold border-sky-500'
+                                                : `${canSelectTools ? 'bg-slate-700/50 hover:bg-slate-700' : 'bg-slate-800/50 opacity-50 cursor-not-allowed'} text-slate-300 border-slate-600`
+                                                }`}
+                                            title={item.label}
+                                        >
+                                            {item.label}
+                                        </button>
+                                    ))}
                                 </div>
-                              )}
+                                {!canSelectTools && (
+                                    <div className="pointer-events-none absolute -bottom-10 left-0 bg-gray-900/90 text-white text-xs px-2 py-1 rounded-md shadow-md opacity-0 group-hover:opacity-100 backdrop-blur-sm">
+                                        {isSettingsSyncing ? 'Loading...' : 'Switch to Tools mode to enable stdio selection'}
+                                    </div>
+                                )}
                             </div>
                             <p className="mt-2 text-xs text-slate-500">
-                              Local tools run locally configured by the administrator.
+                                Local tools run locally configured by the administrator.
                             </p>
                         </div>
                     </div>
@@ -357,63 +405,62 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <p className="text-sm text-slate-400 mb-4">Add documents to provide context for the AI assistant.</p>
                     {/* Upload button with hover tooltip when disabled */}
                     <div className={`relative ${!canUploadDocs ? 'group' : ''}`}>
-                      <label
-                          htmlFor="file-upload"
-                          className={`w-full ${canUploadDocs ? 'cursor-pointer bg-sky-600 hover:bg-sky-700' : 'cursor-not-allowed bg-slate-700 opacity-50'} text-white font-bold py-2 px-4 rounded-lg inline-flex items-center justify-center transition-colors`}
-                          aria-disabled={!canUploadDocs}
-                      >
-                          <UploadIcon className="w-5 h-5 mr-2" />
-                          <span>Upload Document</span>
-                      </label>
-                      {!canUploadDocs && (
-                        <div className="pointer-events-none absolute -bottom-10 left-0 bg-gray-900/90 text-white text-xs px-2 py-1 rounded-md shadow-md opacity-0 group-hover:opacity-100 backdrop-blur-sm">
-                          Switch to Agent or Document Search mode to enable uploads
-                        </div>
-                      )}
+                        <label className={`flex items-center justify-center w-full h-32 px-4 transition bg-slate-800/50 border-2 border-slate-600 border-dashed rounded-lg appearance-none ${canUploadDocs ? 'cursor-pointer hover:border-sky-500 focus:outline-none' : 'cursor-not-allowed opacity-50'}`}>
+                            <div className="flex flex-col items-center space-y-2">
+                                <UploadIcon className="w-8 h-8 text-slate-400" />
+                                <span className="font-medium text-slate-400">
+                                    {canUploadDocs ? 'Drop files to Attach' : 'Switch to Chat mode to upload'}
+                                </span>
+                            </div>
+                            <input
+                                type="file"
+                                className="hidden"
+                                onChange={(e) => {
+                                    if (canUploadDocs) {
+                                        onFileChange(e);
+                                    }
+                                }}
+                                disabled={!canUploadDocs}
+                            />
+                        </label>
+                        {!canUploadDocs && (
+                            <div className="pointer-events-none absolute -bottom-10 left-0 bg-gray-900/90 text-white text-xs px-2 py-1 rounded-md shadow-md opacity-0 group-hover:opacity-100 backdrop-blur-sm">
+                                Switch to Chat mode to enable file uploads
+                            </div>
+                        )}
                     </div>
-                    <input id="file-upload" type="file" accept=".pdf,.doc,.docx,.txt,.md,.csv" className="hidden" onChange={onFileChange} multiple disabled={!canUploadDocs} />
-                    {!canUploadDocs && (
-                        <p className="mt-2 text-xs text-slate-500">Switch to Agent or Document Search mode to Upload Document.</p>
-                    )}
-                
-                    <h3 className="text-md font-semibold text-slate-300 mt-4 mb-2">Uploaded Files</h3>
-                    {uploadedFiles.length > 0 ? (
-                        <ul className="space-y-2">
-                            {uploadedFiles.map((upload) => (
-                                <li key={upload.id} className="group flex items-center p-2 rounded-lg bg-slate-800/40 border border-slate-600/50">
-                                    <DocumentIcon className="w-5 h-5 mr-3 text-sky-400 flex-shrink-0" />
-                                    <span className="flex-1 text-sm text-slate-300 truncate" title={upload.file.name}>{upload.file.name}</span>
-                                    <div className="ml-2 flex items-center gap-2">
-                                        <StatusIcon status={upload.status} />
-                                        <button
-                                            onClick={() => onDeleteDocument(upload.file.name, upload.kind)}
-                                            className="p-1.5 text-slate-400 hover:text-red-400 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
-                                            title="Delete document"
-                                        >
-                                            <TrashIcon className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                </li>
-                            ))}
-                        </ul>
-                    ) : (
-                        <div className="text-center text-slate-500 p-4 border-2 border-dashed border-slate-600/50 rounded-lg">
-                            <p>No documents uploaded.</p>
-                        </div>
-                    )}
-                </div>
-            </div>
 
-            {/* Footer */}
-            <div className="p-4 flex-shrink-0">
-                 <div className="border-t border-slate-500/30 mb-4"></div>
-                 <button 
-                    onClick={onLogout}
-                    className="w-full flex items-center justify-center p-2.5 rounded-lg text-slate-300 hover:bg-red-500/20 hover:text-red-300 transition-colors"
-                 >
-                    <LogoutIcon className="w-5 h-5 mr-2" />
-                    <span className="font-medium">Logout</span>
-                 </button>
+                    <div className="mt-4 space-y-2">
+                        {uploadedFiles.map((file, index) => (
+                            <div key={index} className="flex items-center justify-between p-2 bg-slate-800/50 rounded-lg">
+                                <div className="flex items-center space-x-2 overflow-hidden">
+                                    <DocumentIcon className="w-4 h-4 text-sky-400 flex-shrink-0" />
+                                    <span className="text-sm text-slate-300 truncate">{file.file.name}</span>
+                                </div>
+                                <div className="flex items-center space-x-2 flex-shrink-0">
+                                    <StatusIcon status={file.status} />
+                                    <button
+                                        onClick={() => onDeleteDocument(file.name, file.kind)}
+                                        className="text-slate-500 hover:text-red-400 transition-colors"
+                                    >
+                                        <TrashIcon className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Logout */}
+                <div className="pt-4 border-t border-slate-500/30">
+                    <button
+                        onClick={onLogout}
+                        className="flex items-center w-full px-4 py-2 text-sm font-medium text-slate-400 transition-colors rounded-lg hover:bg-slate-800/50 hover:text-white"
+                    >
+                        <LogoutIcon className="w-5 h-5 mr-3" />
+                        Sign Out
+                    </button>
+                </div>
             </div>
         </aside>
     );

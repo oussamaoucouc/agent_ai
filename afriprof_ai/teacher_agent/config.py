@@ -12,6 +12,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agno.models.openai import OpenAIChat
+try:
+    from . import model_factory
+except ImportError:
+    import model_factory
 
 # Ollama configuration
 # Use OLLAMA_BASE_URL from environment, with fallback to localhost for local development
@@ -19,6 +23,8 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:12434")
 OLLAMA_HOST = OLLAMA_BASE_URL
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+GOOGLE_API_KEY = ""  # Loaded from config_state.json, not environment
+GEMINI_SEARCH_ENABLED = False  # Global toggle for Gemini Search tool
 
 def get_openai_base_url() -> str:
     try:
@@ -65,8 +71,42 @@ def set_model_id(new_model_id: str):
     """Set a new model ID and update the MODEL instance."""
     global _current_model_id, MODEL
     _current_model_id = new_model_id
-    MODEL = OpenAIChat(id=new_model_id, base_url=get_openai_base_url(), api_key=OPENAI_API_KEY or "anything")
+    
+    # Ensure Google API key is loaded if selecting Gemini
+    if new_model_id.startswith("gemini") and not GOOGLE_API_KEY:
+        print("Google API key missing for Gemini. Attempting to reload from config_state.json...")
+        try:
+            state = _load_config_state()
+            if state.get("google_api_key"):
+                set_google_api_key(state["google_api_key"])
+        except Exception as e:
+            print(f"Error reloading config state: {e}")
+
+    # Debug logging for API key
+    is_key_set = bool(GOOGLE_API_KEY and GOOGLE_API_KEY.strip())
+    print(f"Setting model to {new_model_id}. Google API Key set: {is_key_set}")
+    
+    MODEL = model_factory.create_model(
+        model_id=new_model_id,
+        openai_api_key=OPENAI_API_KEY,
+        google_api_key=GOOGLE_API_KEY,
+        ollama_base_url=OLLAMA_BASE_URL,
+        gemini_search_enabled=GEMINI_SEARCH_ENABLED
+    )
     print(f"Model changed to: {new_model_id}")
+
+# --- Google API Key Management ---
+def set_google_api_key(key: str) -> None:
+    """Set Google API key for Gemini models."""
+    global GOOGLE_API_KEY
+    GOOGLE_API_KEY = str(key).strip()
+    print("GOOGLE_API_KEY updated (value hidden)")
+
+def set_gemini_search_enabled(enabled: bool) -> None:
+    """Set global Gemini Search toggle."""
+    global GEMINI_SEARCH_ENABLED
+    GEMINI_SEARCH_ENABLED = bool(enabled)
+    print(f"Gemini Search enabled: {GEMINI_SEARCH_ENABLED}")
 
 def get_current_voice():
     """Get the current voice setting."""
@@ -160,12 +200,20 @@ _mcp_stdio_tools: list[dict] = []
 
 def _load_config_state() -> Dict[str, Any]:
     # Prefer new location
+    # Prefer new location
     if CONFIG_STATE_PATH.exists():
         try:
+            print(f"Loading config state from: {CONFIG_STATE_PATH}")
             with open(CONFIG_STATE_PATH, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
+                data = json.load(f)
+                key_present = bool(data.get("google_api_key"))
+                print(f"Config loaded. Google API key present: {key_present}")
+                return data
+        except Exception as e:
+            print(f"Error loading config state: {e}")
             return {}
+    else:
+        print(f"Config state file not found at: {CONFIG_STATE_PATH}")
     # Migrate from old location if present
     if OLD_CONFIG_STATE_PATH.exists():
         try:
@@ -212,6 +260,18 @@ if _state.get("ollama_base_url"):
         set_ollama_base_url(_state["ollama_base_url"])
     except Exception as e:
         print(f"Failed to apply persisted OLLAMA_BASE_URL: {e}")
+# Load Google API key from config
+if _state.get("google_api_key"):
+    try:
+        set_google_api_key(_state["google_api_key"])
+    except Exception as e:
+        print(f"Failed to apply persisted Google API key: {e}")
+# Load Gemini search toggle
+if "gemini_search_enabled" in _state:
+    try:
+        set_gemini_search_enabled(_state["gemini_search_enabled"])
+    except Exception as e:
+        print(f"Failed to apply persisted Gemini search setting: {e}")
 if _state.get("mcp_transport"):
     MCP_TRANSPORT = _state.get("mcp_transport", MCP_TRANSPORT)
 if _state.get("mcp_server_url"):
@@ -300,12 +360,49 @@ if _state.get("mcp_stdio_tools"):
     except Exception:
         pass
 
+# --- Provider Lookup Functions ---
+def get_provider_for_model(model_id: str) -> str | None:
+    """Lookup provider for a model from metadata.
+    
+    Args:
+        model_id: The model ID to lookup
+    
+    Returns:
+        Provider string ("openai", "gemini", "ollama") or None if not found
+    """
+    try:
+        for model in _available_models_labeled:
+            if isinstance(model, dict) and model.get("id") == model_id:
+                return model.get("provider")
+    except Exception:
+        pass
+    return None
+
+def get_model_metadata(model_id: str) -> dict | None:
+    """Get full metadata for a model.
+    
+    Args:
+        model_id: The model ID to lookup
+    
+    Returns:
+        Model metadata dict or None if not found
+    """
+    try:
+        for model in _available_models_labeled:
+            if isinstance(model, dict) and model.get("id") == model_id:
+                return model.copy()
+    except Exception:
+        pass
+    return None
+
 def get_runtime_config() -> Dict[str, Any]:
     return {
         "model": _current_model_id,
         "voice": _current_voice,
         "ollama_base_url": OLLAMA_BASE_URL,
         "openai_api_key_set": bool(OPENAI_API_KEY),
+        "google_api_key_set": bool(GOOGLE_API_KEY),
+        "gemini_search_enabled": GEMINI_SEARCH_ENABLED,
         "mcp_transport": MCP_TRANSPORT,
         "mcp_server_url": MCP_SERVER_URL,
         "mcp_stdio_command": MCP_STDIO_COMMAND,
@@ -319,11 +416,17 @@ def get_runtime_config() -> Dict[str, Any]:
         "mcp_servers": _mcp_servers,
     }
 
-def set_ollama_base_url(new_url: str) -> None:
+def set_ollama_base_url(new_url: str):
     global OLLAMA_BASE_URL, OLLAMA_HOST, MODEL
     OLLAMA_BASE_URL = new_url
     OLLAMA_HOST = new_url
-    MODEL = OpenAIChat(id=_current_model_id, base_url=get_openai_base_url(), api_key=OPENAI_API_KEY or "anything")
+    MODEL = model_factory.create_model(
+        model_id=_current_model_id,
+        openai_api_key=OPENAI_API_KEY,
+        google_api_key=GOOGLE_API_KEY,
+        ollama_base_url=OLLAMA_BASE_URL,
+        gemini_search_enabled=GEMINI_SEARCH_ENABLED
+    )
     print(f"OLLAMA_BASE_URL changed to: {new_url}")
 
 
@@ -333,6 +436,7 @@ def set_mcp_transport(new_transport: str) -> None:
         raise ValueError("Invalid MCP transport. Use 'streamable-http' or 'stdio'.")
     MCP_TRANSPORT = new_transport.strip()
     print(f"MCP transport changed to: {MCP_TRANSPORT}")
+
 
 def set_mcp_server_url(new_url: str) -> None:
     global MCP_SERVER_URL
@@ -390,6 +494,13 @@ def update_runtime_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
             set_openai_api_key(str(cfg["openai_api_key"]))
         except Exception:
             pass
+    if "google_api_key" in cfg and cfg["google_api_key"]:
+        try:
+            set_google_api_key(str(cfg["google_api_key"]))
+        except Exception:
+            pass
+    if "gemini_search_enabled" in cfg and cfg["gemini_search_enabled"] is not None:
+        set_gemini_search_enabled(bool(cfg["gemini_search_enabled"]))
     if "mcp_transport" in cfg and cfg["mcp_transport"]:
         set_mcp_transport(str(cfg["mcp_transport"]))
     if "mcp_server_url" in cfg and cfg["mcp_server_url"] is not None:
@@ -480,6 +591,8 @@ def update_runtime_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "voice": _current_voice,
         "ollama_base_url": OLLAMA_BASE_URL,
         "openai_api_key_set": bool(OPENAI_API_KEY),
+        "google_api_key": GOOGLE_API_KEY,
+        "gemini_search_enabled": GEMINI_SEARCH_ENABLED,
         "mcp_transport": MCP_TRANSPORT,
         "mcp_server_url": MCP_SERVER_URL,
         "mcp_stdio_command": MCP_STDIO_COMMAND,

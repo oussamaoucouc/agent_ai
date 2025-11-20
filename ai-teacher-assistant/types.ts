@@ -40,7 +40,7 @@ export interface Session {
     id: string;
     name: string;
     messages: Message[];
-    createdAt: string; 
+    createdAt: string;
 }
 
 // Data type for the admin dashboard user list
@@ -185,13 +185,15 @@ export interface ConfigResponse {
     voice: string;
     ollama_base_url: string;
     openai_api_key_set: boolean;
+    google_api_key_set: boolean;
+    gemini_search_enabled: boolean;
     mcp_transport: string;
     mcp_server_url?: string | null;
     mcp_stdio_command?: string | null;
     mcp_stdio_args: string[];
     mcp_stdio_commands: string[];
     mcp_stdio_tools?: { label: string; command: string }[];
-    available_models_labeled?: { label: string; id: string }[];
+    available_models_labeled?: { label: string; id: string; provider?: string }[];
     available_models: string[];
     available_voices_labeled?: { label: string; id: string }[];
     available_voices: string[];
@@ -204,13 +206,15 @@ export interface ConfigUpdateRequest {
     voice?: string;
     ollama_base_url?: string;
     openai_api_key?: string | null;
+    google_api_key?: string | null;
+    gemini_search_enabled?: boolean;
     mcp_transport?: string;
     mcp_server_url?: string | null;
     mcp_stdio_command?: string | null;
     mcp_stdio_args?: string[];
     mcp_stdio_commands?: string[];
     mcp_stdio_tools?: { label: string; command: string }[];
-    available_models_labeled?: { label: string; id: string }[];
+    available_models_labeled?: { label: string; id: string; provider?: string }[];
     available_models?: string[];
     available_voices_labeled?: { label: string; id: string }[];
     available_voices?: string[];

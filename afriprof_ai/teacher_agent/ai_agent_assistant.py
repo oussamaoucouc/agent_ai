@@ -10,6 +10,7 @@ from agno.storage.postgres import PostgresStorage
 from . import config as cfg
 from agno.models.ollama import Ollama
 from agno.models.openai import OpenAIChat
+from . import model_factory
 
 logging.basicConfig(level=logging.INFO)
 
@@ -34,7 +35,13 @@ async def run_assistant_agent_async(query, user_id, session_id):
         with session_mod.SessionLocal() as db:
             session_model_id = session_mod.get_session_model_id(db, user_id, session_id)
         logging.info(f"Assistant agent model selected: user={user_id}, session={session_id}, model_id={session_model_id}")
-        session_model = OpenAIChat(id=session_model_id, base_url=cfg.get_openai_base_url(), api_key=cfg.OPENAI_API_KEY or "anything")
+        session_model = model_factory.create_model(
+            model_id=session_model_id,
+            openai_api_key=cfg.OPENAI_API_KEY,
+            google_api_key=cfg.GOOGLE_API_KEY,
+            ollama_base_url=cfg.OLLAMA_BASE_URL,
+            gemini_search_enabled=cfg.GEMINI_SEARCH_ENABLED
+        )
     except Exception as e:
         logging.warning(f"Falling back to current model for assistant due to error resolving session model: {e}")
         session_model = cfg.get_current_model()
