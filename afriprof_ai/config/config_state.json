@@ -3,7 +3,7 @@
   "voice": "af_sky",
   "ollama_base_url": "http://localhost:12434/engines/llama.cpp/v1",
   "openai_api_key_set": true,
-  "google_api_key": "AIzaSyA55CJh7-DjQXZ0TZV0XiV83uzbh3_yco8",
+  "google_api_key": "AIzaSyCiMmwnnfmtvvLhyuTbh48okySmrFkWADE",
   "gemini_search_enabled": true,
   "mcp_transport": "stdio",
   "mcp_server_url": "https://server.smithery.ai/@Aas-ee/open-websearch/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1",
@@ -14,13 +14,18 @@
     {
       "label": "docker MCP",
       "command": "docker mcp gateway run"
+    },
+    {
+      "label": "Docker client",
+      "command": "docker run -i --rm alpine/socat STDIO TCP:host.docker.internal:8811"
     }
   ],
   "available_models": [
     "ai/granite-4.0-h-tiny:7B-ctx",
     "ai/granite-4.0-nano:latest",
     "ai/granite-4.0-micro:3B_ctx",
-    "gemini-2.0-flash"
+    "gemini-2.0-flash",
+    "gemini-flash-lite-latest"
   ],
   "available_models_labeled": [
     {
@@ -38,6 +43,10 @@
     {
       "label": "Gemini flash",
       "id": "gemini-2.0-flash"
+    },
+    {
+      "label": "Gemini lite",
+      "id": "gemini-flash-lite-latest"
     }
   ],
   "available_voices": [

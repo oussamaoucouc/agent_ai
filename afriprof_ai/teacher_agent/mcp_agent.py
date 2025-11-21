@@ -7,6 +7,12 @@ import re
 import os
 import logging
 import asyncio
+from agno.agent import Agent
+from agno.storage.postgres import PostgresStorage
+from agno.tools.mcp import MultiMCPTools
+from . import config as cfg
+from . import model_factory
+logger = logging.getLogger(__name__)
 _ARTIFACT_TOKEN_REGEX = re.compile(
     r"\s*(?:<\|im_end\|>|<\|im_start\|>|<\|eot\|>|<eot>|</s>|<end_of_role>|end_of_role|<end_of_turn>|end_of_turn)\s*",
     re.IGNORECASE,
@@ -86,6 +92,23 @@ async def run_agent_async(query, user_id, session_id):
     # Get cached knowledge base and memory DBs
     #memory_mcp = await initialize_memory_dbs(user_id, session_id)
     storage_session_id = f"{user_id}_{session_id}"  # For PostgresStorage isolation
+
+    # Resolve per-session model preference
+    try:
+        import sessions as session_mod
+        with session_mod.SessionLocal() as db:
+            session_model_id = session_mod.get_session_model_id(db, user_id, session_id)
+        logger.info(f"MCP agent model selected: user={user_id}, session={session_id}, model_id={session_model_id}")
+        session_model = model_factory.create_model(
+            model_id=session_model_id,
+            openai_api_key=cfg.OPENAI_API_KEY,
+            google_api_key=cfg.GOOGLE_API_KEY,
+            ollama_base_url=cfg.OLLAMA_BASE_URL,
+            gemini_search_enabled=cfg.GEMINI_SEARCH_ENABLED,
+        )
+    except Exception as e:
+        logger.warning(f"Falling back to current model for MCP due to error resolving session model: {e}")
+        session_model = cfg.get_current_model()
 
     agent_common_kwargs = dict(
         model=session_model,
