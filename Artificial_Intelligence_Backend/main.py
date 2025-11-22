@@ -1,5 +1,5 @@
 """
-Main entry point for the AI Teacher Assistant application.
+Main entry point for the AI Assistant application.
 """
 import os
 import uvicorn

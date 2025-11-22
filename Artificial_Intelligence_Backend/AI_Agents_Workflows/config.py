@@ -1,5 +1,5 @@
 """
-Configuration settings for the AI Teacher Assistant application.
+Configuration settings for the AI Assistant application.
 """
 import os
 import sys

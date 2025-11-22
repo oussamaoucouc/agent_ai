@@ -1,5 +1,5 @@
 """
-API endpoints for the AI Teacher Assistant application (FastAPI app instance).
+API endpoints for the AI Assistant application (FastAPI app instance).
 """
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse
