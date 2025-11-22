@@ -348,7 +348,7 @@ if _state.get("available_models_labeled"):
         aml = _state.get("available_models_labeled")
         if isinstance(aml, list):
             _available_models_labeled = [
-                {"label": str(item.get("label", "Model")), "id": str(item.get("id", "")).strip()}
+                {"label": str(item.get("label", "Model")), "id": str(item.get("id", "")).strip(), "provider": str(item.get("provider", ""))}
                 for item in aml if isinstance(item, dict) and str(item.get("id", "")).strip()
             ] or _available_models_labeled
             if not _available_models:
@@ -589,8 +589,9 @@ def update_runtime_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
                     if isinstance(item, dict):
                         label = str(item.get("label", "Model")).strip() or "Model"
                         mid = str(item.get("id", "")).strip()
+                        provider = str(item.get("provider", "")).strip()
                         if mid:
-                            cleaned.append({"label": label, "id": mid})
+                            cleaned.append({"label": label, "id": mid, "provider": provider})
                 if cleaned:
                     _available_models_labeled = cleaned
                     _available_models = [m["id"] for m in cleaned]

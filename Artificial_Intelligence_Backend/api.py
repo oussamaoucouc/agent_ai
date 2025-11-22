@@ -13,15 +13,15 @@ import os
 import time
 import datetime
 from pydub import AudioSegment
-from teacher_agent.rag_agent import run_rag_agent, initialize_knowledge_base
-from teacher_agent.locks import get_user_kb_lock
-from teacher_agent.ai_agent_assistant import run_assistant_agent
-from teacher_agent.config import get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir
-from teacher_agent.mcp_agent import run_agent_async as run_mcp_agent
-from teacher_agent.tts import text_to_speech
-from teacher_agent.config import TTS_DELETE_AFTER_SERVE, TTS_DELETE_DELAY_SECONDS
+from AI_Agents_Workflows.rag_agent import run_rag_agent, initialize_knowledge_base
+from AI_Agents_Workflows.locks import get_user_kb_lock
+from AI_Agents_Workflows.ai_agent_assistant import run_assistant_agent
+from AI_Agents_Workflows.config import get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir
+from AI_Agents_Workflows.mcp_agent import run_agent_async as run_mcp_agent
+from AI_Agents_Workflows.tts import text_to_speech
+from AI_Agents_Workflows.config import TTS_DELETE_AFTER_SERVE, TTS_DELETE_DELAY_SECONDS
 from typing import Optional
-from teacher_agent.stt import initialize_stt
+from AI_Agents_Workflows.stt import initialize_stt
 import base64
 import uuid
 from fastapi.responses import FileResponse
@@ -1682,7 +1682,7 @@ async def query_agent_debug(request: QueryRequest):
         print(f"DEBUG: User ID: {request.user_id}, Session ID: {request.session_id}")
         
         # Test Ollama connection first
-        from teacher_agent.config import OLLAMA_BASE_URL, get_current_model_id
+        from AI_Agents_Workflows.config import OLLAMA_BASE_URL, get_current_model_id
         import requests
         
         print(f"DEBUG: Testing Ollama connection to {OLLAMA_BASE_URL}")
@@ -1724,7 +1724,7 @@ async def query_agent_debug(request: QueryRequest):
 async def set_model_endpoint(request: SetModelRequest):
     """Set the model for the AI agents"""
     try:
-        from teacher_agent.config import set_model_id
+        from AI_Agents_Workflows.config import set_model_id
         # Update runtime config immediately
         set_model_id(request.model)
         # Persist as a per-user setting (use latest record)
@@ -1741,7 +1741,7 @@ async def set_model_endpoint(request: SetModelRequest):
                 settings.updated_at = now
             else:
                 # Ensure non-null voice default when creating a new settings row
-                from teacher_agent.config import get_current_voice
+                from AI_Agents_Workflows.config import get_current_voice
                 db.add(sessions.SessionSettingsDB(user_id=request.user_id, voice=get_current_voice(), model_id=request.model, updated_at=now))
             db.commit()
         logging.info(f"Model change persisted (user-level): user={request.user_id}, model_id={request.model}")
@@ -1757,7 +1757,7 @@ async def set_voice_endpoint(request: SetVoiceRequest):
     """Set the voice for TTS"""
     try:
         # Update runtime config immediately
-        from teacher_agent.config import set_voice
+        from AI_Agents_Workflows.config import set_voice
         set_voice(request.voice)
         # Persist as a per-user setting (use latest record)
         with sessions.SessionLocal() as db:
@@ -1794,7 +1794,7 @@ async def get_config(user_id: Optional[str] = None, request: Request = None):
             u = db.query(users.UserDB).filter(users.UserDB.id == uid).first()
             if not u or (u.role != "admin"):
                 raise HTTPException(status_code=403, detail="Admin access required")
-        from teacher_agent.config import get_runtime_config
+        from AI_Agents_Workflows.config import get_runtime_config
         cfg = get_runtime_config()
         return ConfigResponse(**cfg)
     except HTTPException:
@@ -1815,7 +1815,7 @@ async def update_config(request: ConfigUpdateRequest, http_request: Request = No
             u = db.query(users.UserDB).filter(users.UserDB.id == uid).first()
             if not u or u.role != "admin":
                 raise HTTPException(status_code=403, detail="Admin access required")
-        from teacher_agent.config import update_runtime_config
+        from AI_Agents_Workflows.config import update_runtime_config
         cfg = update_runtime_config({
             "model": request.model,
             "voice": request.voice,
@@ -1856,7 +1856,7 @@ async def get_config_path(user_id: Optional[str] = None, request: Request = None
             u = db.query(users.UserDB).filter(users.UserDB.id == uid).first()
             if not u or u.role != "admin":
                 raise HTTPException(status_code=403, detail="Admin access required")
-        from teacher_agent.config import CONFIG_STATE_PATH
+        from AI_Agents_Workflows.config import CONFIG_STATE_PATH
         path_str = str(CONFIG_STATE_PATH.resolve())
         return ConfigPathResponse(config_state_path=path_str, exists=os.path.exists(CONFIG_STATE_PATH))
     except HTTPException:
@@ -1960,7 +1960,7 @@ async def get_models(user_id: Optional[str] = None, request: Request = None):
             u = db.query(users.UserDB).filter(users.UserDB.id == uid).first()
             if not u:
                 raise HTTPException(status_code=401, detail="Invalid user")
-        from teacher_agent.config import get_runtime_config
+        from AI_Agents_Workflows.config import get_runtime_config
         cfg = get_runtime_config()
         return ModelsCatalogResponse(models=cfg.get("available_models", []))
     except HTTPException:
@@ -1979,7 +1979,7 @@ async def get_models_labeled(user_id: Optional[str] = None, request: Request = N
             u = db.query(users.UserDB).filter(users.UserDB.id == uid).first()
             if not u:
                 raise HTTPException(status_code=401, detail="Invalid user")
-        from teacher_agent.config import get_runtime_config
+        from AI_Agents_Workflows.config import get_runtime_config
         cfg = get_runtime_config()
         labeled = cfg.get("available_models_labeled", []) or []
         items: list[LabeledItem] = []
@@ -2015,7 +2015,7 @@ async def get_voices(user_id: Optional[str] = None, request: Request = None):
             u = db.query(users.UserDB).filter(users.UserDB.id == uid).first()
             if not u:
                 raise HTTPException(status_code=401, detail="Invalid user")
-        from teacher_agent.config import get_runtime_config
+        from AI_Agents_Workflows.config import get_runtime_config
         cfg = get_runtime_config()
         return VoicesCatalogResponse(voices=cfg.get("available_voices", []))
     except HTTPException:
@@ -2034,7 +2034,7 @@ async def get_voices_labeled(user_id: Optional[str] = None, request: Request = N
             u = db.query(users.UserDB).filter(users.UserDB.id == uid).first()
             if not u:
                 raise HTTPException(status_code=401, detail="Invalid user")
-        from teacher_agent.config import get_runtime_config
+        from AI_Agents_Workflows.config import get_runtime_config
         cfg = get_runtime_config()
         labeled = cfg.get("available_voices_labeled", []) or []
         items: list[LabeledItem] = []
@@ -2070,7 +2070,7 @@ async def get_mcp_tools(user_id: Optional[str] = None, request: Request = None):
             u = db.query(users.UserDB).filter(users.UserDB.id == uid).first()
             if not u:
                 raise HTTPException(status_code=401, detail="Invalid user")
-        from teacher_agent.config import get_runtime_config
+        from AI_Agents_Workflows.config import get_runtime_config
         cfg = get_runtime_config()
         servers = cfg.get("mcp_servers", []) or []
         items = []
@@ -2103,7 +2103,7 @@ async def get_mcp_stdio_tools(user_id: Optional[str] = None, request: Request = 
             u = db.query(users.UserDB).filter(users.UserDB.id == uid).first()
             if not u:
                 raise HTTPException(status_code=401, detail="Invalid user")
-        from teacher_agent.config import get_runtime_config
+        from AI_Agents_Workflows.config import get_runtime_config
         cfg = get_runtime_config()
         tools = cfg.get("mcp_stdio_tools", []) or []
         items: list[McpStdioItem] = []
@@ -2160,7 +2160,7 @@ async def set_mcp_tools(request: SetMcpToolsRequest):
         # Resolve URLs from labels if provided
         urls: list[str] = []
         if request.tool_labels and len(request.tool_labels) > 0:
-            from teacher_agent.config import get_runtime_config
+            from AI_Agents_Workflows.config import get_runtime_config
             cfg = get_runtime_config()
             servers = cfg.get("mcp_servers", []) or []
             label_to_url = {str(s.get("label", "")).lower().strip(): str(s.get("url", "")).strip() for s in servers if isinstance(s, dict)}
@@ -2187,7 +2187,7 @@ async def set_mcp_tools(request: SetMcpToolsRequest):
                 settings.updated_at = now
             else:
                 # Create with defaults for missing fields
-                from teacher_agent.config import get_current_voice, get_current_model_id
+                from AI_Agents_Workflows.config import get_current_voice, get_current_model_id
                 db.add(sessions.SessionSettingsDB(user_id=request.user_id, voice=get_current_voice(), model_id=get_current_model_id(), mcp_tools_urls=urls_json, updated_at=now))
             db.commit()
         logging.info(f"MCP tools selection persisted: user={request.user_id}, urls={len(urls)}")
@@ -2216,7 +2216,7 @@ async def set_mcp_stdio_tools(request: SetMcpStdioToolsRequest):
                 settings.mcp_stdio_commands = cmds_json
                 settings.updated_at = now
             else:
-                from teacher_agent.config import get_current_voice, get_current_model_id
+                from AI_Agents_Workflows.config import get_current_voice, get_current_model_id
                 db.add(sessions.SessionSettingsDB(user_id=request.user_id, voice=get_current_voice(), model_id=get_current_model_id(), mcp_stdio_commands=cmds_json, updated_at=now))
             db.commit()
         logging.info(f"MCP stdio tools selection persisted: user={request.user_id}, cmds={len(cmds)}")

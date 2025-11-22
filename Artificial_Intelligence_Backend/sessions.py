@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import create_engine, Column, String, Text, DateTime, ForeignKey, inspect, text
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship, Session as SASession
 from datetime import datetime
-from teacher_agent.config import DB_URL, get_current_voice, set_voice, get_runtime_config, get_default_voice
+from AI_Agents_Workflows.config import DB_URL, get_current_voice, set_voice, get_runtime_config, get_default_voice
 import uuid
 import logging
 from auth import get_user_from_auth_header
@@ -187,7 +187,7 @@ def apply_session_voice(db: SASession, user_id: str, session_id: str) -> str:
     return voice
 
 # --- Per-session model helpers ---
-from teacher_agent.config import get_current_model_id, set_model_id, get_runtime_config, get_default_model_id
+from AI_Agents_Workflows.config import get_current_model_id, set_model_id, get_runtime_config, get_default_model_id
 import logging
 
 def get_session_model_id(db: SASession, user_id: str, session_id: str) -> str:
@@ -232,7 +232,7 @@ def apply_session_model(db: SASession, user_id: str, session_id: str) -> str:
 
 # --- MCP tools selection helpers ---
 import json as _json
-from teacher_agent.config import get_runtime_config as _get_runtime_config
+from AI_Agents_Workflows.config import get_runtime_config as _get_runtime_config
 
 def get_session_mcp_tools_urls(db: SASession, user_id: str, session_id: str) -> list[str]:
     """Resolve MCP tool URLs by user-level preference (JSON array in mcp_tools_urls).
@@ -334,7 +334,7 @@ async def create_session(request: CreateSessionRequest, http_request: Request = 
         # Ensure user-level settings exist once; do not duplicate per session
         if not db.query(SessionSettingsDB).filter(SessionSettingsDB.user_id == uid).first():
             default_voice = get_default_voice()
-            from teacher_agent.config import get_default_model_id
+            from AI_Agents_Workflows.config import get_default_model_id
             default_model = get_default_model_id()
             db.add(SessionSettingsDB(user_id=uid, voice=default_voice, model_id=default_model, updated_at=now))
         db.commit()

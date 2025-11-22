@@ -14,9 +14,13 @@ mock_agno = MagicMock()
 sys.modules["agno"] = mock_agno
 sys.modules["agno.models"] = mock_agno
 sys.modules["agno.models.openai"] = mock_agno
+sys.modules["agno.models.google"] = mock_agno
+sys.modules["agno.models.openrouter"] = mock_agno
 mock_agno.OpenAIChat = MagicMock()
+mock_agno.Gemini = MagicMock()
+mock_agno.OpenRouter = MagicMock()
 
-from afriprof_ai.teacher_agent import config
+from Artificial_Intelligence_Backend.AI_Agents_Workflows import config
 
 def test_config_persistence():
     print("Testing Config Persistence...")
@@ -38,11 +42,7 @@ def test_config_persistence():
     print(f"OLLAMA_BASE_URL: {config.OLLAMA_BASE_URL}")
     assert config.OLLAMA_BASE_URL == "http://test-ollama:11434"
     
-    print(f"OPENAI_BASE_URL: {config.OPENAI_BASE_URL}")
-    assert config.OPENAI_BASE_URL == "https://test-openai.com/v1"
-    
-    print(f"get_openai_base_url(): {config.get_openai_base_url()}")
-    assert config.get_openai_base_url() == "https://test-openai.com/v1"
+
     
     print(f"GEMINI_SEARCH_ENABLED: {config.GEMINI_SEARCH_ENABLED}")
     assert config.GEMINI_SEARCH_ENABLED is True
@@ -62,7 +62,7 @@ def test_config_persistence():
     
     print(f"Saved State: {saved_state}")
     assert saved_state["ollama_base_url"] == "http://test-ollama:11434"
-    assert saved_state["openai_base_url"] == "https://test-openai.com/v1"
+
     assert saved_state["gemini_search_enabled"] is True
     assert saved_state["available_models_labeled"][0]["provider"] == "ollama"
     

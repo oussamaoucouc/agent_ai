@@ -11,12 +11,9 @@ import binascii
 import secrets
 import os
 
-from teacher_agent.config import DB_URL, get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir
+from AI_Agents_Workflows.config import DB_URL, get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir
 import sessions as session_mod
-from fastapi import Request
 from auth import issue_token, get_user_from_auth_header, issue_access_token, issue_refresh_token, verify_refresh_token, APP_ENV
-
-
 # Local SQLAlchemy base separate from sessions.py to avoid circular import
 Base = declarative_base()
 
@@ -191,7 +188,7 @@ def ensure_admin_seed():
         # Create default per-user settings on first user creation
         try:
             if not db.query(session_mod.SessionSettingsDB).filter(session_mod.SessionSettingsDB.user_id == user_id).first():
-                from teacher_agent.config import get_default_model_id, get_default_voice
+                from AI_Agents_Workflows.config import get_default_model_id, get_default_voice
                 db.add(session_mod.SessionSettingsDB(
                     user_id=user_id,
                     voice=get_default_voice(),
@@ -251,7 +248,7 @@ def create_user(request: UserCreateRequest, http_request: Request, db: SASession
         # Initialize default per-user settings at creation
         try:
             if not db.query(session_mod.SessionSettingsDB).filter(session_mod.SessionSettingsDB.user_id == user_id).first():
-                from teacher_agent.config import get_default_model_id, get_default_voice
+                from AI_Agents_Workflows.config import get_default_model_id, get_default_voice
                 db.add(session_mod.SessionSettingsDB(
                     user_id=user_id,
                     voice=get_default_voice(),

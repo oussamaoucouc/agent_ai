@@ -1,4 +1,4 @@
--- Initialize PostgreSQL database for afriprof_ai
+-- Initialize PostgreSQL database for Artificial_Intelligence_Backend
 
 -- Enable the pgvector extension
 CREATE EXTENSION IF NOT EXISTS vector;

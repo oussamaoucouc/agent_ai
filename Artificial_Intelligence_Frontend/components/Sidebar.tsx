@@ -3,6 +3,7 @@ import { UploadedFile, Session, TTSVoice, QueryMode } from '../types';
 import * as storage from '../services/storageService';
 import { getVoicesCatalog } from '../services/apiService';
 import { McpToolItem } from '../types';
+import { CustomDropdown } from './CustomDropdown';
 import { DocumentIcon, UploadIcon, SpinnerIcon, CheckIcon, ErrorIcon, PlusIcon, LogoutIcon, ChatIcon, CloseIcon, EditIcon, TrashIcon, CubeIcon, SpeakerIcon } from './icons';
 
 interface SidebarProps {
@@ -179,7 +180,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         if (providers.length > 0 && !selectedProvider) {
             // Try to find provider of current model
             let initialProvider = providers[0];
-            for (const [prov, models] of Object.entries(modelsByProvider)) {
+            for (const [prov, models] of Object.entries(modelsByProvider) as [string, Array<{ label: string; id: string; provider?: string }>][]) {
                 if (models.some(m => m.id === currentModel)) {
                     initialProvider = prov;
                     break;
@@ -286,16 +287,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             {/* Provider Selection */}
                             {providers.length > 0 && (
                                 <div className="mb-3">
-                                    <label className="text-xs text-slate-500 mb-1 block">Provider</label>
-                                    <select
+                                    <CustomDropdown
+                                        label="Provider"
+                                        options={providers}
                                         value={selectedProvider}
-                                        onChange={(e) => setSelectedProvider(e.target.value)}
-                                        className="w-full bg-slate-800/50 text-slate-300 text-xs rounded-lg border border-slate-600 px-2 py-1.5 focus:outline-none focus:border-sky-500"
-                                    >
-                                        {providers.map(p => (
-                                            <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
-                                        ))}
-                                    </select>
+                                        onChange={setSelectedProvider}
+                                    />
                                 </div>
                             )}
 

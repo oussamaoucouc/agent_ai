@@ -48,8 +48,8 @@ def format_rag_output(content: str) -> str:
         return content
     
     # Remove excessive markdown headers (#### to ##)
-    content = re.sub(r'^####\s+', '**', content, flags=re.MULTILINE)
-    content = re.sub(r'^###\s+', '**', content, flags=re.MULTILINE)
+    content = re.sub(r'^####\s+(.+)$', r'**\1**', content, flags=re.MULTILINE)
+    content = re.sub(r'^###\s+(.+)$', r'**\1**', content, flags=re.MULTILINE)
     
     # Clean up "Source & Context" section to be more natural
     content = re.sub(r'\*\*Source & Context\*\*', '\n📄 **Source Information:**', content)

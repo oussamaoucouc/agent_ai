@@ -13,7 +13,7 @@ import hmac
 
 # Import from your config
 sys.path.insert(0, os.path.dirname(__file__))
-from teacher_agent.config import DB_URL
+from AI_Agents_Workflows.config import DB_URL
 
 Base = declarative_base()
 
