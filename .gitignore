@@ -45,3 +45,6 @@ data/pdfs/
 # Binaries (rhubarb lip-sync)
 rhubarb/Rhubarb-Lip-Sync-1.13.0-Windows/
 rhubarb/Rhubarb-Lip-Sync-1.13.0-Linux/
+
+# Configuration
+afriprof_ai/config/config_state.json

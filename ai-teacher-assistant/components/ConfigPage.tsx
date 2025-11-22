@@ -36,6 +36,7 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
   const [openaiApiKey, setOpenaiApiKey] = useState<string>('');
   const [googleApiKey, setGoogleApiKey] = useState<string>('');
   const [openrouterApiKey, setOpenrouterApiKey] = useState<string>('');
+  const [agnoApiKey, setAgnoApiKey] = useState<string>('');
   const [newServer, setNewServer] = useState<{ label: string; url: string }>({ label: '', url: '' });
   const [newModel, setNewModel] = useState<{ label: string; id: string; provider: string }>({ label: '', id: '', provider: 'openai' });
   const [newVoice, setNewVoice] = useState<{ label: string; id: string }>({ label: '', id: '' });
@@ -80,6 +81,7 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
         openai_api_key: openaiApiKey || undefined,
         google_api_key: googleApiKey || undefined,
         openrouter_api_key: openrouterApiKey || undefined,
+        agno_api_key: agnoApiKey || undefined,
         gemini_search_enabled: config.gemini_search_enabled,
         mcp_transport: config.mcp_transport,
         mcp_stdio_commands: config.mcp_stdio_commands || [],
@@ -381,6 +383,17 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                     className={`w-full ${inputBaseStyle}`}
                   />
                   <p className="mt-2 text-xs text-slate-500">Stored in memory; never displayed back.</p>
+                </label>
+                <label className="block">
+                  <span className="block text-sm font-medium text-slate-400 mb-2">AGNO API Key (optional)</span>
+                  <input
+                    type="password"
+                    value={agnoApiKey}
+                    onChange={(e) => setAgnoApiKey(e.target.value)}
+                    placeholder={config.agno_api_key_set ? 'Key is set (enter to replace)' : 'Enter AGNO API key for monitoring'}
+                    className={`w-full ${inputBaseStyle}`}
+                  />
+                  <p className="mt-2 text-xs text-slate-500">For agent monitoring at https://app.agno.com/</p>
                 </label>
                 <label className="flex items-center gap-3 p-3 bg-slate-800/40 rounded-lg border border-slate-700/50">
                   <input

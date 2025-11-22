@@ -196,6 +196,7 @@ class ConfigResponse(BaseModel):
     openai_api_key_set: bool = False
     google_api_key_set: bool = False
     openrouter_api_key_set: bool = False
+    agno_api_key_set: bool = False
     gemini_search_enabled: bool = False
     mcp_transport: str
     mcp_server_url: Optional[str] = None
@@ -217,6 +218,7 @@ class ConfigUpdateRequest(BaseModel):
     openai_api_key: Optional[str] = None
     google_api_key: Optional[str] = None
     openrouter_api_key: Optional[str] = None
+    agno_api_key: Optional[str] = None
     gemini_search_enabled: Optional[bool] = None
     mcp_transport: Optional[str] = None
     mcp_server_url: Optional[str] = None
@@ -1821,6 +1823,7 @@ async def update_config(request: ConfigUpdateRequest, http_request: Request = No
             "openai_api_key": request.openai_api_key,
             "google_api_key": request.google_api_key,
             "openrouter_api_key": request.openrouter_api_key,
+            "agno_api_key": request.agno_api_key,
             "gemini_search_enabled": request.gemini_search_enabled,
             "mcp_transport": request.mcp_transport,
             "mcp_server_url": request.mcp_server_url,

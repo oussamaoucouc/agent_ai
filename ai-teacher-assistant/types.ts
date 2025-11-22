@@ -186,6 +186,8 @@ export interface ConfigResponse {
     ollama_base_url: string;
     openai_api_key_set: boolean;
     google_api_key_set: boolean;
+    openrouter_api_key_set: boolean;
+    agno_api_key_set: boolean;
     gemini_search_enabled: boolean;
     mcp_transport: string;
     mcp_server_url?: string | null;
@@ -207,6 +209,8 @@ export interface ConfigUpdateRequest {
     ollama_base_url?: string;
     openai_api_key?: string | null;
     google_api_key?: string | null;
+    openrouter_api_key?: string | null;
+    agno_api_key?: string | null;
     gemini_search_enabled?: boolean;
     mcp_transport?: string;
     mcp_server_url?: string | null;

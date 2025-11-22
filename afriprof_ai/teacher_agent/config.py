@@ -25,6 +25,7 @@ OLLAMA_HOST = OLLAMA_BASE_URL
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 GOOGLE_API_KEY = ""  # Loaded from config_state.json, not environment
 OPENROUTER_API_KEY = ""  # Loaded from config_state.json, not environment
+AGNO_API_KEY = ""  # Loaded from config_state.json, not environment
 GEMINI_SEARCH_ENABLED = False  # Global toggle for Gemini Search tool
 
 def get_openai_base_url() -> str:
@@ -96,6 +97,15 @@ def set_model_id(new_model_id: str):
     # Debug logging for API keys
     google_key_set = bool(GOOGLE_API_KEY and GOOGLE_API_KEY.strip())
     openrouter_key_set = bool(OPENROUTER_API_KEY and OPENROUTER_API_KEY.strip())
+    
+    if new_model_id.startswith("openrouter/"):
+        print(f"DEBUG: OpenRouter Key present: {openrouter_key_set}")
+        if openrouter_key_set:
+            print(f"DEBUG: OpenRouter Key length: {len(OPENROUTER_API_KEY)}")
+            print(f"DEBUG: OpenRouter Key start: {OPENROUTER_API_KEY[:10]}...")
+        else:
+            print("DEBUG: OpenRouter Key is EMPTY or None")
+            
     print(f"Setting model to {new_model_id}. Google API Key set: {google_key_set}, OpenRouter API Key set: {openrouter_key_set}")
     
     MODEL = model_factory.create_model(
@@ -128,6 +138,14 @@ def set_openrouter_api_key(key: str) -> None:
     OPENROUTER_API_KEY = str(key).strip()
     os.environ["OPENROUTER_API_KEY"] = OPENROUTER_API_KEY
     print("OPENROUTER_API_KEY updated (value hidden)")
+
+# --- AGNO API Key Management ---
+def set_agno_api_key(key: str) -> None:
+    """Set AGNO API key for agent monitoring."""
+    global AGNO_API_KEY
+    AGNO_API_KEY = str(key).strip()
+    os.environ["AGNO_API_KEY"] = AGNO_API_KEY
+    print("AGNO_API_KEY updated (value hidden)")
 
 def get_current_voice():
     """Get the current voice setting."""
@@ -269,6 +287,13 @@ if _state.get("openrouter_api_key"):
         set_openrouter_api_key(_state["openrouter_api_key"])
     except Exception as e:
         print(f"Failed to apply persisted OpenRouter API key: {e}")
+
+# Load AGNO API key from config
+if _state.get("agno_api_key"):
+    try:
+        set_agno_api_key(_state["agno_api_key"])
+    except Exception as e:
+        print(f"Failed to apply persisted AGNO API key: {e}")
 
 # Load Gemini search toggle
 if "gemini_search_enabled" in _state:
@@ -417,6 +442,7 @@ def get_runtime_config() -> Dict[str, Any]:
         "openai_api_key_set": bool(OPENAI_API_KEY),
         "google_api_key_set": bool(GOOGLE_API_KEY),
         "openrouter_api_key_set": bool(OPENROUTER_API_KEY),
+        "agno_api_key_set": bool(AGNO_API_KEY),
         "gemini_search_enabled": GEMINI_SEARCH_ENABLED,
         "mcp_transport": MCP_TRANSPORT,
         "mcp_server_url": MCP_SERVER_URL,
@@ -520,6 +546,11 @@ def update_runtime_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
             set_openrouter_api_key(str(cfg["openrouter_api_key"]))
         except Exception:
             pass
+    if "agno_api_key" in cfg and cfg["agno_api_key"]:
+        try:
+            set_agno_api_key(str(cfg["agno_api_key"]))
+        except Exception:
+            pass
     if "gemini_search_enabled" in cfg and cfg["gemini_search_enabled"] is not None:
         set_gemini_search_enabled(bool(cfg["gemini_search_enabled"]))
     if "mcp_transport" in cfg and cfg["mcp_transport"]:
@@ -614,6 +645,7 @@ def update_runtime_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "openai_api_key_set": bool(OPENAI_API_KEY),
         "google_api_key": GOOGLE_API_KEY,
         "openrouter_api_key": OPENROUTER_API_KEY,
+        "agno_api_key": AGNO_API_KEY,
         "gemini_search_enabled": GEMINI_SEARCH_ENABLED,
         "mcp_transport": MCP_TRANSPORT,
         "mcp_server_url": MCP_SERVER_URL,
