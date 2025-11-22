@@ -33,9 +33,46 @@ from agno.storage.sqlite import SqliteStorage
 from . import config as cfg
 from . import model_factory
 from .locks import get_user_kb_lock
+import re
 
 import logging
 logging.basicConfig(level=logging.INFO)
+
+
+def format_rag_output(content: str) -> str:
+    """
+    Format RAG output to be more user-friendly.
+    Cleans up markdown formatting and makes content more readable.
+    """
+    if not content:
+        return content
+    
+    # Remove excessive markdown headers (#### to ##)
+    content = re.sub(r'^####\s+', '**', content, flags=re.MULTILINE)
+    content = re.sub(r'^###\s+', '**', content, flags=re.MULTILINE)
+    
+    # Clean up "Source & Context" section to be more natural
+    content = re.sub(r'\*\*Source & Context\*\*', '\n📄 **Source Information:**', content)
+    content = re.sub(r'From the\s+', '\n📌 ', content)
+    
+    # Clean up "Key Additional Notes" section
+    content = re.sub(r'\*\*Key Additional Notes\*\*', '\n📝 **Additional Notes:**', content)
+    
+    # Add emoji bullets for better readability
+    content = re.sub(r'^-\s+', '  • ', content, flags=re.MULTILINE)
+    
+    # Clean up "Taxes:", "Validity:", "Assumptions:" to be more readable
+    content = re.sub(r'\*\*Taxes:\*\*', '\n💰 **Taxes:**', content)
+    content = re.sub(r'\*\*Validity:\*\*', '\n📅 **Validity:**', content)
+    content = re.sub(r'\*\*Assumptions:\*\*', '\n📋 **Assumptions:**', content)
+    
+    # Format currency amounts nicely
+    content = re.sub(r'\$(\d+)\s+USD', r'💵 $\1 USD', content)
+    
+    # Add spacing around sections for better readability
+    content = re.sub(r'\n\n+', '\n\n', content)
+    
+    return content.strip()
 
 # Removed custom KB cache directory; rely on AGNO/Chroma persistence.
 
@@ -379,7 +416,9 @@ async def run_rag_agent_async(query, user_id, session_id):
                 source = getattr(doc, 'source', None) or doc.get('source', 'Unknown') if isinstance(doc, dict) else 'Unknown'
                 logging.info(f"INFO Document {i}: Title: {title} | Source: {source}")
 
-        return result_content
+        # Format the output to be more user-friendly
+        formatted_content = format_rag_output(result_content)
+        return formatted_content
 
     except Exception as e:
         logging.error(f"Error in RAG agent: {type(e).__name__}: {str(e)}")
