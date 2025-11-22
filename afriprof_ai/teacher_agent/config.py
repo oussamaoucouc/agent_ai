@@ -24,6 +24,7 @@ OLLAMA_HOST = OLLAMA_BASE_URL
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 GOOGLE_API_KEY = ""  # Loaded from config_state.json, not environment
+OPENROUTER_API_KEY = ""  # Loaded from config_state.json, not environment
 GEMINI_SEARCH_ENABLED = False  # Global toggle for Gemini Search tool
 
 def get_openai_base_url() -> str:
@@ -81,15 +82,27 @@ def set_model_id(new_model_id: str):
                 set_google_api_key(state["google_api_key"])
         except Exception as e:
             print(f"Error reloading config state: {e}")
+    
+    # Ensure OpenRouter API key is loaded if selecting OpenRouter
+    if new_model_id.startswith("openrouter/") and not OPENROUTER_API_KEY:
+        print("OpenRouter API key missing. Attempting to reload from config_state.json...")
+        try:
+            state = _load_config_state()
+            if state.get("openrouter_api_key"):
+                set_openrouter_api_key(state["openrouter_api_key"])
+        except Exception as e:
+            print(f"Error reloading config state: {e}")
 
-    # Debug logging for API key
-    is_key_set = bool(GOOGLE_API_KEY and GOOGLE_API_KEY.strip())
-    print(f"Setting model to {new_model_id}. Google API Key set: {is_key_set}")
+    # Debug logging for API keys
+    google_key_set = bool(GOOGLE_API_KEY and GOOGLE_API_KEY.strip())
+    openrouter_key_set = bool(OPENROUTER_API_KEY and OPENROUTER_API_KEY.strip())
+    print(f"Setting model to {new_model_id}. Google API Key set: {google_key_set}, OpenRouter API Key set: {openrouter_key_set}")
     
     MODEL = model_factory.create_model(
         model_id=new_model_id,
         openai_api_key=OPENAI_API_KEY,
         google_api_key=GOOGLE_API_KEY,
+        openrouter_api_key=OPENROUTER_API_KEY,
         ollama_base_url=OLLAMA_BASE_URL,
         gemini_search_enabled=GEMINI_SEARCH_ENABLED
     )
@@ -107,6 +120,14 @@ def set_gemini_search_enabled(enabled: bool) -> None:
     global GEMINI_SEARCH_ENABLED
     GEMINI_SEARCH_ENABLED = bool(enabled)
     print(f"Gemini Search enabled: {GEMINI_SEARCH_ENABLED}")
+
+# --- OpenRouter API Key Management ---
+def set_openrouter_api_key(key: str) -> None:
+    """Set OpenRouter API key for OpenRouter models."""
+    global OPENROUTER_API_KEY
+    OPENROUTER_API_KEY = str(key).strip()
+    os.environ["OPENROUTER_API_KEY"] = OPENROUTER_API_KEY
+    print("OPENROUTER_API_KEY updated (value hidden)")
 
 def get_current_voice():
     """Get the current voice setting."""
@@ -235,6 +256,27 @@ def _save_config_state(state: Dict[str, Any]) -> None:
 
 # Initialize runtime-config from persisted state if present
 _state = _load_config_state()
+# Load Google API key from config
+if _state.get("google_api_key"):
+    try:
+        set_google_api_key(_state["google_api_key"])
+    except Exception as e:
+        print(f"Failed to apply persisted Google API key: {e}")
+
+# Load OpenRouter API key from config
+if _state.get("openrouter_api_key"):
+    try:
+        set_openrouter_api_key(_state["openrouter_api_key"])
+    except Exception as e:
+        print(f"Failed to apply persisted OpenRouter API key: {e}")
+
+# Load Gemini search toggle
+if "gemini_search_enabled" in _state:
+    try:
+        set_gemini_search_enabled(_state["gemini_search_enabled"])
+    except Exception as e:
+        print(f"Failed to apply persisted Gemini search setting: {e}")
+
 try:
     am = _state.get("available_models")
     default_model_from_list = None
@@ -244,34 +286,6 @@ try:
     set_model_id(default_model)
 except Exception as e:
     print(f"Failed to determine startup model; using current default. err={e}")
-if _state.get("voice"):
-    try:
-        set_voice(_state["voice"])
-    except Exception as e:
-        print(f"Failed to apply persisted voice: {e}")
-if _state.get("ollama_base_url"):
-    try:
-        def set_ollama_base_url(new_url: str):
-            global OLLAMA_BASE_URL, OLLAMA_HOST, MODEL
-            OLLAMA_BASE_URL = new_url
-            OLLAMA_HOST = new_url
-            MODEL = OpenAIChat(id=_current_model_id, base_url=get_openai_base_url(), api_key=OPENAI_API_KEY or "anything")
-            print(f"OLLAMA_BASE_URL changed to: {new_url}")
-        set_ollama_base_url(_state["ollama_base_url"])
-    except Exception as e:
-        print(f"Failed to apply persisted OLLAMA_BASE_URL: {e}")
-# Load Google API key from config
-if _state.get("google_api_key"):
-    try:
-        set_google_api_key(_state["google_api_key"])
-    except Exception as e:
-        print(f"Failed to apply persisted Google API key: {e}")
-# Load Gemini search toggle
-if "gemini_search_enabled" in _state:
-    try:
-        set_gemini_search_enabled(_state["gemini_search_enabled"])
-    except Exception as e:
-        print(f"Failed to apply persisted Gemini search setting: {e}")
 if _state.get("mcp_transport"):
     MCP_TRANSPORT = _state.get("mcp_transport", MCP_TRANSPORT)
 if _state.get("mcp_server_url"):
@@ -402,6 +416,7 @@ def get_runtime_config() -> Dict[str, Any]:
         "ollama_base_url": OLLAMA_BASE_URL,
         "openai_api_key_set": bool(OPENAI_API_KEY),
         "google_api_key_set": bool(GOOGLE_API_KEY),
+        "openrouter_api_key_set": bool(OPENROUTER_API_KEY),
         "gemini_search_enabled": GEMINI_SEARCH_ENABLED,
         "mcp_transport": MCP_TRANSPORT,
         "mcp_server_url": MCP_SERVER_URL,
@@ -424,6 +439,7 @@ def set_ollama_base_url(new_url: str):
         model_id=_current_model_id,
         openai_api_key=OPENAI_API_KEY,
         google_api_key=GOOGLE_API_KEY,
+        openrouter_api_key=OPENROUTER_API_KEY,
         ollama_base_url=OLLAMA_BASE_URL,
         gemini_search_enabled=GEMINI_SEARCH_ENABLED
     )
@@ -497,6 +513,11 @@ def update_runtime_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     if "google_api_key" in cfg and cfg["google_api_key"]:
         try:
             set_google_api_key(str(cfg["google_api_key"]))
+        except Exception:
+            pass
+    if "openrouter_api_key" in cfg and cfg["openrouter_api_key"]:
+        try:
+            set_openrouter_api_key(str(cfg["openrouter_api_key"]))
         except Exception:
             pass
     if "gemini_search_enabled" in cfg and cfg["gemini_search_enabled"] is not None:
@@ -592,6 +613,7 @@ def update_runtime_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "ollama_base_url": OLLAMA_BASE_URL,
         "openai_api_key_set": bool(OPENAI_API_KEY),
         "google_api_key": GOOGLE_API_KEY,
+        "openrouter_api_key": OPENROUTER_API_KEY,
         "gemini_search_enabled": GEMINI_SEARCH_ENABLED,
         "mcp_transport": MCP_TRANSPORT,
         "mcp_server_url": MCP_SERVER_URL,

@@ -157,7 +157,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         // Infer provider from model ID if not set
         let provider = m.provider;
         if (!provider) {
-            if (m.id.startsWith('gemini')) {
+            if (m.id.startsWith('openrouter/')) {
+                provider = 'openrouter';
+            } else if (m.id.startsWith('gemini')) {
                 provider = 'google';
             } else if (m.id.startsWith('gpt-') || m.id.startsWith('o1-') || m.id.startsWith('o3-')) {
                 provider = 'openai';

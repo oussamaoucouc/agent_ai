@@ -13,6 +13,8 @@ interface ConfigPageProps {
 const inferProviderFromModelId = (modelId: string): string => {
   if (modelId.startsWith('gemini')) {
     return 'google';
+  } else if (modelId.startsWith('openrouter/')) {
+    return 'openrouter';
   } else if (modelId.startsWith('gpt-') || modelId.startsWith('o1-') || modelId.startsWith('o3-')) {
     return 'openai';
   } else {
@@ -33,6 +35,7 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [openaiApiKey, setOpenaiApiKey] = useState<string>('');
   const [googleApiKey, setGoogleApiKey] = useState<string>('');
+  const [openrouterApiKey, setOpenrouterApiKey] = useState<string>('');
   const [newServer, setNewServer] = useState<{ label: string; url: string }>({ label: '', url: '' });
   const [newModel, setNewModel] = useState<{ label: string; id: string; provider: string }>({ label: '', id: '', provider: 'openai' });
   const [newVoice, setNewVoice] = useState<{ label: string; id: string }>({ label: '', id: '' });
@@ -76,6 +79,7 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
         ollama_base_url: config.ollama_base_url,
         openai_api_key: openaiApiKey || undefined,
         google_api_key: googleApiKey || undefined,
+        openrouter_api_key: openrouterApiKey || undefined,
         gemini_search_enabled: config.gemini_search_enabled,
         mcp_transport: config.mcp_transport,
         mcp_stdio_commands: config.mcp_stdio_commands || [],
@@ -293,6 +297,7 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                         >
                           <option value="openai">OpenAI</option>
                           <option value="google">Google</option>
+                          <option value="openrouter">OpenRouter</option>
                           <option value="ollama">Ollama</option>
                         </select>
                         <button onClick={() => removeModel(idx)} className={buttonRemoveIconStyle} title="Remove Model">
@@ -310,6 +315,7 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                       >
                         <option value="openai">OpenAI</option>
                         <option value="google">Google</option>
+                        <option value="openrouter">OpenRouter</option>
                         <option value="ollama">Ollama</option>
                       </select>
                       <button onClick={addModel} className={buttonAddIconStyle} title="Add Model">
@@ -361,6 +367,17 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                     value={googleApiKey}
                     onChange={(e) => setGoogleApiKey(e.target.value)}
                     placeholder={config.google_api_key_set ? 'Key is set (enter to replace)' : 'AIza...'}
+                    className={`w-full ${inputBaseStyle}`}
+                  />
+                  <p className="mt-2 text-xs text-slate-500">Stored in memory; never displayed back.</p>
+                </label>
+                <label className="block">
+                  <span className="block text-sm font-medium text-slate-400 mb-2">OpenRouter API Key (optional)</span>
+                  <input
+                    type="password"
+                    value={openrouterApiKey}
+                    onChange={(e) => setOpenrouterApiKey(e.target.value)}
+                    placeholder={config.openrouter_api_key_set ? 'Key is set (enter to replace)' : 'sk-or-...'}
                     className={`w-full ${inputBaseStyle}`}
                   />
                   <p className="mt-2 text-xs text-slate-500">Stored in memory; never displayed back.</p>

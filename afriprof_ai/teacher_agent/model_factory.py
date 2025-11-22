@@ -4,11 +4,13 @@ Model factory for creating AI models from different providers.
 from typing import Optional, Any
 from agno.models.openai import OpenAIChat
 from agno.models.google import Gemini
+from agno.models.openrouter import OpenRouter
 
 def create_model(
     model_id: str,
     openai_api_key: Optional[str] = None,
     google_api_key: Optional[str] = None,
+    openrouter_api_key: Optional[str] = None,
     ollama_base_url: str = "http://localhost:12434",
     gemini_search_enabled: bool = False
 ) -> Any:
@@ -16,14 +18,15 @@ def create_model(
     Create a model instance based on the model ID and provider.
     
     Args:
-        model_id: The model identifier (e.g., "gpt-4", "gemini-2.0-flash-exp", "ai/granite-4.0-h-tiny:7B")
+        model_id: The model identifier (e.g., "gpt-4", "gemini-2.0-flash-exp", "openrouter/gpt-4o", "ai/granite-4.0-h-tiny:7B")
         openai_api_key: OpenAI API key (optional)
         google_api_key: Google API key for Gemini models (optional)
+        openrouter_api_key: OpenRouter API key (optional)
         ollama_base_url: Base URL for Ollama models
         gemini_search_enabled: Whether to enable Google Search tool for Gemini models
     
     Returns:
-        Model instance (OpenAIChat or Gemini)
+        Model instance (OpenAIChat, Gemini, or OpenRouter)
     """
     # Determine provider from model_id
     if model_id.startswith("gemini"):
@@ -32,6 +35,13 @@ def create_model(
             id=model_id,
             api_key=google_api_key,
             search=gemini_search_enabled
+        )
+    
+    elif model_id.startswith("openrouter/"):
+        # OpenRouter model - MUST come before OpenAI check
+        return OpenRouter(
+            id=model_id.replace("openrouter/", ""),
+            api_key=openrouter_api_key
         )
     
     elif model_id.startswith("gpt-") or model_id.startswith("o1-") or model_id.startswith("o3-"):
@@ -58,10 +68,12 @@ def get_provider_from_model_id(model_id: str) -> str:
         model_id: The model identifier
     
     Returns:
-        Provider name: "google", "openai", or "ollama"
+        Provider name: "google", "openrouter", "openai", or "ollama"
     """
     if model_id.startswith("gemini"):
         return "google"
+    elif model_id.startswith("openrouter/"):
+        return "openrouter"
     elif model_id.startswith("gpt-") or model_id.startswith("o1-") or model_id.startswith("o3-"):
         return "openai"
     else:

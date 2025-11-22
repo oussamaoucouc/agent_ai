@@ -242,6 +242,7 @@ async def run_rag_agent_async(query, user_id, session_id):
             model_id=session_model_id,
             openai_api_key=cfg.OPENAI_API_KEY,
             google_api_key=cfg.GOOGLE_API_KEY,
+            openrouter_api_key=cfg.OPENROUTER_API_KEY,
             ollama_base_url=cfg.OLLAMA_BASE_URL,
             gemini_search_enabled=cfg.GEMINI_SEARCH_ENABLED
         )
