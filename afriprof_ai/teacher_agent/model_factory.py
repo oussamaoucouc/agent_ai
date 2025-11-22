@@ -32,7 +32,7 @@ def create_model(
     if model_id.startswith("gemini"):
         # Google Gemini model
         return Gemini(
-            id=model_id,
+            id=model_id.replace("gemini/", ""),
             api_key=google_api_key,
             search=gemini_search_enabled
         )

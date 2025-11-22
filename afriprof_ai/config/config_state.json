@@ -1,5 +1,5 @@
 {
-  "model_id": "ai/granite-4.0-h-tiny:7B-ctx",
+  "model_id": "gemini-2.0-flash",
   "voice": "af_sky",
   "ollama_base_url": "http://localhost:12434",
   "openai_api_key_set": true,
@@ -26,10 +26,10 @@
     "ai/granite-4.0-nano:latest",
     "ai/granite-4.0-micro:3B_ctx",
     "gemini-2.0-flash",
-    "gemini-flash-lite-latest",
     "openrouter/x-ai/grok-4.1-fast",
     "openrouter/openai/gpt-oss-20b:free",
-    "openrouter/nvidia/nemotron-nano-12b-v2-vl:free"
+    "openrouter/nvidia/nemotron-nano-12b-v2-vl:free",
+    "gemini/gemini-flash-lite-latest"
   ],
   "available_models_labeled": [
     {
@@ -49,10 +49,6 @@
       "id": "gemini-2.0-flash"
     },
     {
-      "label": "Gemini lite",
-      "id": "gemini-flash-lite-latest"
-    },
-    {
       "label": "Grok 4",
       "id": "openrouter/x-ai/grok-4.1-fast"
     },
@@ -63,6 +59,10 @@
     {
       "label": "nemotron",
       "id": "openrouter/nvidia/nemotron-nano-12b-v2-vl:free"
+    },
+    {
+      "label": "gemini flash new",
+      "id": "gemini/gemini-flash-lite-latest"
     }
   ],
   "available_voices": [
