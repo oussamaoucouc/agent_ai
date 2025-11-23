@@ -78,6 +78,7 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
         model: config.model,
         voice: config.voice,
         ollama_base_url: config.ollama_base_url,
+        openai_base_url: config.openai_base_url,
         openai_api_key: openaiApiKey || undefined,
         google_api_key: googleApiKey || undefined,
         openrouter_api_key: openrouterApiKey || undefined,
@@ -348,8 +349,12 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                   </div>
                 </div>
                 <label className="block">
-                  <span className="block text-sm font-medium text-slate-400 mb-2">AI Base URL</span>
+                  <span className="block text-sm font-medium text-slate-400 mb-2">AI Base URL (Ollama)</span>
                   <input type="text" value={config.ollama_base_url} onChange={(e) => updateField('ollama_base_url', e.target.value)} placeholder="http://localhost:11434" className={`w-full ${inputBaseStyle}`} />
+                </label>
+                <label className="block">
+                  <span className="block text-sm font-medium text-slate-400 mb-2">OpenAI Base URL (Compatible)</span>
+                  <input type="text" value={config.openai_base_url || ''} onChange={(e) => updateField('openai_base_url', e.target.value)} placeholder="http://localhost:12434/v1" className={`w-full ${inputBaseStyle}`} />
                 </label>
                 <label className="block">
                   <span className="block text-sm font-medium text-slate-400 mb-2">OpenAI API Key (optional)</span>

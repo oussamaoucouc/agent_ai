@@ -184,6 +184,7 @@ export interface ConfigResponse {
     model: string;
     voice: string;
     ollama_base_url: string;
+    openai_base_url?: string;
     openai_api_key_set: boolean;
     google_api_key_set: boolean;
     openrouter_api_key_set: boolean;
@@ -207,6 +208,7 @@ export interface ConfigUpdateRequest {
     model?: string;
     voice?: string;
     ollama_base_url?: string;
+    openai_base_url?: string;
     openai_api_key?: string | null;
     google_api_key?: string | null;
     openrouter_api_key?: string | null;

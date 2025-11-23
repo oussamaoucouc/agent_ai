@@ -19,8 +19,14 @@ except ImportError:
 
 # Ollama configuration
 # Use OLLAMA_BASE_URL from environment, with fallback to localhost for local development
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:12434")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_HOST = OLLAMA_BASE_URL
+
+# OpenAI-compatible configuration
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "http://localhost:12434/engines/llama.cpp/v1")
+
+# OpenAI-compatible configuration
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "http://localhost:12434/engines/llama.cpp/v1")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 GOOGLE_API_KEY = ""  # Loaded from config_state.json, not environment
@@ -30,9 +36,9 @@ GEMINI_SEARCH_ENABLED = False  # Global toggle for Gemini Search tool
 
 def get_openai_base_url() -> str:
     try:
-        return str(OLLAMA_BASE_URL).strip()
+        return str(OPENAI_BASE_URL).strip()
     except Exception:
-        return OLLAMA_BASE_URL
+        return OPENAI_BASE_URL
 
 # Use the model that's actually pulled in docker-compose
 #MODEL_ID = "ai_teacher_qwen" # Use the model without thinking capabilities
@@ -114,11 +120,11 @@ def set_model_id(new_model_id: str):
         google_api_key=GOOGLE_API_KEY,
         openrouter_api_key=OPENROUTER_API_KEY,
         ollama_base_url=OLLAMA_BASE_URL,
+        openai_base_url=OPENAI_BASE_URL,
         gemini_search_enabled=GEMINI_SEARCH_ENABLED
     )
     print(f"Model changed to: {new_model_id}")
 
-# --- Google API Key Management ---
 def set_google_api_key(key: str) -> None:
     """Set Google API key for Gemini models."""
     global GOOGLE_API_KEY
@@ -439,6 +445,7 @@ def get_runtime_config() -> Dict[str, Any]:
         "model": _current_model_id,
         "voice": _current_voice,
         "ollama_base_url": OLLAMA_BASE_URL,
+        "openai_base_url": OPENAI_BASE_URL,
         "openai_api_key_set": bool(OPENAI_API_KEY),
         "google_api_key_set": bool(GOOGLE_API_KEY),
         "openrouter_api_key_set": bool(OPENROUTER_API_KEY),
@@ -467,9 +474,24 @@ def set_ollama_base_url(new_url: str):
         google_api_key=GOOGLE_API_KEY,
         openrouter_api_key=OPENROUTER_API_KEY,
         ollama_base_url=OLLAMA_BASE_URL,
+        openai_base_url=OPENAI_BASE_URL,
         gemini_search_enabled=GEMINI_SEARCH_ENABLED
     )
     print(f"OLLAMA_BASE_URL changed to: {new_url}")
+
+def set_openai_base_url(new_url: str):
+    global OPENAI_BASE_URL, MODEL
+    OPENAI_BASE_URL = new_url
+    MODEL = model_factory.create_model(
+        model_id=_current_model_id,
+        openai_api_key=OPENAI_API_KEY,
+        google_api_key=GOOGLE_API_KEY,
+        openrouter_api_key=OPENROUTER_API_KEY,
+        ollama_base_url=OLLAMA_BASE_URL,
+        openai_base_url=OPENAI_BASE_URL,
+        gemini_search_enabled=GEMINI_SEARCH_ENABLED
+    )
+    print(f"OPENAI_BASE_URL changed to: {new_url}")
 
 
 def set_mcp_transport(new_transport: str) -> None:
@@ -531,6 +553,8 @@ def update_runtime_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
         set_voice(str(cfg["voice"]))
     if "ollama_base_url" in cfg and cfg["ollama_base_url"]:
         set_ollama_base_url(str(cfg["ollama_base_url"]))
+    if "openai_base_url" in cfg and cfg["openai_base_url"]:
+        set_openai_base_url(str(cfg["openai_base_url"]))
     if "openai_api_key" in cfg and cfg["openai_api_key"]:
         try:
             set_openai_api_key(str(cfg["openai_api_key"]))
@@ -643,6 +667,7 @@ def update_runtime_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "model_id": _current_model_id,
         "voice": _current_voice,
         "ollama_base_url": OLLAMA_BASE_URL,
+        "openai_base_url": OPENAI_BASE_URL,
         "openai_api_key_set": bool(OPENAI_API_KEY),
         "google_api_key": GOOGLE_API_KEY,
         "openrouter_api_key": OPENROUTER_API_KEY,
@@ -678,7 +703,7 @@ __all__ = [
     'MCP_TRANSPORT', 'MCP_SERVER_URL', 'MCP_STDIO_COMMAND', 'MCP_STDIO_ARGS',
     'get_current_model', 'get_current_model_id', 'get_default_model_id', 'set_model_id', 
     'get_current_voice', 'get_default_voice', 'set_voice', 'get_user_pdf_dir', 'get_user_docx_dir', 'get_user_text_dir', 'get_user_csv_dir',
-    'get_runtime_config', 'update_runtime_config', 'set_ollama_base_url',
+    'get_runtime_config', 'update_runtime_config', 'set_ollama_base_url', 'set_openai_base_url',
     'set_mcp_transport', 'set_mcp_server_url', 'set_mcp_stdio_command', 'set_mcp_stdio_args', 'set_mcp_stdio_commands'
     , 'set_mcp_stdio_tools'
 ]

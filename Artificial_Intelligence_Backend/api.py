@@ -193,6 +193,7 @@ class ConfigResponse(BaseModel):
     model: str
     voice: str
     ollama_base_url: str
+    openai_base_url: Optional[str] = None
     openai_api_key_set: bool = False
     google_api_key_set: bool = False
     openrouter_api_key_set: bool = False
@@ -215,6 +216,7 @@ class ConfigUpdateRequest(BaseModel):
     model: Optional[str] = None
     voice: Optional[str] = None
     ollama_base_url: Optional[str] = None
+    openai_base_url: Optional[str] = None
     openai_api_key: Optional[str] = None
     google_api_key: Optional[str] = None
     openrouter_api_key: Optional[str] = None
