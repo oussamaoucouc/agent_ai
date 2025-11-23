@@ -441,7 +441,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 <div className="flex items-center space-x-2 flex-shrink-0">
                                     <StatusIcon status={file.status} />
                                     <button
-                                        onClick={() => onDeleteDocument(file.name, file.kind)}
+                                        onClick={() => onDeleteDocument(file.file.name, file.kind)}
                                         className="text-slate-500 hover:text-red-400 transition-colors"
                                     >
                                         <TrashIcon className="w-4 h-4" />
