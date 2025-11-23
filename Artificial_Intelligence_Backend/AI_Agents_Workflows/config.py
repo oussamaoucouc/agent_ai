@@ -12,21 +12,26 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agno.models.openai import OpenAIChat
+
+# Ensure parent directory is in path for Docker
+import sys
+from pathlib import Path
+if str(Path(__file__).parent.parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+
 try:
     from . import model_factory
 except ImportError:
-    import model_factory
+    from AI_Agents_Workflows import model_factory
 
 # Ollama configuration
 # Use OLLAMA_BASE_URL from environment, with fallback to localhost for local development
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
 OLLAMA_HOST = OLLAMA_BASE_URL
 
-# OpenAI-compatible configuration
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "http://localhost:12434/engines/llama.cpp/v1")
 
 # OpenAI-compatible configuration
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "http://localhost:12434/engines/llama.cpp/v1")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "http://host.docker.internal:12434/engines/llama.cpp/v1")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 GOOGLE_API_KEY = ""  # Loaded from config_state.json, not environment

@@ -12,8 +12,8 @@ def create_model(
     openai_api_key: Optional[str] = None,
     google_api_key: Optional[str] = None,
     openrouter_api_key: Optional[str] = None,
-    ollama_base_url: str = "http://localhost:11434",
-    openai_base_url: str = "http://localhost:12434/engines/llama.cpp/v1",
+    ollama_base_url: str = "http://host.docker.internal:11434",
+    openai_base_url: str = "http://host.docker.internal:12434/engines/llama.cpp/v1",
     gemini_search_enabled: bool = False
 ) -> Any:
     """

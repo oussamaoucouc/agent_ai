@@ -121,7 +121,7 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
     embedder = OllamaEmbedder(
             id="nomic-embed-text",
             dimensions=768,
-            host="http://localhost:11434"
+            host="http://host.docker.internal:11434"
         )
     def _uid_suffix(uid: str) -> str:
         import hashlib

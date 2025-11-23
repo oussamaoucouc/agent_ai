@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./Artificial_Intelligence_Frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./Artificial_Intelligence_Frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+    networks:
+      - ai-network
+
+  backend:
+    build:
+      context: ./Artificial_Intelligence_Backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./Artificial_Intelligence_Backend:/app
+      - tts_cache_vol:/app/tts_cache
+      - /app/.venv
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - API_RELOAD=1
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - KOKORO_TTS_URL=http://kokoro-tts:8880/v1/audio/speech
+      - DATABASE_URL=postgresql://ai:ai@postgres:5432/ai
+      - VOSK_MODEL_PATH=/app/model/vosk-model-en-us-0.22
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+      kokoro-tts:
+        condition: service_healthy
+    networks:
+      - ai-network
+
+  postgres:
+    image: ankane/pgvector
+    ports:
+      - "5532:5432"
+    environment:
+      POSTGRES_DB: ai
+      POSTGRES_USER: ai
+      POSTGRES_PASSWORD: ai
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - pgvolume_vol:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ai -d ai" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ai-network
+
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data_vol:/root/.ollama
+    healthcheck:
+      test: [ "CMD", "ollama", "list" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ai-network
+
+  kokoro-tts:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:v0.2.2
+    ports:
+      - "8880:8880"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8880/docs" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ai-network
+
+volumes:
+  pgvolume_vol:
+  ollama_data_vol:
+  tts_cache_vol:
+
+
+networks:
+  ai-network:
+    driver: bridge
