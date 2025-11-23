@@ -37,7 +37,8 @@ def create_model(
         return Gemini(
             id=model_id.replace("gemini/", ""),
             api_key=google_api_key,
-            search=gemini_search_enabled
+            search=gemini_search_enabled,
+            generation_config={"response_mime_type": None}
         )
     
     elif model_id.startswith("openrouter/"):
@@ -52,7 +53,13 @@ def create_model(
         return OpenAIChat(
             id=model_id.replace("gpt/", ""),
             base_url=openai_base_url,
-            api_key=openai_api_key or "anything"
+            api_key="anything"
+        )
+    elif model_id.startswith("openai/"):
+        # OpenAI-compatible model (local)
+        return OpenAIChat(
+            id=model_id.replace("openai/", ""),
+            api_key=openai_api_key
         )
     
     else:
@@ -77,7 +84,9 @@ def get_provider_from_model_id(model_id: str) -> str:
         return "google"
     elif model_id.startswith("openrouter/"):
         return "openrouter"
-    elif model_id.startswith("gpt-") or model_id.startswith("o1-") or model_id.startswith("o3-") or model_id.startswith("gpt/"):
+    elif model_id.startswith("gpt/"):
+        return "openai"
+    elif model_id.startswith("openai/"):
         return "openai"
     else:
         return "ollama"

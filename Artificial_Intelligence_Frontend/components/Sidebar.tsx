@@ -161,8 +161,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             if (m.id.startsWith('openrouter/')) {
                 provider = 'openrouter';
             } else if (m.id.startsWith('gemini/')) {
-                provider = 'google';
+                provider = 'gemini';
             } else if (m.id.startsWith('gpt/')) {
+                provider = 'openai';
+            } else if (m.id.startsWith('openai/')) {
                 provider = 'openai';
             } else {
                 provider = 'ollama';
