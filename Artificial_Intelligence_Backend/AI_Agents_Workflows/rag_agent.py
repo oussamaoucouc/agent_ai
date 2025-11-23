@@ -314,7 +314,7 @@ async def run_rag_agent_async(query, user_id, session_id):
         storage = PostgresStorage(table_name="agent_session", db_url=cfg.DB_URL),
         #memory=memory_rag,  # Add memory instance here
         #enable_user_memories=True,
-        enable_session_summaries=True,
+        enable_session_summaries=False,
         instructions=dedent("""\
         You are an AI RAG Expert. Follow these advanced retrieval and synthesis protocols for optimal performance:
 

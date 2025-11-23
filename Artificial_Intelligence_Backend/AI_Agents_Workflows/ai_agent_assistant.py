@@ -75,9 +75,7 @@ async def run_assistant_agent_async(query, user_id, session_id):
         monitoring=True,
         show_tool_calls=True,
         storage = PostgresStorage(table_name="agent_session", db_url=cfg.DB_URL),
-        #memory=memory_assistant,
-        #enable_user_memories=True,
-        enable_session_summaries=True,
+        enable_session_summaries=False,
         instructions=dedent("""\
         Follow these rules for every user interaction:
 

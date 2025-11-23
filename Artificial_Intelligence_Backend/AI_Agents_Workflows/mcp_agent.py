@@ -154,7 +154,7 @@ async def run_agent_async(query, user_id, session_id):
         storage=PostgresStorage(table_name="agent_session", db_url=cfg.DB_URL),
         #memory=memory_mcp,
         #enable_user_memories=True,
-        enable_session_summaries=True,
+        enable_session_summaries=False,
     )
     
     try:
