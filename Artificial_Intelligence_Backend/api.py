@@ -212,12 +212,12 @@ class ConfigResponse(BaseModel):
     mcp_stdio_command: Optional[str] = None
     mcp_stdio_args: list[str] = []
     mcp_stdio_commands: list[str] = []
-    mcp_stdio_tools: list[Dict[str, str]] = []
-    available_models_labeled: Optional[list[Dict[str, str]]] = None
+    mcp_stdio_tools: list[Dict[str, Any]] = []
+    available_models_labeled: Optional[list[Dict[str, Any]]] = None
     available_models: list[str] = []
-    available_voices_labeled: Optional[list[Dict[str, str]]] = None
+    available_voices_labeled: Optional[list[Dict[str, Any]]] = None
     available_voices: list[str] = []
-    mcp_servers: list[Dict[str, str]] = []
+    mcp_servers: list[Dict[str, Any]] = []
 
 class ConfigUpdateRequest(BaseModel):
     user_id: str
@@ -235,12 +235,12 @@ class ConfigUpdateRequest(BaseModel):
     mcp_stdio_command: Optional[str] = None
     mcp_stdio_args: Optional[list[str]] = None
     mcp_stdio_commands: Optional[list[str]] = None
-    mcp_stdio_tools: Optional[list[Dict[str, str]]] = None
-    available_models_labeled: Optional[list[Dict[str, str]]] = None
+    mcp_stdio_tools: Optional[list[Dict[str, Any]]] = None
+    available_models_labeled: Optional[list[Dict[str, Any]]] = None
     available_models: Optional[list[str]] = None
-    available_voices_labeled: Optional[list[Dict[str, str]]] = None
+    available_voices_labeled: Optional[list[Dict[str, Any]]] = None
     available_voices: Optional[list[str]] = None
-    mcp_servers: Optional[list[Dict[str, str]]] = None
+    mcp_servers: Optional[list[Dict[str, Any]]] = None
 
 class ConfigPathResponse(BaseModel):
     config_state_path: str
