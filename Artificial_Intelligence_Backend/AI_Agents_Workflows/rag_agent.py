@@ -80,10 +80,10 @@ def format_rag_output(content: str) -> str:
 # Removed custom directory state sync; AGNO's knowledge base handles loading/upserts.
 
 
-def run_rag_agent(query, user_id, session_id):
+def run_rag_agent(query, user_id, session_id, images=None, audio=None, videos=None):
     """
     Entry point for RAG agent that works in both synchronous and asynchronous contexts.
-    Uses ChromaDB for vector storage.
+    Supports multimodal inputs (images, audio, videos).
     """
     import asyncio
     
@@ -98,11 +98,11 @@ def run_rag_agent(query, user_id, session_id):
         # We're already in an event loop, so we need to return a coroutine
         # that the caller can await
         logging.info("Running in existing event loop")
-        return run_rag_agent_async(query, user_id, session_id)
+        return run_rag_agent_async(query, user_id, session_id, images, audio, videos)
     else:
         # No event loop running, so create a new one
         logging.info("Creating new event loop")
-        return asyncio.run(run_rag_agent_async(query, user_id, session_id))
+        return asyncio.run(run_rag_agent_async(query, user_id, session_id, images, audio, videos))
 
 async def initialize_knowledge_base(user_id: str, only_path: str | None = None, only_kind: str | None = None):
     """
@@ -237,10 +237,18 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
     return knowledge_base
 
 
-async def run_rag_agent_async(query, user_id, session_id):
+async def run_rag_agent_async(query, user_id, session_id, images=None, audio=None, videos=None):
     """
-    AGNO RAG agent using ChromaDB and openhermes embedder.
+    AGNO RAG agent using ChromaDB and nomic embedder with multimodal support.
     Initializes a fresh knowledge base sync on each query.
+    
+    Args:
+        query: Text query
+        user_id: User ID
+        session_id: Session ID
+        images: Optional list of Agno Image objects
+        audio: Optional list of Agno Audio objects
+        videos: Optional list of Agno Video objects
     """
     logging.info(f"Starting RAG agent with Ollama at: {cfg.OLLAMA_BASE_URL}")
     logging.info(f"OpenAI-compatible base URL: {cfg.get_openai_base_url()}")
@@ -371,8 +379,13 @@ async def run_rag_agent_async(query, user_id, session_id):
     )
 
     try:
-
-        response = await rag_expert_agent.arun(query)
+        # Pass multimodal inputs to agent if provided
+        response = await rag_expert_agent.arun(
+            query,
+            images=images if images else None,
+            audio=audio if audio else None,
+            videos=videos if videos else None
+        )
         # --- Robust error checking for response.content ---
         # Explicit check for boolean response
         if isinstance(response, bool):

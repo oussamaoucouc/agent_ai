@@ -1,4 +1,9 @@
-import React, { useState, KeyboardEvent, useRef, useEffect } from 'react';
+"""
+Script to add InputBar + button for file uploads with media preview.
+This modifies InputBar.tsx to add multimodal file upload functionality.
+"""
+
+input_bar_content = '''import React, { useState, KeyboardEvent, useRef, useEffect } from 'react';
 import { MicButton } from './MicButton';
 import { SendIcon, ToolIcon, StopIcon, AgentIcon, DocumentWithTextIcon, PlusIcon, XMarkIcon, ImageIcon } from './icons';
 import { QueryMode, MediaAttachment } from '../types';
@@ -237,3 +242,10 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
         </div>
     );
 };
+'''
+
+# Write the file
+with open(r'c:\Users\PC\Desktop\prod\prodv1\Artificial_Intelligence_Frontend\components\InputBar.tsx', 'w', encoding='utf-8') as f:
+    f.write(input_bar_content)
+
+print("✅ InputBar.tsx updated successfully with + button and media preview!")

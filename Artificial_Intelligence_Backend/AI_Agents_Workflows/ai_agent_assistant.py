@@ -16,10 +16,18 @@ from . import model_factory
 logging.basicConfig(level=logging.INFO)
 
 
-async def run_assistant_agent_async(query, user_id, session_id):
+async def run_assistant_agent_async(query, user_id, session_id, images=None, audio=None, videos=None):
     """
-    AGNO Assistant agent.
+    AGNO Assistant agent with multimodal support.
     Using cached knowledge base and memory DBs for better performance.
+    
+    Args:
+        query: Text query
+        user_id: User ID
+        session_id: Session ID
+        images: Optional list of Agno Image objects
+        audio: Optional list of Agno Audio objects
+        videos: Optional list of Agno Video objects
     """
     logging.info(f"Starting AI Assistant agent with Ollama at: {cfg.OLLAMA_BASE_URL}")
     logging.info(f"OpenAI-compatible base URL: {cfg.get_openai_base_url()}")
@@ -110,8 +118,13 @@ async def run_assistant_agent_async(query, user_id, session_id):
     )
 
     try:
-
-        response = await assistant_agent.arun(query)
+        # Pass multimodal inputs to agent if provided
+        response = await assistant_agent.arun(
+            query,
+            images=images if images else None,
+            audio=audio if audio else None,
+            videos=videos if videos else None
+        )
         # --- Robust error checking for response.content ---
         # Explicit check for boolean response
         if isinstance(response, bool):
@@ -153,9 +166,10 @@ async def run_assistant_agent_async(query, user_id, session_id):
         raise RuntimeError(f"An error occurred while generating a response: {e}")
 
 
-def run_assistant_agent(query, user_id, session_id):
+def run_assistant_agent(query, user_id, session_id, images=None, audio=None, videos=None):
     """
     Entry point for Assistant agent that works in both synchronous and asynchronous contexts.
+    Supports multimodal inputs (images, audio, videos).
     """
     import asyncio
 
@@ -169,8 +183,8 @@ def run_assistant_agent(query, user_id, session_id):
     if is_in_loop:
         # Return coroutine that caller can await
         logging.info("Running assistant in existing event loop")
-        return run_assistant_agent_async(query, user_id, session_id)
+        return run_assistant_agent_async(query, user_id, session_id, images, audio, videos)
     else:
         # No event loop running, so create a new one
         logging.info("Creating new event loop for assistant agent")
-        return asyncio.run(run_assistant_agent_async(query, user_id, session_id))
+        return asyncio.run(run_assistant_agent_async(query, user_id, session_id, images, audio, videos))

@@ -445,6 +445,28 @@ def get_model_metadata(model_id: str) -> dict | None:
         pass
     return None
 
+def get_model_multimodal_capabilities(model_id: str) -> dict:
+    """Get multimodal capabilities for a model from metadata.
+    
+    Args:
+        model_id: The model ID to lookup
+    
+    Returns:
+        dict with supports_images, supports_audio, supports_videos (all default to False)
+    """
+    meta = get_model_metadata(model_id)
+    if meta:
+        return {
+            'supports_images': meta.get('supports_images', False),
+            'supports_audio': meta.get('supports_audio', False),
+            'supports_videos': meta.get('supports_videos', False)
+        }
+    return {
+        'supports_images': False,
+        'supports_audio': False,
+        'supports_videos': False
+    }
+
 def get_runtime_config() -> Dict[str, Any]:
     return {
         "model": _current_model_id,
@@ -619,8 +641,19 @@ def update_runtime_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
                         label = str(item.get("label", "Model")).strip() or "Model"
                         mid = str(item.get("id", "")).strip()
                         provider = str(item.get("provider", "")).strip()
+                        # Preserve multimodal capabilities
+                        supports_images = bool(item.get("supports_images", False))
+                        supports_audio = bool(item.get("supports_audio", False))
+                        supports_videos = bool(item.get("supports_videos", False))
                         if mid:
-                            cleaned.append({"label": label, "id": mid, "provider": provider})
+                            cleaned.append({
+                                "label": label,
+                                "id": mid,
+                                "provider": provider,
+                                "supports_images": supports_images,
+                                "supports_audio": supports_audio,
+                                "supports_videos": supports_videos
+                            })
                 if cleaned:
                     _available_models_labeled = cleaned
                     _available_models = [m["id"] for m in cleaned]

@@ -62,7 +62,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include sessions router
+# Mount static media directory for serving uploaded multimodal files
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+
+MEDIA_DIR = Path("/data/media")
+MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/media", StaticFiles(directory=str(MEDIA_DIR)), name="media")
+
+
 app.include_router(sessions.router)
 # Include users router (admin/user management)
 app.include_router(users.router)
@@ -242,6 +250,21 @@ class CancelRequest(BaseModel):
     user_id: str
     session_id: str
 
+class ModelCapabilitiesResponse(BaseModel):
+    model_id: str
+    supports_images: bool
+    supports_audio: bool
+    supports_videos: bool
+    warning: Optional[str] = None
+
+def check_model_multimodal_support(model_id: str) -> dict:
+    """
+    Check if a model supports multimodal inputs based on configuration.
+    Returns dict with supports_images, supports_audio, supports_videos.
+    """
+    from AI_Agents_Workflows.config import get_model_multimodal_capabilities
+    return get_model_multimodal_capabilities(model_id)
+
 @app.post("/cancel")
 async def cancel_endpoint(request: CancelRequest):
     key = f"{request.user_id}:{request.session_id}"
@@ -251,7 +274,108 @@ async def cancel_endpoint(request: CancelRequest):
         return {"status": "cancelled"}
     return {"status": "idle"}
 
-@app.post("/login")
+@app.get("/check_model_capabilities/{model_id}", response_model=ModelCapabilitiesResponse)
+async def check_model_capabilities(model_id: str):
+    """Check if a model supports multimodal inputs."""
+    caps = check_model_multimodal_support(model_id)
+    response = ModelCapabilitiesResponse(
+        model_id=model_id,
+        **caps
+    )
+    if not any([caps['supports_images'], caps['supports_audio'], caps['supports_videos']]):
+        response.warning = f"The model '{model_id}' doesn't support multimodal inputs. Please select a model like GPT-4o, Claude 3, or Gemini."
+    return response
+
+@app.post("/query_assistant_multimodal")
+async def query_assistant_multimodal(
+    query: str = Form(...),
+    user_id: str = Form(...),
+    session_id: str = Form(...),
+    images: list[UploadFile] = File(default=[]),
+    audio: list[UploadFile] = File(default=[]),
+    videos: list[UploadFile] = File(default=[]),
+    http_request: Request = None
+):
+    """
+    Assistant agent query with multimodal input support.
+    Accepts images, audio, and video files along with text query.
+    """
+    key = f"{user_id}:{session_id}"
+    active_tasks[key] = asyncio.current_task()
+    try:
+        # Auth check
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        
+        # Get session's model and validate multimodal support
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
+            session_model_id = s.model_id if s.model_id else "default"
+        
+        caps = check_model_multimodal_support(session_model_id)
+        
+        # Validate media types against model capabilities
+        if images and not caps['supports_images']:
+            raise HTTPException(
+                status_code=400,
+                detail=f"The selected model '{session_model_id}' doesn't support image inputs. Please switch to GPT-4o, Claude 3, or Gemini."
+            )
+        if audio and not caps['supports_audio']:
+            raise HTTPException(
+                status_code=400,
+                detail=f"The selected model '{session_model_id}' doesn't support audio inputs. Please switch to GPT-4o-audio-preview."
+            )
+        if videos and not caps['supports_videos']:
+            raise HTTPException(
+                status_code=400,
+                detail=f"The selected model '{session_model_id}' doesn't support video inputs. Please switch to Gemini 2.0 Flash."
+            )
+        
+        # Save media files and get Agno media objects
+        from AI_Agents_Workflows.media_utils import save_and_process_media
+        
+        agno_images, agno_audio, agno_videos, media_urls = await save_and_process_media(
+            user_id=uid,
+            session_id=session_id,
+            images=images,
+            audio=audio,
+            videos=videos
+        )
+        
+        # Run agent with multimodal inputs
+        response_text = await run_assistant_agent(
+            query=query,
+            user_id=uid,
+            session_id=session_id,
+            images=agno_images,
+            audio=agno_audio,
+            videos=agno_videos
+        )
+        
+        response_text = clean_model_output(response_text)
+        
+        return {
+            "user_id": uid,
+            "session_id": session_id,
+            "response": response_text,
+            "attached_images": media_urls.get('images', []),
+            "attached_audio": media_urls.get('audio', []),
+            "attached_videos": media_urls.get('videos', []),
+            "status": "success"
+        }
+    except asyncio.CancelledError:
+        raise HTTPException(status_code=499, detail="Request cancelled")
+    except Exception as e:
+        logging.error(f"Error in multimodal assistant query: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        active_tasks.pop(key, None)
+
+
 async def login(request: LoginRequest):
     # In a real application, you would verify the username and create a real session.
     # For now, we'll just generate a user_id and session_id.

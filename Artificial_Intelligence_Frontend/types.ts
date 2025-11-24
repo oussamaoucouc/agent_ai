@@ -25,7 +25,19 @@ export interface Message {
     sender: User;
     audioUrl?: string;
     visemes?: VisemeData;
+    attachedImages?: string[];    // URLs to uploaded images
+    attachedAudio?: string[];     // URLs to uploaded audio files
+    attachedVideos?: string[];    // URLs to uploaded videos
 }
+
+// Media attachment for frontend state management
+export interface MediaAttachment {
+    id: string;
+    file: File;
+    type: 'image' | 'audio' | 'video';
+    previewUrl?: string;  // For images/videos
+}
+
 
 export type UploadStatus = 'uploading' | 'success' | 'error';
 
@@ -196,7 +208,7 @@ export interface ConfigResponse {
     mcp_stdio_args: string[];
     mcp_stdio_commands: string[];
     mcp_stdio_tools?: { label: string; command: string }[];
-    available_models_labeled?: { label: string; id: string; provider?: string }[];
+    available_models_labeled?: { label: string; id: string; provider?: string; supports_images?: boolean; supports_audio?: boolean; supports_videos?: boolean }[];
     available_models: string[];
     available_voices_labeled?: { label: string; id: string }[];
     available_voices: string[];
@@ -220,7 +232,7 @@ export interface ConfigUpdateRequest {
     mcp_stdio_args?: string[];
     mcp_stdio_commands?: string[];
     mcp_stdio_tools?: { label: string; command: string }[];
-    available_models_labeled?: { label: string; id: string; provider?: string }[];
+    available_models_labeled?: { label: string; id: string; provider?: string; supports_images?: boolean; supports_audio?: boolean; supports_videos?: boolean }[];
     available_models?: string[];
     available_voices_labeled?: { label: string; id: string }[];
     available_voices?: string[];
