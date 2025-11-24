@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ConfigResponse } from '../types';
 import { getConfig, updateConfig, setModel, setVoice } from '../services/apiService';
 import * as storage from '../services/storageService';
-import { PlusIcon, TrashIcon, ImageIcon, VideoIcon } from './icons';
+import { PlusIcon, TrashIcon, ImageIcon, VideoIcon, MicIcon, KeyIcon, GlobeIcon, ServerIcon, TerminalIcon, SearchIcon, CheckIcon } from './icons';
 
 interface ConfigPageProps {
   onCancel: () => void;
@@ -291,29 +291,29 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                   <div className="grid grid-cols-1 gap-4">
                     {(config.available_models_labeled || []).map((m, idx) => (
                       <div key={idx} className="group relative bg-slate-800/40 border border-slate-700/50 rounded-xl p-4 transition-all hover:border-sky-500/30 hover:shadow-lg hover:shadow-sky-500/5">
-                        
+
                         {/* Header: Label & Provider */}
                         <div className="flex items-start justify-between gap-4 mb-2">
                           <div className="flex-1">
-                            <input 
-                              type="text" 
-                              value={m.label} 
-                              onChange={(e) => updateModel(idx, 'label', e.target.value)} 
-                              className="w-full bg-transparent border-none p-0 text-lg font-semibold text-slate-200 placeholder-slate-600 focus:ring-0" 
-                              placeholder="Model Name" 
+                            <input
+                              type="text"
+                              value={m.label}
+                              onChange={(e) => updateModel(idx, 'label', e.target.value)}
+                              className="w-full bg-transparent border-none p-0 text-lg font-semibold text-slate-200 placeholder-slate-600 focus:ring-0"
+                              placeholder="Model Name"
                             />
                             <div className="flex items-center gap-2 mt-1">
                               <span className="text-slate-600 text-xs font-mono">ID:</span>
-                              <input 
-                                type="text" 
-                                value={m.id} 
-                                onChange={(e) => updateModel(idx, 'id', e.target.value)} 
-                                className="flex-1 bg-transparent border-none p-0 text-xs font-mono text-slate-500 focus:text-sky-400 focus:ring-0 transition-colors" 
-                                placeholder="model-id" 
+                              <input
+                                type="text"
+                                value={m.id}
+                                onChange={(e) => updateModel(idx, 'id', e.target.value)}
+                                className="flex-1 bg-transparent border-none p-0 text-xs font-mono text-slate-500 focus:text-sky-400 focus:ring-0 transition-colors"
+                                placeholder="model-id"
                               />
                             </div>
                           </div>
-                          
+
                           <div className="flex items-center gap-2">
                             <select
                               value={m.provider || 'openai'}
@@ -325,9 +325,9 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                               <option value="openrouter">OpenRouter</option>
                               <option value="ollama">Ollama</option>
                             </select>
-                            <button 
-                              onClick={() => removeModel(idx)} 
-                              className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100" 
+                            <button
+                              onClick={() => removeModel(idx)}
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100"
                               title="Remove Model"
                             >
                               <TrashIcon className="w-4 h-4" />
@@ -338,53 +338,53 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                         {/* Capabilities Badges */}
                         <div className="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t border-slate-700/30">
                           <span className="text-[10px] uppercase tracking-wider text-slate-500 font-medium mr-1">Capabilities:</span>
-                          
+
                           <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all cursor-pointer select-none ${m.supports_images ? 'bg-sky-500/10 border-sky-500/30 text-sky-400' : 'bg-slate-800/50 border-slate-700 text-slate-500 hover:border-slate-600'}`}>
-                            <input 
-                              type="checkbox" 
+                            <input
+                              type="checkbox"
                               checked={m.supports_images || false}
                               onChange={(e) => {
                                 if (!config) return;
-                                const newList = (config.available_models_labeled || []).map((model, i) => 
+                                const newList = (config.available_models_labeled || []).map((model, i) =>
                                   i === idx ? { ...model, supports_images: e.target.checked } : model
                                 );
                                 updateModelsList(newList);
                               }}
-                              className="hidden" 
+                              className="hidden"
                             />
                             <ImageIcon className="w-3.5 h-3.5" />
                             <span>Images</span>
                           </label>
 
                           <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all cursor-pointer select-none ${m.supports_audio ? 'bg-purple-500/10 border-purple-500/30 text-purple-400' : 'bg-slate-800/50 border-slate-700 text-slate-500 hover:border-slate-600'}`}>
-                            <input 
-                              type="checkbox" 
+                            <input
+                              type="checkbox"
                               checked={m.supports_audio || false}
                               onChange={(e) => {
                                 if (!config) return;
-                                const newList = (config.available_models_labeled || []).map((model, i) => 
+                                const newList = (config.available_models_labeled || []).map((model, i) =>
                                   i === idx ? { ...model, supports_audio: e.target.checked } : model
                                 );
                                 updateModelsList(newList);
                               }}
-                              className="hidden" 
+                              className="hidden"
                             />
                             <span className="text-sm">🎵</span>
                             <span>Audio</span>
                           </label>
 
                           <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all cursor-pointer select-none ${m.supports_videos ? 'bg-pink-500/10 border-pink-500/30 text-pink-400' : 'bg-slate-800/50 border-slate-700 text-slate-500 hover:border-slate-600'}`}>
-                            <input 
-                              type="checkbox" 
+                            <input
+                              type="checkbox"
                               checked={m.supports_videos || false}
                               onChange={(e) => {
                                 if (!config) return;
-                                const newList = (config.available_models_labeled || []).map((model, i) => 
+                                const newList = (config.available_models_labeled || []).map((model, i) =>
                                   i === idx ? { ...model, supports_videos: e.target.checked } : model
                                 );
                                 updateModelsList(newList);
                               }}
-                              className="hidden" 
+                              className="hidden"
                             />
                             <VideoIcon className="w-3.5 h-3.5" />
                             <span>Videos</span>
@@ -401,28 +401,28 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                               <span className="text-slate-500 text-xs">🏷️</span>
                             </div>
-                            <input 
-                              type="text" 
-                              value={newModel.label} 
-                              onChange={(e) => setNewModel(prev => ({ ...prev, label: e.target.value }))} 
-                              placeholder="New Model Name" 
-                              className="w-full bg-slate-900/50 border border-slate-700 rounded-lg py-2 pl-9 pr-3 text-sm text-slate-200 placeholder-slate-500 focus:ring-1 focus:ring-sky-500 focus:border-sky-500 transition-all" 
+                            <input
+                              type="text"
+                              value={newModel.label}
+                              onChange={(e) => setNewModel(prev => ({ ...prev, label: e.target.value }))}
+                              placeholder="New Model Name"
+                              className="w-full bg-slate-900/50 border border-slate-700 rounded-lg py-2 pl-9 pr-3 text-sm text-slate-200 placeholder-slate-500 focus:ring-1 focus:ring-sky-500 focus:border-sky-500 transition-all"
                             />
                           </div>
                           <div className="relative">
                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                               <span className="text-slate-500 text-xs">🆔</span>
                             </div>
-                            <input 
-                              type="text" 
-                              value={newModel.id} 
-                              onChange={(e) => setNewModel(prev => ({ ...prev, id: e.target.value }))} 
-                              placeholder="Model ID (e.g. gpt-4o)" 
-                              className="w-full bg-slate-900/50 border border-slate-700 rounded-lg py-2 pl-9 pr-3 text-sm text-slate-200 placeholder-slate-500 focus:ring-1 focus:ring-sky-500 focus:border-sky-500 transition-all" 
+                            <input
+                              type="text"
+                              value={newModel.id}
+                              onChange={(e) => setNewModel(prev => ({ ...prev, id: e.target.value }))}
+                              placeholder="Model ID (e.g. gpt-4o)"
+                              className="w-full bg-slate-900/50 border border-slate-700 rounded-lg py-2 pl-9 pr-3 text-sm text-slate-200 placeholder-slate-500 focus:ring-1 focus:ring-sky-500 focus:border-sky-500 transition-all"
                             />
                           </div>
                         </div>
-                        
+
                         <div className="flex flex-col gap-2">
                           <select
                             value={newModel.provider}
@@ -434,8 +434,8 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                             <option value="openrouter">OpenRouter</option>
                             <option value="ollama">Ollama</option>
                           </select>
-                          <button 
-                            onClick={addModel} 
+                          <button
+                            onClick={addModel}
                             className="flex items-center justify-center gap-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg py-2 px-4 text-sm font-medium transition-colors shadow-lg shadow-sky-900/20"
                           >
                             <PlusIcon className="w-4 h-4" />
@@ -447,147 +447,255 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                   </div>
                 </div>
                 <div>
-                  <span className="block text-sm font-medium text-slate-400 mb-2">Available Voices</span>
-                  <div className="space-y-2">
+                  <span className="block text-sm font-medium text-slate-400 mb-3">Available Voices</span>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {(config.available_voices_labeled || []).map((v, idx) => (
-                      <div key={idx} className="flex items-center gap-3">
-                        <input type="text" value={v.label} onChange={(e) => updateVoice(idx, 'label', e.target.value)} className={`w-40 ${inputBaseStyle}`} />
-                        <input type="text" value={v.id} onChange={(e) => updateVoice(idx, 'id', e.target.value)} className={`flex-1 ${inputBaseStyle}`} />
-                        <button onClick={() => removeVoice(idx)} className={buttonRemoveIconStyle} title="Remove Voice">
-                          <TrashIcon className="w-5 h-5" />
+                      <div key={idx} className="group relative bg-slate-800/40 border border-slate-700/50 rounded-xl p-3 flex items-center gap-3 transition-all hover:border-purple-500/30 hover:shadow-lg hover:shadow-purple-500/5">
+                        <div className="p-2 bg-purple-500/10 rounded-lg text-purple-400">
+                          <MicIcon className="w-5 h-5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <input
+                            type="text"
+                            value={v.label}
+                            onChange={(e) => updateVoice(idx, 'label', e.target.value)}
+                            className="w-full bg-transparent border-none p-0 text-sm font-medium text-slate-200 placeholder-slate-600 focus:ring-0"
+                            placeholder="Voice Label"
+                          />
+                          <input
+                            type="text"
+                            value={v.id}
+                            onChange={(e) => updateVoice(idx, 'id', e.target.value)}
+                            className="w-full bg-transparent border-none p-0 text-xs font-mono text-slate-500 focus:text-purple-400 focus:ring-0 transition-colors"
+                            placeholder="voice_id"
+                          />
+                        </div>
+                        <button
+                          onClick={() => removeVoice(idx)}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100"
+                          title="Remove Voice"
+                        >
+                          <TrashIcon className="w-4 h-4" />
                         </button>
                       </div>
                     ))}
-                    <div className="flex items-center gap-3 pt-2">
-                      <input type="text" value={newVoice.label} onChange={(e) => setNewVoice(prev => ({ ...prev, label: e.target.value }))} placeholder="Label" className={`w-40 ${inputBaseStyle}`} />
-                      <input type="text" value={newVoice.id} onChange={(e) => setNewVoice(prev => ({ ...prev, id: e.target.value }))} placeholder="Voice id" className={`flex-1 ${inputBaseStyle}`} />
-                      <button onClick={addVoice} className={buttonAddIconStyle} title="Add Voice">
+
+                    {/* Add Voice Card */}
+                    <div className="group relative border-2 border-dashed border-slate-700/50 rounded-xl p-3 flex items-center gap-3 hover:border-purple-500/40 hover:bg-slate-800/30 transition-all">
+                      <div className="p-2 bg-slate-800 rounded-lg text-slate-500 group-hover:text-purple-400 transition-colors">
                         <PlusIcon className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <input
+                          type="text"
+                          value={newVoice.label}
+                          onChange={(e) => setNewVoice(prev => ({ ...prev, label: e.target.value }))}
+                          placeholder="New Voice Label"
+                          className="w-full bg-transparent border-none p-0 text-sm font-medium text-slate-300 placeholder-slate-500 focus:ring-0"
+                        />
+                        <input
+                          type="text"
+                          value={newVoice.id}
+                          onChange={(e) => setNewVoice(prev => ({ ...prev, id: e.target.value }))}
+                          placeholder="voice_id"
+                          className="w-full bg-transparent border-none p-0 text-xs font-mono text-slate-500 focus:text-purple-400 focus:ring-0 transition-colors"
+                        />
+                      </div>
+                      <button
+                        onClick={addVoice}
+                        className="p-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-900/20 transition-all"
+                        title="Add Voice"
+                      >
+                        <PlusIcon className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
                 </div>
-                <label className="block">
-                  <span className="block text-sm font-medium text-slate-400 mb-2">AI Base URL (Ollama)</span>
-                  <input type="text" value={config.ollama_base_url} onChange={(e) => updateField('ollama_base_url', e.target.value)} placeholder="http://localhost:11434" className={`w-full ${inputBaseStyle}`} />
-                </label>
-                <label className="block">
-                  <span className="block text-sm font-medium text-slate-400 mb-2">OpenAI Base URL (Compatible)</span>
-                  <input type="text" value={config.openai_base_url || ''} onChange={(e) => updateField('openai_base_url', e.target.value)} placeholder="http://localhost:12434/v1" className={`w-full ${inputBaseStyle}`} />
-                </label>
-                <label className="block">
-                  <span className="block text-sm font-medium text-slate-400 mb-2">OpenAI API Key (optional)</span>
-                  <input
-                    type="password"
-                    value={openaiApiKey}
-                    onChange={(e) => setOpenaiApiKey(e.target.value)}
-                    placeholder={config.openai_api_key_set ? 'Key is set (enter to replace)' : 'sk-... or any string'}
-                    className={`w-full ${inputBaseStyle}`}
-                  />
-                  <p className="mt-2 text-xs text-slate-500">Stored in memory; never displayed back.</p>
-                </label>
-                <label className="block">
-                  <span className="block text-sm font-medium text-slate-400 mb-2">Google API Key (optional)</span>
-                  <input
-                    type="password"
-                    value={googleApiKey}
-                    onChange={(e) => setGoogleApiKey(e.target.value)}
-                    placeholder={config.google_api_key_set ? 'Key is set (enter to replace)' : 'AIza...'}
-                    className={`w-full ${inputBaseStyle}`}
-                  />
-                  <p className="mt-2 text-xs text-slate-500">Stored in memory; never displayed back.</p>
-                </label>
-                <label className="block">
-                  <span className="block text-sm font-medium text-slate-400 mb-2">OpenRouter API Key (optional)</span>
-                  <input
-                    type="password"
-                    value={openrouterApiKey}
-                    onChange={(e) => setOpenrouterApiKey(e.target.value)}
-                    placeholder={config.openrouter_api_key_set ? 'Key is set (enter to replace)' : 'sk-or-...'}
-                    className={`w-full ${inputBaseStyle}`}
-                  />
-                  <p className="mt-2 text-xs text-slate-500">Stored in memory; never displayed back.</p>
-                </label>
-                <label className="block">
-                  <span className="block text-sm font-medium text-slate-400 mb-2">AGNO API Key (optional)</span>
-                  <input
-                    type="password"
-                    value={agnoApiKey}
-                    onChange={(e) => setAgnoApiKey(e.target.value)}
-                    placeholder={config.agno_api_key_set ? 'Key is set (enter to replace)' : 'Enter AGNO API key for monitoring'}
-                    className={`w-full ${inputBaseStyle}`}
-                  />
-                  <p className="mt-2 text-xs text-slate-500">For agent monitoring at https://app.agno.com/</p>
-                </label>
-                <label className="flex items-center gap-3 p-3 bg-slate-800/40 rounded-lg border border-slate-700/50">
-                  <input
-                    type="checkbox"
-                    checked={config.gemini_search_enabled}
-                    onChange={(e) => updateField('gemini_search_enabled', e.target.checked)}
-                    className="w-5 h-5 rounded border-slate-600 text-sky-600 focus:ring-sky-500 bg-slate-700"
-                  />
-                  <div>
-                    <span className="block text-sm font-medium text-slate-200">Enable Gemini Search</span>
-                    <span className="block text-xs text-slate-400">Allows Gemini models to use Google Search tool</span>
+
+                <div className="grid grid-cols-1 gap-6 mt-8">
+                  {/* URLs Section */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider">API Endpoints</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-1 flex items-center gap-2 focus-within:border-sky-500/50 focus-within:ring-1 focus-within:ring-sky-500/20 transition-all">
+                        <div className="p-2 text-slate-500">
+                          <GlobeIcon className="w-5 h-5" />
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">Ollama URL</label>
+                          <input
+                            type="text"
+                            value={config.ollama_base_url}
+                            onChange={(e) => updateField('ollama_base_url', e.target.value)}
+                            placeholder="http://localhost:11434"
+                            className="w-full bg-transparent border-none p-0 text-sm text-slate-200 placeholder-slate-600 focus:ring-0"
+                          />
+                        </div>
+                      </div>
+                      <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-1 flex items-center gap-2 focus-within:border-sky-500/50 focus-within:ring-1 focus-within:ring-sky-500/20 transition-all">
+                        <div className="p-2 text-slate-500">
+                          <GlobeIcon className="w-5 h-5" />
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">OpenAI URL</label>
+                          <input
+                            type="text"
+                            value={config.openai_base_url || ''}
+                            onChange={(e) => updateField('openai_base_url', e.target.value)}
+                            placeholder="http://localhost:12434/v1"
+                            className="w-full bg-transparent border-none p-0 text-sm text-slate-200 placeholder-slate-600 focus:ring-0"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </label>
+
+                  {/* API Keys Section */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider">API Keys</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {[
+                        { label: 'OpenAI Key', value: openaiApiKey, setter: setOpenaiApiKey, isSet: config.openai_api_key_set, placeholder: 'sk-...' },
+                        { label: 'Google Key', value: googleApiKey, setter: setGoogleApiKey, isSet: config.google_api_key_set, placeholder: 'AIza...' },
+                        { label: 'OpenRouter Key', value: openrouterApiKey, setter: setOpenrouterApiKey, isSet: config.openrouter_api_key_set, placeholder: 'sk-or-...' },
+                        { label: 'AGNO Key', value: agnoApiKey, setter: setAgnoApiKey, isSet: config.agno_api_key_set, placeholder: 'Monitoring Key' },
+                      ].map((item, i) => (
+                        <div key={i} className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-1 flex items-center gap-2 focus-within:border-sky-500/50 focus-within:ring-1 focus-within:ring-sky-500/20 transition-all">
+                          <div className="p-2 text-slate-500">
+                            <KeyIcon className="w-5 h-5" />
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex justify-between items-center pr-2">
+                              <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">{item.label}</label>
+                              {item.isSet && <span className="text-[10px] text-green-500 font-medium flex items-center gap-1"><CheckIcon className="w-3 h-3" /> Set</span>}
+                            </div>
+                            <input
+                              type="password"
+                              value={item.value}
+                              onChange={(e) => item.setter(e.target.value)}
+                              placeholder={item.isSet ? '••••••••••••••••' : item.placeholder}
+                              className="w-full bg-transparent border-none p-0 text-sm text-slate-200 placeholder-slate-600 focus:ring-0 font-mono"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Toggles */}
+                  <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 flex items-center justify-between hover:bg-slate-800/50 transition-all cursor-pointer" onClick={() => updateField('gemini_search_enabled', !config.gemini_search_enabled)}>
+                    <div className="flex items-center gap-4">
+                      <div className={`p-2 rounded-lg ${config.gemini_search_enabled ? 'bg-sky-500/20 text-sky-400' : 'bg-slate-700/30 text-slate-500'}`}>
+                        <SearchIcon className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <span className="block text-sm font-medium text-slate-200">Gemini Search</span>
+                        <span className="block text-xs text-slate-400">Enable Google Search tool for Gemini models</span>
+                      </div>
+                    </div>
+                    <div className={`w-11 h-6 rounded-full transition-colors relative ${config.gemini_search_enabled ? 'bg-sky-600' : 'bg-slate-700'}`}>
+                      <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${config.gemini_search_enabled ? 'left-6' : 'left-1'}`} />
+                    </div>
+                  </div>
+                </div>
               </section>
 
               {/* MCP Settings Card */}
               <section className="bg-slate-900/30 backdrop-blur-md border border-slate-500/30 rounded-xl p-6 space-y-6">
-                <h2 className="text-xl font-bold">MCP Settings</h2>
-                <label className="block">
-                  <span className="block text-sm font-medium text-slate-400 mb-2">Transport</span>
-                  <select value={config.mcp_transport} onChange={(e) => updateField('mcp_transport', e.target.value)} className={`w-full ${inputBaseStyle}`} >
-                    <option value="streamable-http">streamable-http</option>
-                    <option value="stdio">stdio</option>
-                  </select>
-                </label>
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="p-2 bg-orange-500/10 rounded-lg text-orange-500">
+                    <ServerIcon className="w-6 h-6" />
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-200">MCP Settings</h2>
+                </div>
+
+                <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4">
+                  <label className="block">
+                    <span className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Transport Mode</span>
+                    <select
+                      value={config.mcp_transport}
+                      onChange={(e) => updateField('mcp_transport', e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-slate-200 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none transition-all"
+                    >
+                      <option value="streamable-http">Streamable HTTP (Remote)</option>
+                      <option value="stdio">Stdio (Local Process)</option>
+                    </select>
+                  </label>
+                </div>
+
                 {config.mcp_transport === 'streamable-http' && (
                   <div className="space-y-4">
-                    <span className="block text-sm font-medium text-slate-400">MCP Servers</span>
-                    <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-slate-400">MCP Servers</span>
+                      <span className="text-xs text-slate-500 bg-slate-800 px-2 py-1 rounded">HTTP</span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3">
                       {(config.mcp_servers || []).map((srv, idx) => (
-                        <div key={idx} className="flex items-center gap-3">
-                          <input type="text" value={srv.label} onChange={(e) => updateServer(idx, 'label', e.target.value)} className={`w-40 ${inputBaseStyle}`} />
-                          <input type="text" value={srv.url} onChange={(e) => updateServer(idx, 'url', e.target.value)} className={`flex-1 ${inputBaseStyle}`} />
-                          <button onClick={() => removeServer(idx)} className={buttonRemoveIconStyle} title="Remove Server">
-                            <TrashIcon className="w-5 h-5" />
+                        <div key={idx} className="group relative bg-slate-800/40 border border-slate-700/50 rounded-xl p-3 flex items-center gap-3 hover:border-orange-500/30 transition-all">
+                          <div className="p-2 bg-slate-800 rounded-lg text-slate-500">
+                            <GlobeIcon className="w-5 h-5" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <input type="text" value={srv.label} onChange={(e) => updateServer(idx, 'label', e.target.value)} className="w-full bg-transparent border-none p-0 text-sm font-medium text-slate-200 focus:ring-0" placeholder="Server Label" />
+                            <input type="text" value={srv.url} onChange={(e) => updateServer(idx, 'url', e.target.value)} className="w-full bg-transparent border-none p-0 text-xs text-slate-500 focus:text-orange-400 focus:ring-0 font-mono" placeholder="https://..." />
+                          </div>
+                          <button onClick={() => removeServer(idx)} className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100">
+                            <TrashIcon className="w-4 h-4" />
                           </button>
                         </div>
                       ))}
-                    </div>
-                    <div className="flex items-center gap-3 pt-2">
-                      <input type="text" value={newServer.label} onChange={(e) => setNewServer(prev => ({ ...prev, label: e.target.value }))} placeholder="Label" className={`w-40 ${inputBaseStyle}`} />
-                      <input type="text" value={newServer.url} onChange={(e) => setNewServer(prev => ({ ...prev, url: e.target.value }))} placeholder="https://..." className={`flex-1 ${inputBaseStyle}`} />
-                      <button onClick={addServer} className={buttonAddIconStyle} title="Add Server">
-                        <PlusIcon className="w-5 h-5" />
-                      </button>
+
+                      {/* Add Server */}
+                      <div className="group relative border-2 border-dashed border-slate-700/50 rounded-xl p-3 flex items-center gap-3 hover:border-orange-500/40 hover:bg-slate-800/30 transition-all">
+                        <div className="p-2 bg-slate-800 rounded-lg text-slate-500 group-hover:text-orange-400 transition-colors">
+                          <PlusIcon className="w-5 h-5" />
+                        </div>
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <input type="text" value={newServer.label} onChange={(e) => setNewServer(prev => ({ ...prev, label: e.target.value }))} placeholder="New Server Label" className="w-full bg-transparent border-none p-0 text-sm font-medium text-slate-300 focus:ring-0" />
+                          <input type="text" value={newServer.url} onChange={(e) => setNewServer(prev => ({ ...prev, url: e.target.value }))} placeholder="https://mcp-server.com/sse" className="w-full bg-transparent border-none p-0 text-xs text-slate-500 focus:text-orange-400 focus:ring-0 font-mono" />
+                        </div>
+                        <button onClick={addServer} className="p-1.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white shadow-lg shadow-orange-900/20 transition-all">
+                          <PlusIcon className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
+
                 {config.mcp_transport === 'stdio' && (
                   <div className="space-y-4">
-                    <div>
-                      <span className="block text-sm font-medium text-slate-400 mb-2">Stdio Tools</span>
-                      <div className="space-y-2">
-                        {(config.mcp_stdio_tools || []).map((tool, idx) => (
-                          <div key={idx} className="flex items-center gap-3">
-                            <input type="text" value={tool.label} onChange={(e) => updateStdioTool(idx, 'label', e.target.value)} className={`w-40 ${inputBaseStyle}`} />
-                            <input type="text" value={tool.command} onChange={(e) => updateStdioTool(idx, 'command', e.target.value)} className={`flex-1 ${inputBaseStyle}`} />
-                            <button onClick={() => removeStdioTool(idx)} className={buttonRemoveIconStyle} title="Remove Tool">
-                              <TrashIcon className="w-5 h-5" />
-                            </button>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-slate-400">Stdio Tools</span>
+                      <span className="text-xs text-slate-500 bg-slate-800 px-2 py-1 rounded">Local</span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3">
+                      {(config.mcp_stdio_tools || []).map((tool, idx) => (
+                        <div key={idx} className="group relative bg-slate-800/40 border border-slate-700/50 rounded-xl p-3 flex items-center gap-3 hover:border-green-500/30 transition-all">
+                          <div className="p-2 bg-slate-800 rounded-lg text-slate-500">
+                            <TerminalIcon className="w-5 h-5" />
                           </div>
-                        ))}
-                        <div className="flex items-center gap-3 pt-2">
-                          <input type="text" value={newStdioTool.label} onChange={(e) => setNewStdioTool(prev => ({ ...prev, label: e.target.value }))} placeholder="Label" className={`w-40 ${inputBaseStyle}`} />
-                          <input type="text" value={newStdioTool.command} onChange={(e) => setNewStdioTool(prev => ({ ...prev, command: e.target.value }))} placeholder="npx -y @..." className={`flex-1 ${inputBaseStyle}`} />
-                          <button onClick={addStdioTool} className={buttonAddIconStyle} title="Add Tool">
-                            <PlusIcon className="w-5 h-5" />
+                          <div className="flex-1 min-w-0">
+                            <input type="text" value={tool.label} onChange={(e) => updateStdioTool(idx, 'label', e.target.value)} className="w-full bg-transparent border-none p-0 text-sm font-medium text-slate-200 focus:ring-0" placeholder="Tool Label" />
+                            <input type="text" value={tool.command} onChange={(e) => updateStdioTool(idx, 'command', e.target.value)} className="w-full bg-transparent border-none p-0 text-xs text-slate-500 focus:text-green-400 focus:ring-0 font-mono" placeholder="npx -y ..." />
+                          </div>
+                          <button onClick={() => removeStdioTool(idx)} className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100">
+                            <TrashIcon className="w-4 h-4" />
                           </button>
                         </div>
-                        <p className="mt-2 text-xs text-slate-500">Commands run via stdio (e.g., npx/uvx). They will be connected alongside HTTP MCP servers.</p>
+                      ))}
+
+                      {/* Add Tool */}
+                      <div className="group relative border-2 border-dashed border-slate-700/50 rounded-xl p-3 flex items-center gap-3 hover:border-green-500/40 hover:bg-slate-800/30 transition-all">
+                        <div className="p-2 bg-slate-800 rounded-lg text-slate-500 group-hover:text-green-400 transition-colors">
+                          <PlusIcon className="w-5 h-5" />
+                        </div>
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <input type="text" value={newStdioTool.label} onChange={(e) => setNewStdioTool(prev => ({ ...prev, label: e.target.value }))} placeholder="New Tool Label" className="w-full bg-transparent border-none p-0 text-sm font-medium text-slate-300 focus:ring-0" />
+                          <input type="text" value={newStdioTool.command} onChange={(e) => setNewStdioTool(prev => ({ ...prev, command: e.target.value }))} placeholder="npx -y @modelcontextprotocol/server-..." className="w-full bg-transparent border-none p-0 text-xs text-slate-500 focus:text-green-400 focus:ring-0 font-mono" />
+                        </div>
+                        <button onClick={addStdioTool} className="p-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-white shadow-lg shadow-green-900/20 transition-all">
+                          <PlusIcon className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -598,7 +706,7 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
             <div className="p-8 text-center text-slate-400">No configuration loaded.</div>
           )}
         </main>
-      </div>
-    </div>
+      </div >
+    </div >
   );
 };
