@@ -137,8 +137,8 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
 
             {/* Input Bar */}
             <div className="w-full bg-slate-900/30 p-3 rounded-xl border border-slate-500/30 flex items-center gap-3 shadow-lg backdrop-blur-lg">
-                {/* Plus Button for Media Upload - Only if Multimodal - LEFT SIDE */}
-                {!isLoading && isMultimodal && (
+                {/* Plus Button for Media Upload - Only if Multimodal and Agent Mode - LEFT SIDE */}
+                {!isLoading && isMultimodal && queryMode === 'agent' && (
                     <div className="relative group">
                         <input
                             ref={fileInputRef}
