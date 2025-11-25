@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, Bac
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, constr
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import json
 import tempfile
 import shutil
@@ -35,6 +35,7 @@ from auth import get_user_from_auth_header
 from auth import verify_refresh_token, issue_access_token, issue_refresh_token, APP_ENV
 from users import SessionLocal as _UserSessionLocal
 from users import RefreshTokenDB, store_refresh, revoke_refresh, is_refresh_valid
+from agno.media import Image, Audio, Video
 
 
 # Sessions persistence moved to sessions.py
@@ -171,6 +172,9 @@ class QueryRequest(BaseModel):
     user_id: str
     session_id: str
     query: constr(strip_whitespace=True, min_length=1, max_length=2000)
+    images: Optional[List[str]] = None
+    audio: Optional[List[str]] = None
+    videos: Optional[List[str]] = None
 
 class QueryResponse(BaseModel):
     user_id: str
@@ -661,7 +665,103 @@ async def query_assistant(request: QueryRequest, http_request: Request):
             s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
             if not s:
                 raise HTTPException(status_code=404, detail="Session not found")
-        response = await run_assistant_agent(request.query, uid, request.session_id)
+        
+        # Handle images
+        images = []
+        if request.images:
+            for img_str in request.images:
+                try:
+                    # Check if it's a data URI and strip header if present
+                    if "base64," in img_str:
+                        header, encoded = img_str.split("base64,", 1)
+                        # Guess extension from header
+                        ext = ".png" # Default
+                        if "image/jpeg" in header: ext = ".jpg"
+                        elif "image/png" in header: ext = ".png"
+                        elif "image/webp" in header: ext = ".webp"
+                        elif "image/gif" in header: ext = ".gif"
+                    else:
+                        encoded = img_str
+                        ext = ".png"
+
+                    # Decode base64
+                    image_data = base64.b64decode(encoded)
+                    
+                    # Create temp file
+                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_img:
+                        temp_img.write(image_data)
+                        temp_path = temp_img.name
+                    
+                    # Add to images list using filepath
+                    images.append(Image(filepath=temp_path))
+                    logging.info(f"Processed image to temp file: {temp_path}")
+                except Exception as e:
+                    logging.error(f"Failed to process image: {e}")
+
+        # Handle audio
+        audio_files = []
+        if request.audio:
+            for audio_str in request.audio:
+                try:
+                    # Check if it's a data URI and strip header if present
+                    if "base64," in audio_str:
+                        header, encoded = audio_str.split("base64,", 1)
+                        # Guess extension from header
+                        ext = ".mp3" # Default
+                        if "audio/mpeg" in header: ext = ".mp3"
+                        elif "audio/wav" in header: ext = ".wav"
+                        elif "audio/ogg" in header: ext = ".ogg"
+                        elif "audio/webm" in header: ext = ".webm"
+                    else:
+                        encoded = audio_str
+                        ext = ".mp3"
+
+                    # Decode base64
+                    audio_data = base64.b64decode(encoded)
+                    
+                    # Create temp file
+                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_audio:
+                        temp_audio.write(audio_data)
+                        temp_path = temp_audio.name
+                    
+                    # Add to audio list using filepath
+                    audio_files.append(Audio(filepath=temp_path))
+                    logging.info(f"Processed audio to temp file: {temp_path}")
+                except Exception as e:
+                    logging.error(f"Failed to process audio: {e}")
+
+        # Handle videos
+        video_files = []
+        if request.videos:
+            for video_str in request.videos:
+                try:
+                    # Check if it's a data URI and strip header if present
+                    if "base64," in video_str:
+                        header, encoded = video_str.split("base64,", 1)
+                        # Guess extension from header
+                        ext = ".mp4" # Default
+                        if "video/mp4" in header: ext = ".mp4"
+                        elif "video/webm" in header: ext = ".webm"
+                        elif "video/ogg" in header: ext = ".ogg"
+                    else:
+                        encoded = video_str
+                        ext = ".mp4"
+
+                    # Decode base64
+                    video_data = base64.b64decode(encoded)
+                    
+                    # Create temp file
+                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_video:
+                        temp_video.write(video_data)
+                        temp_path = temp_video.name
+                    
+                    # Add to videos list using filepath
+                    video_files.append(Video(filepath=temp_path))
+                    logging.info(f"Processed video to temp file: {temp_path}")
+                except Exception as e:
+                    logging.error(f"Failed to process video: {e}")
+
+        response = await run_assistant_agent(request.query, uid, request.session_id, images=images if images else None, audio=audio_files if audio_files else None, videos=video_files if video_files else None)
         return QueryResponse(
             user_id=uid,
             session_id=request.session_id,
@@ -684,7 +784,103 @@ async def query_assistant_direct(request: QueryRequest, http_request: Request):
             s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
             if not s:
                 raise HTTPException(status_code=404, detail="Session not found")
-        response = await run_assistant_agent(request.query, uid, request.session_id)
+        
+        # Handle images
+        images = []
+        if request.images:
+            for img_str in request.images:
+                try:
+                    # Check if it's a data URI and strip header if present
+                    if "base64," in img_str:
+                        header, encoded = img_str.split("base64,", 1)
+                        # Guess extension from header
+                        ext = ".png" # Default
+                        if "image/jpeg" in header: ext = ".jpg"
+                        elif "image/png" in header: ext = ".png"
+                        elif "image/webp" in header: ext = ".webp"
+                        elif "image/gif" in header: ext = ".gif"
+                    else:
+                        encoded = img_str
+                        ext = ".png"
+
+                    # Decode base64
+                    image_data = base64.b64decode(encoded)
+                    
+                    # Create temp file
+                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_img:
+                        temp_img.write(image_data)
+                        temp_path = temp_img.name
+                    
+                    # Add to images list using filepath
+                    images.append(Image(filepath=temp_path))
+                    logging.info(f"Processed image to temp file: {temp_path}")
+                except Exception as e:
+                    logging.error(f"Failed to process image: {e}")
+
+        # Handle audio
+        audio_files = []
+        if request.audio:
+            for audio_str in request.audio:
+                try:
+                    # Check if it's a data URI and strip header if present
+                    if "base64," in audio_str:
+                        header, encoded = audio_str.split("base64,", 1)
+                        # Guess extension from header
+                        ext = ".mp3" # Default
+                        if "audio/mpeg" in header: ext = ".mp3"
+                        elif "audio/wav" in header: ext = ".wav"
+                        elif "audio/ogg" in header: ext = ".ogg"
+                        elif "audio/webm" in header: ext = ".webm"
+                    else:
+                        encoded = audio_str
+                        ext = ".mp3"
+
+                    # Decode base64
+                    audio_data = base64.b64decode(encoded)
+                    
+                    # Create temp file
+                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_audio:
+                        temp_audio.write(audio_data)
+                        temp_path = temp_audio.name
+                    
+                    # Add to audio list using filepath
+                    audio_files.append(Audio(filepath=temp_path))
+                    logging.info(f"Processed audio to temp file: {temp_path}")
+                except Exception as e:
+                    logging.error(f"Failed to process audio: {e}")
+
+        # Handle videos
+        video_files = []
+        if request.videos:
+            for video_str in request.videos:
+                try:
+                    # Check if it's a data URI and strip header if present
+                    if "base64," in video_str:
+                        header, encoded = video_str.split("base64,", 1)
+                        # Guess extension from header
+                        ext = ".mp4" # Default
+                        if "video/mp4" in header: ext = ".mp4"
+                        elif "video/webm" in header: ext = ".webm"
+                        elif "video/ogg" in header: ext = ".ogg"
+                    else:
+                        encoded = video_str
+                        ext = ".mp4"
+
+                    # Decode base64
+                    video_data = base64.b64decode(encoded)
+                    
+                    # Create temp file
+                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_video:
+                        temp_video.write(video_data)
+                        temp_path = temp_video.name
+                    
+                    # Add to videos list using filepath
+                    video_files.append(Video(filepath=temp_path))
+                    logging.info(f"Processed video to temp file: {temp_path}")
+                except Exception as e:
+                    logging.error(f"Failed to process video: {e}")
+
+        response = await run_assistant_agent(request.query, uid, request.session_id, images=images if images else None, audio=audio_files if audio_files else None, videos=video_files if video_files else None)
         response = clean_model_output(response)
 
         return QueryResponse(
@@ -957,7 +1153,103 @@ async def query_assistant_tts_endpoint(request: QueryRequest, http_request: Requ
             s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
             if not s:
                 raise HTTPException(status_code=404, detail="Session not found")
-        response_text = await run_assistant_agent(request.query, uid, request.session_id)
+        
+        # Handle images
+        images = []
+        if request.images:
+            for img_str in request.images:
+                try:
+                    # Check if it's a data URI and strip header if present
+                    if "base64," in img_str:
+                        header, encoded = img_str.split("base64,", 1)
+                        # Guess extension from header
+                        ext = ".png" # Default
+                        if "image/jpeg" in header: ext = ".jpg"
+                        elif "image/png" in header: ext = ".png"
+                        elif "image/webp" in header: ext = ".webp"
+                        elif "image/gif" in header: ext = ".gif"
+                    else:
+                        encoded = img_str
+                        ext = ".png"
+
+                    # Decode base64
+                    image_data = base64.b64decode(encoded)
+                    
+                    # Create temp file
+                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_img:
+                        temp_img.write(image_data)
+                        temp_path = temp_img.name
+                    
+                    # Add to images list using filepath
+                    images.append(Image(filepath=temp_path))
+                    logging.info(f"Processed image to temp file: {temp_path}")
+                except Exception as e:
+                    logging.error(f"Failed to process image: {e}")
+
+        # Handle audio
+        audio_files = []
+        if request.audio:
+            for audio_str in request.audio:
+                try:
+                    # Check if it's a data URI and strip header if present
+                    if "base64," in audio_str:
+                        header, encoded = audio_str.split("base64,", 1)
+                        # Guess extension from header
+                        ext = ".mp3" # Default
+                        if "audio/mpeg" in header: ext = ".mp3"
+                        elif "audio/wav" in header: ext = ".wav"
+                        elif "audio/ogg" in header: ext = ".ogg"
+                        elif "audio/webm" in header: ext = ".webm"
+                    else:
+                        encoded = audio_str
+                        ext = ".mp3"
+
+                    # Decode base64
+                    audio_data = base64.b64decode(encoded)
+                    
+                    # Create temp file
+                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_audio:
+                        temp_audio.write(audio_data)
+                        temp_path = temp_audio.name
+                    
+                    # Add to audio list using filepath
+                    audio_files.append(Audio(filepath=temp_path))
+                    logging.info(f"Processed audio to temp file: {temp_path}")
+                except Exception as e:
+                    logging.error(f"Failed to process audio: {e}")
+
+        # Handle videos
+        video_files = []
+        if request.videos:
+            for video_str in request.videos:
+                try:
+                    # Check if it's a data URI and strip header if present
+                    if "base64," in video_str:
+                        header, encoded = video_str.split("base64,", 1)
+                        # Guess extension from header
+                        ext = ".mp4" # Default
+                        if "video/mp4" in header: ext = ".mp4"
+                        elif "video/webm" in header: ext = ".webm"
+                        elif "video/ogg" in header: ext = ".ogg"
+                    else:
+                        encoded = video_str
+                        ext = ".mp4"
+
+                    # Decode base64
+                    video_data = base64.b64decode(encoded)
+                    
+                    # Create temp file
+                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_video:
+                        temp_video.write(video_data)
+                        temp_path = temp_video.name
+                    
+                    # Add to videos list using filepath
+                    video_files.append(Video(filepath=temp_path))
+                    logging.info(f"Processed video to temp file: {temp_path}")
+                except Exception as e:
+                    logging.error(f"Failed to process video: {e}")
+
+        response_text = await run_assistant_agent(request.query, uid, request.session_id, images=images if images else None, audio=audio_files if audio_files else None, videos=video_files if video_files else None)
 
         with sessions.SessionLocal() as db:
             sessions.apply_session_voice(db, request.user_id, request.session_id)
@@ -995,7 +1287,103 @@ async def query_assistant_tts_direct(request: QueryRequest, http_request: Reques
             s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
             if not s:
                 raise HTTPException(status_code=404, detail="Session not found")
-        response_text = await run_assistant_agent(request.query, uid, request.session_id)
+        
+        # Handle images
+        images = []
+        if request.images:
+            for img_str in request.images:
+                try:
+                    # Check if it's a data URI and strip header if present
+                    if "base64," in img_str:
+                        header, encoded = img_str.split("base64,", 1)
+                        # Guess extension from header
+                        ext = ".png" # Default
+                        if "image/jpeg" in header: ext = ".jpg"
+                        elif "image/png" in header: ext = ".png"
+                        elif "image/webp" in header: ext = ".webp"
+                        elif "image/gif" in header: ext = ".gif"
+                    else:
+                        encoded = img_str
+                        ext = ".png"
+
+                    # Decode base64
+                    image_data = base64.b64decode(encoded)
+                    
+                    # Create temp file
+                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_img:
+                        temp_img.write(image_data)
+                        temp_path = temp_img.name
+                    
+                    # Add to images list using filepath
+                    images.append(Image(filepath=temp_path))
+                    logging.info(f"Processed image to temp file: {temp_path}")
+                except Exception as e:
+                    logging.error(f"Failed to process image: {e}")
+
+        # Handle audio
+        audio_files = []
+        if request.audio:
+            for audio_str in request.audio:
+                try:
+                    # Check if it's a data URI and strip header if present
+                    if "base64," in audio_str:
+                        header, encoded = audio_str.split("base64,", 1)
+                        # Guess extension from header
+                        ext = ".mp3" # Default
+                        if "audio/mpeg" in header: ext = ".mp3"
+                        elif "audio/wav" in header: ext = ".wav"
+                        elif "audio/ogg" in header: ext = ".ogg"
+                        elif "audio/webm" in header: ext = ".webm"
+                    else:
+                        encoded = audio_str
+                        ext = ".mp3"
+
+                    # Decode base64
+                    audio_data = base64.b64decode(encoded)
+                    
+                    # Create temp file
+                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_audio:
+                        temp_audio.write(audio_data)
+                        temp_path = temp_audio.name
+                    
+                    # Add to audio list using filepath
+                    audio_files.append(Audio(filepath=temp_path))
+                    logging.info(f"Processed audio to temp file: {temp_path}")
+                except Exception as e:
+                    logging.error(f"Failed to process audio: {e}")
+
+        # Handle videos
+        video_files = []
+        if request.videos:
+            for video_str in request.videos:
+                try:
+                    # Check if it's a data URI and strip header if present
+                    if "base64," in video_str:
+                        header, encoded = video_str.split("base64,", 1)
+                        # Guess extension from header
+                        ext = ".mp4" # Default
+                        if "video/mp4" in header: ext = ".mp4"
+                        elif "video/webm" in header: ext = ".webm"
+                        elif "video/ogg" in header: ext = ".ogg"
+                    else:
+                        encoded = video_str
+                        ext = ".mp4"
+
+                    # Decode base64
+                    video_data = base64.b64decode(encoded)
+                    
+                    # Create temp file
+                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_video:
+                        temp_video.write(video_data)
+                        temp_path = temp_video.name
+                    
+                    # Add to videos list using filepath
+                    video_files.append(Video(filepath=temp_path))
+                    logging.info(f"Processed video to temp file: {temp_path}")
+                except Exception as e:
+                    logging.error(f"Failed to process video: {e}")
+
+        response_text = await run_assistant_agent(request.query, uid, request.session_id, images=images if images else None, audio=audio_files if audio_files else None, videos=video_files if video_files else None)
         response_text = clean_model_output(response_text)
 
         with sessions.SessionLocal() as db:

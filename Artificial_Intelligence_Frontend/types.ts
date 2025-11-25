@@ -90,6 +90,7 @@ export interface QueryRequest {
     session_id: string;
     query: string;
     system_prompt?: string;
+    images?: string[]; // Base64 encoded images
 }
 
 export interface QueryResponse {

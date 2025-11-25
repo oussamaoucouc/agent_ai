@@ -81,18 +81,15 @@ def run_agent(query, user_id, session_id, images=None, audio=None, videos=None):
 
 
 
-async def run_agent_async(query, user_id, session_id, images=None, audio=None, videos=None):
+async def run_agent_async(query, user_id, session_id):
     """
-    AGNO MCP agent using MCP server tools with multimodal support.
+    AGNO MCP agent using MCP server tools.
     Using cached knowledge base and memory DBs for better performance.
     
     Args:
         query: Text query
         user_id: User ID
         session_id: Session ID
-        images: Optional list of Agno Image objects
-        audio: Optional list of Agno Audio objects
-        videos: Optional list of Agno Video objects
     """
     logger.info(f"Starting MCP agent with Ollama at: {cfg.OLLAMA_BASE_URL}")
     logger.info(f"OpenAI-compatible base URL: {cfg.get_openai_base_url()}")
@@ -233,13 +230,7 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
         await multi_mcp_tools.connect()
         MCP_agent = Agent(tools=[multi_mcp_tools], **agent_common_kwargs)
         try:
-            # Pass multimodal inputs to agent if provided
-            response = await MCP_agent.arun(
-                query,
-                images=images if images else None,
-                audio=audio if audio else None,
-                videos=videos if videos else None
-            )
+            response = await MCP_agent.arun(query)
         finally:
             await multi_mcp_tools.close()
 

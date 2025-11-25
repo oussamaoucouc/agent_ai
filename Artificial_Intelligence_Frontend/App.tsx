@@ -15,7 +15,7 @@ import { Modal } from './components/Modal';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
 import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, listUserStats, createUser, deleteUser, loginUser, updateUser, getSessionSettings, getMcpToolsCatalog, setMcpTools, getMcpStdioCatalog, setMcpStdioTools, getConfig, getModelsLabeledCatalog, getVoicesLabeledCatalog } from './services/apiService';
 import * as storage from './services/storageService';
-import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice, QueryMode, AdminUser, McpToolItem, McpStdioItem, LabeledItem } from './types';
+import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice, QueryMode, AdminUser, McpToolItem, McpStdioItem, LabeledItem, MediaAttachment } from './types';
 import { API_BASE_URL } from './constants';
 
 // Default delete-after-serve delay (seconds) must match backend config unless overridden per request
@@ -64,6 +64,16 @@ const AuroraBackground = () => (
     </div>
 );
 
+
+
+const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = error => reject(error);
+    });
+};
 
 const App: React.FC = () => {
     const [currentUser, setCurrentUser] = useState<string | null>(null);
@@ -714,10 +724,30 @@ const App: React.FC = () => {
         }
     };
 
-    const handleSendText = async (text: string) => {
-        if (!text.trim() || isLoading || !activeSessionId || !currentUser) return;
+    const handleSendText = async (text: string, mediaFiles?: MediaAttachment[]) => {
+        if ((!text.trim() && (!mediaFiles || mediaFiles.length === 0)) || isLoading || !activeSessionId || !currentUser) return;
 
-        const userMessage: Message = { id: crypto.randomUUID(), text, sender: User.USER };
+        // Process images
+        const attachedImages: string[] = [];
+        if (mediaFiles) {
+            for (const media of mediaFiles) {
+                if (media.type === 'image') {
+                    try {
+                        const base64 = await fileToBase64(media.file);
+                        attachedImages.push(base64);
+                    } catch (e) {
+                        console.error("Failed to convert image to base64", e);
+                    }
+                }
+            }
+        }
+
+        const userMessage: Message = {
+            id: crypto.randomUUID(),
+            text,
+            sender: User.USER,
+            attachedImages: attachedImages.length > 0 ? attachedImages : undefined
+        };
         setMessages(prev => [...prev, userMessage]);
         setIsLoading(true);
 
@@ -730,7 +760,8 @@ const App: React.FC = () => {
                 query: text,
                 user_id: currentUser,
                 session_id: activeSessionId,
-                system_prompt: systemPrompt
+                system_prompt: systemPrompt,
+                images: attachedImages.length > 0 ? attachedImages : undefined
             };
 
             switch (queryMode) {

@@ -237,18 +237,15 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
     return knowledge_base
 
 
-async def run_rag_agent_async(query, user_id, session_id, images=None, audio=None, videos=None):
+async def run_rag_agent_async(query, user_id, session_id):
     """
-    AGNO RAG agent using ChromaDB and nomic embedder with multimodal support.
+    AGNO RAG agent using ChromaDB and nomic embedder.
     Initializes a fresh knowledge base sync on each query.
     
     Args:
         query: Text query
         user_id: User ID
         session_id: Session ID
-        images: Optional list of Agno Image objects
-        audio: Optional list of Agno Audio objects
-        videos: Optional list of Agno Video objects
     """
     logging.info(f"Starting RAG agent with Ollama at: {cfg.OLLAMA_BASE_URL}")
     logging.info(f"OpenAI-compatible base URL: {cfg.get_openai_base_url()}")
@@ -379,13 +376,7 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
     )
 
     try:
-        # Pass multimodal inputs to agent if provided
-        response = await rag_expert_agent.arun(
-            query,
-            images=images if images else None,
-            audio=audio if audio else None,
-            videos=videos if videos else None
-        )
+        response = await rag_expert_agent.arun(query)
         # --- Robust error checking for response.content ---
         # Explicit check for boolean response
         if isinstance(response, bool):

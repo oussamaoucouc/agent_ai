@@ -32,26 +32,31 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
-        if (!files) return;
+        if (!files || files.length === 0) return;
 
         const newAttachments: MediaAttachment[] = [];
-        Array.from(files).forEach((file) => {
-            const type = file.type.startsWith('image/') ? 'image' : 
-                        file.type.startsWith('audio/') ? 'audio' :
-                        file.type.startsWith('video/') ? 'video' : null;
-            
-            if (type) {
-                const id = `${Date.now()}_${Math.random()}`;
-                const attachment: MediaAttachment = {
-                    id,
-                    file,
-                    type,
-                    previewUrl: type === 'image' || type === 'video' ? URL.createObjectURL(file) : undefined
-                };
-                newAttachments.push(attachment);
+        Array.from(files).forEach((file: File) => {
+            // Only allow images
+            if (file.type.startsWith('image/')) {
+                try {
+                    const id = `${Date.now()}_${Math.random()}`;
+                    const previewUrl = URL.createObjectURL(file);
+                    const attachment: MediaAttachment = {
+                        id,
+                        file,
+                        type: 'image',
+                        previewUrl
+                    };
+                    newAttachments.push(attachment);
+                } catch (err) {
+                    console.error('Error creating preview for image:', err);
+                }
             }
         });
-        setMediaAttachments(prev => [...prev, ...newAttachments]);
+
+        if (newAttachments.length > 0) {
+            setMediaAttachments(prev => [...prev, ...newAttachments]);
+        }
     };
 
     const removeAttachment = (id: string) => {
@@ -69,6 +74,10 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
             onSend(text, mediaAttachments.length > 0 ? mediaAttachments : undefined);
             setText('');
             setMediaAttachments([]);
+            // Reset file input to allow re-selecting the same file
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
         }
     };
 
@@ -86,13 +95,11 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
                 <div className="flex flex-wrap gap-2 p-2 bg-slate-900/30 rounded-lg border border-slate-500/30">
                     {mediaAttachments.map(attachment => (
                         <div key={attachment.id} className="relative group">
-                            <div className="w-20 h-20 rounded-lg overflow-hidden bg-slate-800 flex items-center justify-center">
-                                {attachment.type === 'image' && attachment.previewUrl ? (
+                            <div className="w-20 h-20 rounded-lg overflow-hidden bg-slate-800 flex items-center justify-center border border-slate-700/50">
+                                {attachment.previewUrl ? (
                                     <img src={attachment.previewUrl} alt="Preview" className="w-full h-full object-cover" />
-                                ) : attachment.type === 'video' && attachment.previewUrl ? (
-                                    <video src={attachment.previewUrl} className="w-full h-full object-cover" />
                                 ) : (
-                                    <span className="text-2xl">{attachment.type === 'audio' ? '🎵' : '📄'}</span>
+                                    <ImageIcon className="w-8 h-8 text-slate-500" />
                                 )}
                             </div>
                             <button
@@ -108,9 +115,34 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
                     ))}
                 </div>
             )}
-            
+
             {/* Input Bar */}
-            <div className="w-full bg-slate-900/30 p-3 rounded-xl border border-slate-500/30 flex items-end gap-3 shadow-lg backdrop-blur-lg">
+            <div className="w-full bg-slate-900/30 p-3 rounded-xl border border-slate-500/30 flex items-center gap-3 shadow-lg backdrop-blur-lg">
+                {/* Plus Button for Image Upload - Only in Agent Mode - LEFT SIDE */}
+                {!isLoading && queryMode === 'agent' && (
+                    <div className="relative group">
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            onChange={handleFileSelect}
+                            className="hidden"
+                        />
+                        <button
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={isLoading || isRecording}
+                            className="p-2.5 rounded-full bg-gradient-to-br from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
+                            aria-label="Attach images"
+                        >
+                            <PlusIcon className="w-5 h-5 text-white" />
+                        </button>
+                        <span className="absolute -bottom-8 whitespace-nowrap text-xs text-white bg-gray-900/90 backdrop-blur-md px-2.5 py-1.5 rounded-lg border border-white/10 opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none translate-y-1 group-hover:translate-y-0">
+                            Attach images
+                        </span>
+                    </div>
+                )}
+
                 <textarea
                     ref={textareaRef}
                     value={text}
@@ -121,7 +153,7 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
                     rows={1}
                     disabled={isLoading || isRecording}
                 />
-                <div className="flex items-end gap-2">
+                <div className="flex items-center gap-2">
                     {isLoading ? (
                         <div className="relative group flex flex-col items-center">
                             <button
@@ -137,29 +169,6 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
                         </div>
                     ) : (
                         <>
-                            {/* Plus Button for File Upload */}
-                            <div className="relative group flex flex-col items-center">
-                                <input
-                                    ref={fileInputRef}
-                                    type="file"
-                                    accept="image/*,audio/*,video/*"
-                                    multiple
-                                    onChange={handleFileSelect}
-                                    className="hidden"
-                                />
-                                <button
-                                    onClick={() => fileInputRef.current?.click()}
-                                    disabled={isLoading || isRecording}
-                                    className="p-2.5 rounded-full bg-slate-800 hover:bg-slate-700 disabled:bg-slate-700 disabled:cursor-not-allowed transition-colors"
-                                    aria-label="Attach media"
-                                >
-                                    <PlusIcon className="w-5 h-5 text-white" />
-                                </button>
-                                <span className="absolute -bottom-8 whitespace-nowrap text-xs text-white bg-gray-900/80 backdrop-blur-sm px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                                    Attach files
-                                </span>
-                            </div>
-
                             <div className="relative group flex flex-col items-center">
                                 <MicButton
                                     isRecording={isRecording}
@@ -171,7 +180,7 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
                                     Mic
                                 </span>
                             </div>
-                            
+
                             <div className="bg-slate-800/40 border border-slate-600/50 p-0.5 rounded-full flex items-center gap-0.5">
                                 <div className="relative group flex flex-col items-center">
                                     <button

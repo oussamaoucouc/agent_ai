@@ -63,10 +63,10 @@ const parseMarkdown = (text: string): string => {
     const parseTableRow = (line: string, isHeader: boolean = false): string => {
         const cells = line.split('|').map(cell => cell.trim()).filter(cell => cell !== '');
         const tag = isHeader ? 'th' : 'td';
-        const cellClass = isHeader 
-            ? 'px-4 py-3 text-left font-semibold text-white bg-white/10 border border-slate-600/50' 
+        const cellClass = isHeader
+            ? 'px-4 py-3 text-left font-semibold text-white bg-white/10 border border-slate-600/50'
             : 'px-4 py-3 text-slate-200 border border-slate-600/50';
-        
+
         return `<tr class="${isHeader ? '' : 'hover:bg-white/5'}">
             ${cells.map(cell => `<${tag} class="${cellClass}">${parseInlineMarkdown(cell)}</${tag}>`).join('')}
         </tr>`;
@@ -103,7 +103,7 @@ const parseMarkdown = (text: string): string => {
             html += `<div class="mb-2"><span class="font-semibold text-sky-300">${match[1]}:</span> <span class="text-slate-200">${parseInlineMarkdown(match[2])}</span></div>`;
             continue;
         }
-        
+
         // Unordered List with better spacing
         match = line.match(/^\s*[-*]\s+(.*)/);
         if (match) {
@@ -126,14 +126,14 @@ const parseMarkdown = (text: string): string => {
         if (line.includes('|') && line.trim().split('|').length >= 3) {
             // Check if it's a separator line (like |---|---|)
             const isSeparator = /^\s*\|[\s\-:]*\|[\s\-:|]*$/.test(line);
-            
+
             if (!isSeparator) {
                 if (blockType !== 'table') {
                     flushBlock();
                     blockType = 'table';
                     isTableHeader = true;
                 }
-                
+
                 tableRows.push(parseTableRow(line, isTableHeader));
                 isTableHeader = false;
                 continue;
@@ -151,7 +151,7 @@ const parseMarkdown = (text: string): string => {
         blockType = 'p';
         currentBlock.push(parseInlineMarkdown(line));
     }
-    
+
     flushBlock();
     return html;
 };
@@ -180,28 +180,44 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, onPl
             <div className={`flex flex-col gap-1.5 max-w-2xl ${isUser ? 'items-end' : 'items-start'}`}>
                 <div className="font-bold text-slate-200">{isUser ? 'You' : 'Assistant'}</div>
                 <div className={`relative text-slate-200 p-4 group ${isUser ? 'bg-gradient-to-br from-sky-500 to-sky-700 rounded-2xl rounded-br-lg' : 'bg-slate-800/40 backdrop-blur-sm border border-slate-600/50 rounded-2xl rounded-tl-none'}`}>
-                    <div 
+
+                    {/* Attached Images */}
+                    {message.attachedImages && message.attachedImages.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-3">
+                            {message.attachedImages.map((imgSrc, index) => (
+                                <div key={index} className="relative group">
+                                    <img
+                                        src={imgSrc}
+                                        alt={`Attachment ${index + 1}`}
+                                        className="max-w-xs max-h-60 rounded-lg border border-slate-600/50 object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                                        onClick={() => window.open(imgSrc, '_blank')}
+                                    />
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    <div
                         className={`prose-p:m-0 prose-strong:text-white prose-em:text-slate-300 space-y-3 ${!isUser ? 'pb-8' : ''}`}
-                        dangerouslySetInnerHTML={{ __html: parseMarkdown(message.text) }} 
+                        dangerouslySetInnerHTML={{ __html: parseMarkdown(message.text) }}
                     />
                     {!isUser && (
-                        <div className={`absolute bottom-2 right-2 z-10 flex items-center gap-1.5 bg-slate-900/40 backdrop-blur-sm p-1 rounded-lg transition-opacity duration-200 border border-slate-600/50 ${
-                            isPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'
-                        }`}>
+                        <div className={`absolute bottom-2 right-2 z-10 flex items-center gap-1.5 bg-slate-900/40 backdrop-blur-sm p-1 rounded-lg transition-opacity duration-200 border border-slate-600/50 ${isPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'
+                            }`}>
                             {message.audioUrl && (
                                 <>
                                     {isPlaying ? (
-                                        <button 
-                                            onClick={onStopAudio} 
-                                            title="Stop audio" 
+                                        <button
+                                            onClick={onStopAudio}
+                                            title="Stop audio"
                                             className="p-1.5 flex items-center justify-center rounded-md bg-red-600/80 hover:bg-red-600 text-white transition-all"
                                         >
                                             <StopIcon className="w-4 h-4" />
                                         </button>
                                     ) : (
-                                        <button 
-                                            onClick={onPlayAudio} 
-                                            title="Play audio" 
+                                        <button
+                                            onClick={onPlayAudio}
+                                            title="Play audio"
                                             className="p-1.5 flex items-center justify-center rounded-md text-slate-300 hover:bg-white/10 hover:text-white transition-all"
                                         >
                                             <PlayIcon className="w-4 h-4" />
