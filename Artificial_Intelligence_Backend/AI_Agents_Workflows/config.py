@@ -359,7 +359,14 @@ if _state.get("available_models_labeled"):
         aml = _state.get("available_models_labeled")
         if isinstance(aml, list):
             _available_models_labeled = [
-                {"label": str(item.get("label", "Model")), "id": str(item.get("id", "")).strip(), "provider": str(item.get("provider", ""))}
+                {
+                    "label": str(item.get("label", "Model")), 
+                    "id": str(item.get("id", "")).strip(), 
+                    "provider": str(item.get("provider", "")),
+                    "supports_images": bool(item.get("supports_images", False)),
+                    "supports_audio": bool(item.get("supports_audio", False)),
+                    "supports_videos": bool(item.get("supports_videos", False))
+                }
                 for item in aml if isinstance(item, dict) and str(item.get("id", "")).strip()
             ] or _available_models_labeled
             if not _available_models:
