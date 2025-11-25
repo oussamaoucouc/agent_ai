@@ -250,6 +250,7 @@ export interface VoicesCatalogResponse {
 export interface LabeledItem {
     label: string;
     id: string;
+    provider?: string;
 }
 
 export interface ModelsCatalogLabeledResponse {

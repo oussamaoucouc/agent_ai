@@ -15,7 +15,7 @@ import { Modal } from './components/Modal';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
 import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, listUserStats, createUser, deleteUser, loginUser, updateUser, getSessionSettings, getMcpToolsCatalog, setMcpTools, getMcpStdioCatalog, setMcpStdioTools, getConfig, getModelsLabeledCatalog, getVoicesLabeledCatalog } from './services/apiService';
 import * as storage from './services/storageService';
-import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice, QueryMode, AdminUser, McpToolItem, McpStdioItem } from './types';
+import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice, QueryMode, AdminUser, McpToolItem, McpStdioItem, LabeledItem } from './types';
 import { API_BASE_URL } from './constants';
 
 // Default delete-after-serve delay (seconds) must match backend config unless overridden per request
@@ -70,9 +70,9 @@ const App: React.FC = () => {
     const [currentUsername, setCurrentUsername] = useState<string | null>(null);
     const [isAdmin, setIsAdmin] = useState<boolean>(false);
     const [isInitialized, setIsInitialized] = useState<boolean>(false);
-const [adminView, setAdminView] = useState<'dashboard' | 'addUser' | 'editUser' | 'config'>('dashboard');
-const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
-const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
+    const [adminView, setAdminView] = useState<'dashboard' | 'addUser' | 'editUser' | 'config'>('dashboard');
+    const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
+    const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
 
     const [sessions, setSessions] = useState<Session[]>([]);
     const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -88,9 +88,9 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
 
     // New states for model and voice selection
     const [currentModel, setCurrentModel] = useState<string>('gemini-2.5-pro');
-    const [availableModelsLabeled, setAvailableModelsLabeled] = useState<Array<{label: string; id: string}>>([]);
+    const [availableModelsLabeled, setAvailableModelsLabeled] = useState<LabeledItem[]>([]);
     const [currentVoice, setCurrentVoice] = useState<TTSVoice>(TTSVoice.BF_EMMA);
-    const [availableVoicesLabeled, setAvailableVoicesLabeled] = useState<Array<{label: string; id: string}>>([]);
+    const [availableVoicesLabeled, setAvailableVoicesLabeled] = useState<LabeledItem[]>([]);
     const [selectedMcpTools, setSelectedMcpTools] = useState<string[]>([]);
     const [mcpToolsCatalog, setMcpToolsCatalog] = useState<McpToolItem[]>([]);
     const [isSettingsSyncing, setIsSettingsSyncing] = useState<boolean>(false);
@@ -112,7 +112,7 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
         isOpen: false,
         title: '',
         message: '',
-        onConfirm: () => {},
+        onConfirm: () => { },
     });
 
 
@@ -158,7 +158,7 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
         }
         setIsInitialized(true);
     }, []);
-    
+
     useEffect(() => {
         storage.setSidebarOpen(isSidebarOpen);
     }, [isSidebarOpen]);
@@ -200,17 +200,17 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                 getMcpToolsCatalog(currentUser),
                 getMcpStdioCatalog(currentUser),
             ]);
-    
+
             const labeledModelsList = Array.isArray(modelsLabeledRes.items) ? modelsLabeledRes.items : [];
             const voicesLabeledList = Array.isArray(voicesLabeledRes.items) ? voicesLabeledRes.items : [];
             const toolsList = Array.isArray(toolsRes.tools) ? toolsRes.tools : [];
             const stdioList = Array.isArray(stdioRes.tools) ? stdioRes.tools : [];
-    
+
             setAvailableModelsLabeled(labeledModelsList);
             setAvailableVoicesLabeled(voicesLabeledList);
             setMcpToolsCatalog(toolsList);
             setMcpStdioCatalog(stdioList);
-    
+
         } catch (e) {
             console.error("Failed to load app configuration:", e);
             showAlert('Configuration Error', 'Could not load application configuration from the server.');
@@ -218,14 +218,14 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
             isRefreshingRef.current = false;
         }
     }, [currentUser]);
-    
+
     useEffect(() => {
         // Load config when user is available.
         if (currentUser) {
             loadAppConfiguration();
         }
     }, [currentUser, loadAppConfiguration]);
-    
+
     useEffect(() => {
         // Reload config when updated from admin page.
         const handler = () => {
@@ -297,11 +297,11 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
         try {
             const obj = JSON.parse(trimmed);
             const keys = Object.keys(obj || {});
-            
+
             // Handle both old technical format and new user-friendly format
             if (keys.includes('key_findings') || keys.includes('details') || keys.includes('conclusion') || keys.includes('notes') || keys.includes('summary')) {
                 const lines: string[] = [];
-                
+
                 // Clean bullet points and format nicely
                 const cleanBullet = (val: unknown): string => {
                     const s = String(val ?? '').trim();
@@ -485,7 +485,7 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
             console.error('Login failed:', err);
         }
     };
-    
+
     const handleStopAudio = useCallback(() => {
         if (animationFrameIdRef.current) {
             cancelAnimationFrame(animationFrameIdRef.current);
@@ -517,7 +517,7 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
         setAdminView('dashboard'); // Reset admin view on logout
         setEditingUser(null);
     };
-    
+
     const playAudioWithVisemes = useCallback((audioUrl: string, visemeData: VisemeData, messageId: string) => {
         handleStopAudio(); // Stop any currently playing audio and animation.
 
@@ -525,7 +525,7 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
         audioRef.current = audio;
         setActiveAudio(audio);
         setPlayingAudioId(messageId);
-        
+
         // Ensure mouth cues are sorted by start time, as the loop relies on it.
         const sortedMouthCues = [...visemeData.mouthCues].sort((a, b) => a.start - b.start);
 
@@ -546,9 +546,9 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                     break; // Cues are sorted, so we can stop.
                 }
             }
-            
+
             setCurrentViseme(current);
-            
+
             animationFrameIdRef.current = requestAnimationFrame(animate);
         };
 
@@ -601,10 +601,10 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
             setMessages(session.messages);
         }
     };
-    
+
     const handleDeleteSession = async (sessionId: string) => {
         if (!currentUser) return;
-        
+
         showConfirmation(
             'Delete Session',
             'Are you sure you want to delete this session? This action cannot be undone.',
@@ -675,7 +675,7 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
             // Optionally: show an error message to the user
         }
     };
-    
+
     const handleVoiceChange = async (voice: TTSVoice) => {
         if (!currentUser || !activeSessionId) return;
         setCurrentVoice(voice);
@@ -726,9 +726,9 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
 
         try {
             let assistantMessage: Message;
-            const requestParams = { 
-                query: text, 
-                user_id: currentUser, 
+            const requestParams = {
+                query: text,
+                user_id: currentUser,
                 session_id: activeSessionId,
                 system_prompt: systemPrompt
             };
@@ -830,9 +830,9 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
         abortControllerRef.current = controller;
 
         try {
-            const requestParams = { 
-                file: audioBlob, 
-                user_id: currentUser, 
+            const requestParams = {
+                file: audioBlob,
+                user_id: currentUser,
                 session_id: activeSessionId,
                 system_prompt: systemPrompt
             };
@@ -850,7 +850,7 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                     data = await fullAgent(requestParams, controller.signal);
                     break;
             }
-            
+
             const userMessage: Message = { id: crypto.randomUUID(), text: `🎤: "${data.text}"`, sender: User.USER };
             const assistantMessage: Message = {
                 id: crypto.randomUUID(),
@@ -917,7 +917,7 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
             // Allow selecting the same file again by clearing input value
             try {
                 inputEl.value = '';
-            } catch {}
+            } catch { }
         }
     };
 
@@ -987,23 +987,23 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
             }
         );
     };
-    
+
     const isSpeaking = !!activeAudio || isRecording;
     const isConversationStarted = messages.length > 1;
 
     const renderPage = () => {
         if (!isInitialized) {
             return (
-                 <div className="flex items-center justify-center h-screen">
+                <div className="flex items-center justify-center h-screen">
                     <div className="w-8 h-8 border-2 border-t-sky-400 border-r-sky-400 border-b-sky-400 border-l-transparent rounded-full animate-spin"></div>
                 </div>
             );
         }
-        
+
         if (!currentUser) {
             return <LoginPage onLogin={handleLogin} />;
         }
-    
+
         if (isAdmin) {
             switch (adminView) {
                 case 'addUser':
@@ -1017,20 +1017,20 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                             onSave={handleSaveEditedUser}
                             onCancel={handleCancelEditUser}
                         />
-                    ) : <DashboardPage 
-                            users={adminUsers} 
-                            onLogout={handleLogout}
-                            onNavigateToAddUser={() => setAdminView('addUser')}
-                            onNavigateToConfig={() => setAdminView('config')}
-                            onDeleteUser={handleDeleteAdminUser}
-                            onEditUser={handleEditAdminUser}
-                        />;
+                    ) : <DashboardPage
+                        users={adminUsers}
+                        onLogout={handleLogout}
+                        onNavigateToAddUser={() => setAdminView('addUser')}
+                        onNavigateToConfig={() => setAdminView('config')}
+                        onDeleteUser={handleDeleteAdminUser}
+                        onEditUser={handleEditAdminUser}
+                    />;
                 case 'config':
                     return <ConfigPage onCancel={() => setAdminView('dashboard')} onShowAlert={(message, title) => showAlert(title, message)} />;
                 default:
                     return (
-                        <DashboardPage 
-                            users={adminUsers} 
+                        <DashboardPage
+                            users={adminUsers}
                             onLogout={handleLogout}
                             onNavigateToAddUser={() => setAdminView('addUser')}
                             onNavigateToConfig={() => setAdminView('config')}
@@ -1040,20 +1040,20 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                     );
             }
         }
-    
+
         return (
             <div className="flex h-screen w-full font-sans relative overflow-hidden">
                 {isSidebarOpen && (
-                    <div 
+                    <div
                         className="fixed inset-0 bg-black/60 z-30 lg:hidden"
                         onClick={() => setIsSidebarOpen(false)}
                         aria-hidden="true"
                     ></div>
                 )}
-                <Sidebar 
+                <Sidebar
                     isSidebarOpen={isSidebarOpen}
                     onClose={() => setIsSidebarOpen(false)}
-                    uploadedFiles={uploadedFiles} 
+                    uploadedFiles={uploadedFiles}
                     onFileChange={handleFileChange}
                     onDeleteDocument={handleDeleteDocument}
                     sessions={sessions}
@@ -1079,13 +1079,13 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                     isSettingsSyncing={isSettingsSyncing}
                 />
                 <main className={`flex flex-col flex-1 h-screen overflow-hidden transition-all duration-300 ease-in-out ${isSidebarOpen ? 'lg:ml-80' : 'lg:ml-0'}`}>
-                    <Header 
-                        user={currentUsername ?? currentUser ?? ''} 
-                        onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
+                    <Header
+                        user={currentUsername ?? currentUser ?? ''}
+                        onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
                     />
                     <div className="flex-1 flex flex-col p-4 md:p-6 lg:p-8 overflow-hidden">
-                        <ChatWindow 
-                            messages={messages} 
+                        <ChatWindow
+                            messages={messages}
                             isLoading={isLoading}
                             playingAudioId={playingAudioId}
                             onPlayAudio={handlePlayAudio}
@@ -1097,25 +1097,23 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                                     <span className="text-sm font-medium text-slate-400">Spoken Responses</span>
                                     <button
                                         onClick={() => handleSpokenResponsesToggle(!spokenResponses)}
-                                        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-slate-900 ${
-                                            spokenResponses ? 'bg-sky-600' : 'bg-slate-600'
-                                        }`}
+                                        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-slate-900 ${spokenResponses ? 'bg-sky-600' : 'bg-slate-600'
+                                            }`}
                                         aria-pressed={spokenResponses}
                                     >
                                         <span
                                             aria-hidden="true"
-                                            className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                                                spokenResponses ? 'translate-x-5' : 'translate-x-0'
-                                            }`}
+                                            className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${spokenResponses ? 'translate-x-5' : 'translate-x-0'
+                                                }`}
                                         />
                                     </button>
                                 </div>
                             </div>
-                            <InputBar 
-                                onSend={handleSendText} 
-                                isRecording={isRecording} 
-                                onStartRecording={startRecording} 
-                                onStopRecording={handleStopRecording} 
+                            <InputBar
+                                onSend={handleSendText}
+                                isRecording={isRecording}
+                                onStartRecording={startRecording}
+                                onStopRecording={handleStopRecording}
                                 isLoading={isLoading}
                                 queryMode={queryMode}
                                 onQueryModeChange={(m) => {
@@ -1130,9 +1128,9 @@ const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
                 {spokenResponses && (
                     <aside className="w-[28rem] flex-shrink-0 bg-slate-900/30 backdrop-blur-2xl border-l border-slate-500/30 hidden lg:flex flex-col p-6">
                         <div className="flex-1 flex items-center justify-center">
-                            <AvatarView 
-                                isSpeaking={isSpeaking} 
-                                currentViseme={currentViseme} 
+                            <AvatarView
+                                isSpeaking={isSpeaking}
+                                currentViseme={currentViseme}
                                 isLoading={isLoading}
                                 isConversationStarted={isConversationStarted}
                             />

@@ -2066,6 +2066,7 @@ class McpStdioToolsCatalogResponse(BaseModel):
 class LabeledItem(BaseModel):
     label: str
     id: str
+    provider: Optional[str] = None
 
 class ModelsCatalogLabeledResponse(BaseModel):
     items: list[LabeledItem]
@@ -2114,8 +2115,9 @@ async def get_models_labeled(user_id: Optional[str] = None, request: Request = N
                 if isinstance(m, dict):
                     label = str(m.get("label", "Model"))
                     mid = str(m.get("id", ""))
+                    provider = m.get("provider")
                     if mid.strip():
-                        items.append(LabeledItem(label=label, id=mid))
+                        items.append(LabeledItem(label=label, id=mid, provider=provider))
         else:
             for mid in cfg.get("available_models", []) or []:
                 ms = str(mid).strip()
@@ -2349,15 +2351,7 @@ async def set_mcp_stdio_tools(request: SetMcpStdioToolsRequest):
         return {"success": True, "count": len(cmds)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error setting MCP stdio tools: {str(e)}")
-class LabeledItem(BaseModel):
-    label: str
-    id: str
 
-class ModelsCatalogLabeledResponse(BaseModel):
-    items: list[LabeledItem]
-
-class VoicesCatalogLabeledResponse(BaseModel):
-    items: list[LabeledItem]
 # Refresh endpoint
 @app.post("/auth/refresh")
 async def auth_refresh(request: Request):
