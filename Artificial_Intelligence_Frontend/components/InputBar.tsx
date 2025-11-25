@@ -12,9 +12,12 @@ interface InputBarProps {
     queryMode: QueryMode;
     onQueryModeChange: (mode: QueryMode) => void;
     onCancel: () => void;
+    supportsImages?: boolean;
+    supportsAudio?: boolean;
+    supportsVideos?: boolean;
 }
 
-export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStartRecording, onStopRecording, isLoading, queryMode, onQueryModeChange, onCancel }) => {
+export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStartRecording, onStopRecording, isLoading, queryMode, onQueryModeChange, onCancel, supportsImages, supportsAudio, supportsVideos }) => {
     const [text, setText] = useState('');
     const [mediaAttachments, setMediaAttachments] = useState<MediaAttachment[]>([]);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -36,20 +39,25 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
 
         const newAttachments: MediaAttachment[] = [];
         Array.from(files).forEach((file: File) => {
-            // Only allow images
-            if (file.type.startsWith('image/')) {
+            // Check file type based on capabilities
+            let type: 'image' | 'audio' | 'video' | null = null;
+            if (file.type.startsWith('image/') && supportsImages) type = 'image';
+            else if (file.type.startsWith('audio/') && supportsAudio) type = 'audio';
+            else if (file.type.startsWith('video/') && supportsVideos) type = 'video';
+
+            if (type) {
                 try {
                     const id = `${Date.now()}_${Math.random()}`;
                     const previewUrl = URL.createObjectURL(file);
                     const attachment: MediaAttachment = {
                         id,
                         file,
-                        type: 'image',
+                        type,
                         previewUrl
                     };
                     newAttachments.push(attachment);
                 } catch (err) {
-                    console.error('Error creating preview for image:', err);
+                    console.error('Error creating preview for media:', err);
                 }
             }
         });
@@ -88,6 +96,13 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
         }
     };
 
+    const isMultimodal = supportsImages || supportsAudio || supportsVideos;
+    const acceptedTypes = [
+        supportsImages ? 'image/*' : '',
+        supportsAudio ? 'audio/*' : '',
+        supportsVideos ? 'video/*' : ''
+    ].filter(Boolean).join(',');
+
     return (
         <div className="w-full space-y-2">
             {/* Media Preview */}
@@ -97,7 +112,11 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
                         <div key={attachment.id} className="relative group">
                             <div className="w-20 h-20 rounded-lg overflow-hidden bg-slate-800 flex items-center justify-center border border-slate-700/50">
                                 {attachment.previewUrl ? (
-                                    <img src={attachment.previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                                    attachment.type === 'image' || attachment.type === 'video' ? (
+                                        <img src={attachment.previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="text-xs text-slate-400 p-1 text-center">{attachment.file.name}</div>
+                                    )
                                 ) : (
                                     <ImageIcon className="w-8 h-8 text-slate-500" />
                                 )}
@@ -118,13 +137,13 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
 
             {/* Input Bar */}
             <div className="w-full bg-slate-900/30 p-3 rounded-xl border border-slate-500/30 flex items-center gap-3 shadow-lg backdrop-blur-lg">
-                {/* Plus Button for Image Upload - Only in Agent Mode - LEFT SIDE */}
-                {!isLoading && queryMode === 'agent' && (
+                {/* Plus Button for Media Upload - Only if Multimodal - LEFT SIDE */}
+                {!isLoading && isMultimodal && (
                     <div className="relative group">
                         <input
                             ref={fileInputRef}
                             type="file"
-                            accept="image/*"
+                            accept={acceptedTypes}
                             multiple
                             onChange={handleFileSelect}
                             className="hidden"
@@ -133,12 +152,12 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
                             onClick={() => fileInputRef.current?.click()}
                             disabled={isLoading || isRecording}
                             className="p-2.5 rounded-full bg-gradient-to-br from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
-                            aria-label="Attach images"
+                            aria-label="Attach media"
                         >
                             <PlusIcon className="w-5 h-5 text-white" />
                         </button>
-                        <span className="absolute -bottom-8 whitespace-nowrap text-xs text-white bg-gray-900/90 backdrop-blur-md px-2.5 py-1.5 rounded-lg border border-white/10 opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none translate-y-1 group-hover:translate-y-0">
-                            Attach images
+                        <span className="absolute -bottom-8 whitespace-nowrap text-xs text-white bg-gray-900/90 backdrop-blur-md px-2.5 py-1.5 rounded-lg border border-white/10 opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none translate-y-1 group-hover:translate-y-0 z-50">
+                            Multimodel Capabilities
                         </span>
                     </div>
                 )}

@@ -1152,6 +1152,9 @@ const App: React.FC = () => {
                                     storage.setQueryMode(m);
                                 }}
                                 onCancel={handleCancelGeneration}
+                                supportsImages={availableModelsLabeled.find(m => m.id === currentModel)?.supports_images}
+                                supportsAudio={availableModelsLabeled.find(m => m.id === currentModel)?.supports_audio}
+                                supportsVideos={availableModelsLabeled.find(m => m.id === currentModel)?.supports_videos}
                             />
                         </div>
                     </div>

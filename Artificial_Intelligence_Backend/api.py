@@ -2455,6 +2455,9 @@ class LabeledItem(BaseModel):
     label: str
     id: str
     provider: Optional[str] = None
+    supports_images: bool = False
+    supports_audio: bool = False
+    supports_videos: bool = False
 
 class ModelsCatalogLabeledResponse(BaseModel):
     items: list[LabeledItem]
@@ -2504,8 +2507,18 @@ async def get_models_labeled(user_id: Optional[str] = None, request: Request = N
                     label = str(m.get("label", "Model"))
                     mid = str(m.get("id", ""))
                     provider = m.get("provider")
+                    supports_images = bool(m.get("supports_images", False))
+                    supports_audio = bool(m.get("supports_audio", False))
+                    supports_videos = bool(m.get("supports_videos", False))
                     if mid.strip():
-                        items.append(LabeledItem(label=label, id=mid, provider=provider))
+                        items.append(LabeledItem(
+                            label=label, 
+                            id=mid, 
+                            provider=provider,
+                            supports_images=supports_images,
+                            supports_audio=supports_audio,
+                            supports_videos=supports_videos
+                        ))
         else:
             for mid in cfg.get("available_models", []) or []:
                 ms = str(mid).strip()

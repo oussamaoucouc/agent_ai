@@ -3,6 +3,7 @@ import { ConfigResponse } from '../types';
 import { getConfig, updateConfig, setModel, setVoice } from '../services/apiService';
 import * as storage from '../services/storageService';
 import { PlusIcon, TrashIcon, ImageIcon, VideoIcon, MicIcon, KeyIcon, GlobeIcon, ServerIcon, TerminalIcon, SearchIcon, CheckIcon } from './icons';
+import { CustomDropdown } from './CustomDropdown';
 
 interface ConfigPageProps {
   onCancel: () => void;
@@ -315,16 +316,13 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                           </div>
 
                           <div className="flex items-center gap-2">
-                            <select
-                              value={m.provider || 'openai'}
-                              onChange={(e) => updateModel(idx, 'provider', e.target.value)}
-                              className="bg-slate-900/50 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-400 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 outline-none cursor-pointer hover:bg-slate-900"
-                            >
-                              <option value="openai">OpenAI</option>
-                              <option value="google">Google</option>
-                              <option value="openrouter">OpenRouter</option>
-                              <option value="ollama">Ollama</option>
-                            </select>
+                            <div className="w-32">
+                              <CustomDropdown
+                                options={['openai', 'google', 'openrouter', 'ollama']}
+                                value={m.provider || 'openai'}
+                                onChange={(val) => updateModel(idx, 'provider', val)}
+                              />
+                            </div>
                             <button
                               onClick={() => removeModel(idx)}
                               className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100"
@@ -424,16 +422,13 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                         </div>
 
                         <div className="flex flex-col gap-2">
-                          <select
-                            value={newModel.provider}
-                            onChange={(e) => setNewModel(prev => ({ ...prev, provider: e.target.value }))}
-                            className="bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-400 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 outline-none"
-                          >
-                            <option value="openai">OpenAI</option>
-                            <option value="google">Google</option>
-                            <option value="openrouter">OpenRouter</option>
-                            <option value="ollama">Ollama</option>
-                          </select>
+                          <div className="w-32">
+                            <CustomDropdown
+                              options={['openai', 'google', 'openrouter', 'ollama']}
+                              value={newModel.provider}
+                              onChange={(val) => setNewModel(prev => ({ ...prev, provider: val }))}
+                            />
+                          </div>
                           <button
                             onClick={addModel}
                             className="flex items-center justify-center gap-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg py-2 px-4 text-sm font-medium transition-colors shadow-lg shadow-sky-900/20"
@@ -610,17 +605,14 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                 </div>
 
                 <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4">
-                  <label className="block">
-                    <span className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Transport Mode</span>
-                    <select
+                  <div className="w-full">
+                    <CustomDropdown
+                      label="Transport Mode"
+                      options={['streamable-http', 'stdio']}
                       value={config.mcp_transport}
-                      onChange={(e) => updateField('mcp_transport', e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-slate-200 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none transition-all"
-                    >
-                      <option value="streamable-http">Streamable HTTP (Remote)</option>
-                      <option value="stdio">Stdio (Local Process)</option>
-                    </select>
-                  </label>
+                      onChange={(val) => updateField('mcp_transport', val)}
+                    />
+                  </div>
                 </div>
 
                 {config.mcp_transport === 'streamable-http' && (

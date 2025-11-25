@@ -252,6 +252,9 @@ export interface LabeledItem {
     label: string;
     id: string;
     provider?: string;
+    supports_images?: boolean;
+    supports_audio?: boolean;
+    supports_videos?: boolean;
 }
 
 export interface ModelsCatalogLabeledResponse {
