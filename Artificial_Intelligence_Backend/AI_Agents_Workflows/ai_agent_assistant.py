@@ -57,7 +57,7 @@ async def run_assistant_agent_async(query, user_id, session_id, images=None, aud
 
     assistant_agent = Agent(
         model=session_model,
-        reasoning=True,
+        reasoning=False,
         name="assistant_agent",
         session_id=session_id,
         session_state={"user_id":user_id, "session_id":session_id},
