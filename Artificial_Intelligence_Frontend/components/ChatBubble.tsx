@@ -197,6 +197,24 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, onPl
                         </div>
                     )}
 
+                    {/* Attached Audio */}
+                    {message.attachedAudio && message.attachedAudio.length > 0 && (
+                        <div className="flex flex-col gap-2 mb-3">
+                            {message.attachedAudio.map((src, index) => (
+                                <audio key={index} controls src={src} className="w-full max-w-xs" />
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Attached Videos */}
+                    {message.attachedVideos && message.attachedVideos.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-3">
+                            {message.attachedVideos.map((src, index) => (
+                                <video key={index} controls src={src} className="max-w-xs max-h-60 rounded-lg border border-slate-600/50" />
+                            ))}
+                        </div>
+                    )}
+
                     <div
                         className={`prose-p:m-0 prose-strong:text-white prose-em:text-slate-300 space-y-3 ${!isUser ? 'pb-8' : ''}`}
                         dangerouslySetInnerHTML={{ __html: parseMarkdown(message.text) }}

@@ -727,17 +727,24 @@ const App: React.FC = () => {
     const handleSendText = async (text: string, mediaFiles?: MediaAttachment[]) => {
         if ((!text.trim() && (!mediaFiles || mediaFiles.length === 0)) || isLoading || !activeSessionId || !currentUser) return;
 
-        // Process images
+        // Process media files
         const attachedImages: string[] = [];
+        const attachedAudio: string[] = [];
+        const attachedVideos: string[] = [];
+
         if (mediaFiles) {
             for (const media of mediaFiles) {
-                if (media.type === 'image') {
-                    try {
-                        const base64 = await fileToBase64(media.file);
+                try {
+                    const base64 = await fileToBase64(media.file);
+                    if (media.type === 'image') {
                         attachedImages.push(base64);
-                    } catch (e) {
-                        console.error("Failed to convert image to base64", e);
+                    } else if (media.type === 'audio') {
+                        attachedAudio.push(base64);
+                    } else if (media.type === 'video') {
+                        attachedVideos.push(base64);
                     }
+                } catch (e) {
+                    console.error(`Failed to convert ${media.type} to base64`, e);
                 }
             }
         }
@@ -746,7 +753,9 @@ const App: React.FC = () => {
             id: crypto.randomUUID(),
             text,
             sender: User.USER,
-            attachedImages: attachedImages.length > 0 ? attachedImages : undefined
+            attachedImages: attachedImages.length > 0 ? attachedImages : undefined,
+            attachedAudio: attachedAudio.length > 0 ? attachedAudio : undefined,
+            attachedVideos: attachedVideos.length > 0 ? attachedVideos : undefined
         };
         setMessages(prev => [...prev, userMessage]);
         setIsLoading(true);
@@ -761,7 +770,9 @@ const App: React.FC = () => {
                 user_id: currentUser,
                 session_id: activeSessionId,
                 system_prompt: systemPrompt,
-                images: attachedImages.length > 0 ? attachedImages : undefined
+                images: attachedImages.length > 0 ? attachedImages : undefined,
+                audio: attachedAudio.length > 0 ? attachedAudio : undefined,
+                videos: attachedVideos.length > 0 ? attachedVideos : undefined
             };
 
             switch (queryMode) {

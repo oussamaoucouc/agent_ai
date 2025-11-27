@@ -48,6 +48,9 @@ class MessageDB(Base):
     sender = Column(String(32), nullable=False)  # 'user' or 'assistant'
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     session = relationship("SessionDB", back_populates="messages")
+    attached_images = Column(Text, nullable=True)
+    attached_audio = Column(Text, nullable=True)
+    attached_videos = Column(Text, nullable=True)
 
 
 engine = create_engine(DB_URL)
@@ -76,6 +79,25 @@ try:
             conn.exec_driver_sql("ALTER TABLE app_session_settings ADD COLUMN mcp_stdio_commands TEXT")
             conn.commit()
             logging.info("Added mcp_stdio_commands column to app_session_settings (runtime migration)")
+
+    # Check app_messages columns
+    msg_cols = [c.get('name') for c in insp.get_columns('app_messages')]
+    if 'attached_images' not in msg_cols:
+        with engine.connect() as conn:
+            conn.exec_driver_sql("ALTER TABLE app_messages ADD COLUMN attached_images TEXT")
+            conn.commit()
+            logging.info("Added attached_images column to app_messages (runtime migration)")
+    if 'attached_audio' not in msg_cols:
+        with engine.connect() as conn:
+            conn.exec_driver_sql("ALTER TABLE app_messages ADD COLUMN attached_audio TEXT")
+            conn.commit()
+            logging.info("Added attached_audio column to app_messages (runtime migration)")
+    if 'attached_videos' not in msg_cols:
+        with engine.connect() as conn:
+            conn.exec_driver_sql("ALTER TABLE app_messages ADD COLUMN attached_videos TEXT")
+            conn.commit()
+            logging.info("Added attached_videos column to app_messages (runtime migration)")
+
     # Migrate away from session_id if present to user-level PK
     if 'session_id' in cols:
         with engine.connect() as conn:
@@ -123,6 +145,9 @@ class MessageModel(BaseModel):
     text: str
     sender: constr(strip_whitespace=True)
     createdAt: Optional[str] = None
+    attachedImages: Optional[list[str]] = None
+    attachedAudio: Optional[list[str]] = None
+    attachedVideos: Optional[list[str]] = None
 
 
 class SessionModel(BaseModel):
@@ -143,6 +168,9 @@ def _db_to_session_model(s: SessionDB) -> SessionModel:
                 text=m.text,
                 sender=m.sender,
                 createdAt=m.created_at.isoformat(),
+                attachedImages=_json.loads(m.attached_images) if m.attached_images else None,
+                attachedAudio=_json.loads(m.attached_audio) if m.attached_audio else None,
+                attachedVideos=_json.loads(m.attached_videos) if m.attached_videos else None,
             )
             for m in s.messages
         ],
@@ -475,6 +503,9 @@ async def save_session_messages(session_id: str, request: SaveMessagesRequest, h
                     text=msg.text,
                     sender=msg.sender,
                     created_at=created_at,
+                    attached_images=_json.dumps(msg.attachedImages) if msg.attachedImages else None,
+                    attached_audio=_json.dumps(msg.attachedAudio) if msg.attachedAudio else None,
+                    attached_videos=_json.dumps(msg.attachedVideos) if msg.attachedVideos else None,
                 )
             )
         db.commit()

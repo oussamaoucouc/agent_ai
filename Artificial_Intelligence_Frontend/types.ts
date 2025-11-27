@@ -91,6 +91,8 @@ export interface QueryRequest {
     query: string;
     system_prompt?: string;
     images?: string[]; // Base64 encoded images
+    audio?: string[];  // Base64 encoded audio
+    videos?: string[]; // Base64 encoded videos
 }
 
 export interface QueryResponse {
