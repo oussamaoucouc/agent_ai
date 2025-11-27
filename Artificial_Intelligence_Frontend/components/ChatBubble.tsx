@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Message, User } from '../types';
-import { PlayIcon, StopIcon, UserIcon, CopyIcon, CheckIcon, AssistantIcon } from './icons';
+import { PlayIcon, StopIcon, UserIcon, CopyIcon, CheckIcon, AssistantIcon, MaximizeIcon } from './icons';
+import { MediaModal } from './MediaModal';
 
 interface ChatBubbleProps {
     message: Message;
@@ -160,6 +161,18 @@ const parseMarkdown = (text: string): string => {
 export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, onPlayAudio, onStopAudio }) => {
     const isUser = message.sender === User.USER;
     const [showCopied, setShowCopied] = useState(false);
+    const [mediaModalOpen, setMediaModalOpen] = useState(false);
+    const [selectedMedia, setSelectedMedia] = useState<{ src: string, type: 'image' | 'video' | 'audio' } | null>(null);
+
+    const openMedia = (src: string, type: 'image' | 'video' | 'audio') => {
+        setSelectedMedia({ src, type });
+        setMediaModalOpen(true);
+    };
+
+    const closeMedia = () => {
+        setMediaModalOpen(false);
+        setSelectedMedia(null);
+    };
 
     const handleCopy = () => {
         if (navigator.clipboard) {
@@ -179,7 +192,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, onPl
             )}
             <div className={`flex flex-col gap-1.5 max-w-2xl ${isUser ? 'items-end' : 'items-start'}`}>
                 <div className="font-bold text-slate-200">{isUser ? 'You' : 'Assistant'}</div>
-                <div className={`relative text-slate-200 p-4 group ${isUser ? 'bg-gradient-to-br from-sky-500 to-sky-700 rounded-2xl rounded-br-lg' : 'bg-slate-800/40 backdrop-blur-sm border border-slate-600/50 rounded-2xl rounded-tl-none'}`}>
+                <div className={`relative text-slate-200 p-4 group ${isUser ? 'bg-gradient-to-br from-indigo-500/30 via-blue-500/20 to-sky-500/20 backdrop-blur-xl border border-white/10 shadow-lg shadow-blue-500/10 rounded-2xl rounded-br-sm' : 'bg-slate-800/40 backdrop-blur-sm border border-slate-600/50 rounded-2xl rounded-tl-none'}`}>
 
                     {/* Attached Images */}
                     {message.attachedImages && message.attachedImages.length > 0 && (
@@ -190,7 +203,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, onPl
                                         src={imgSrc}
                                         alt={`Attachment ${index + 1}`}
                                         className="max-w-xs max-h-60 rounded-lg border border-slate-600/50 object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                                        onClick={() => window.open(imgSrc, '_blank')}
+                                        onClick={() => openMedia(imgSrc, 'image')}
                                     />
                                 </div>
                             ))}
@@ -201,7 +214,16 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, onPl
                     {message.attachedAudio && message.attachedAudio.length > 0 && (
                         <div className="flex flex-col gap-2 mb-3">
                             {message.attachedAudio.map((src, index) => (
-                                <audio key={index} controls src={src} className="w-full max-w-xs" />
+                                <div key={index} className="flex items-center gap-2">
+                                    <audio controls src={src} className="w-full max-w-xs" />
+                                    <button
+                                        onClick={() => openMedia(src, 'audio')}
+                                        className="p-2 text-slate-300 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+                                        title="Expand Audio"
+                                    >
+                                        <MaximizeIcon className="w-5 h-5" />
+                                    </button>
+                                </div>
                             ))}
                         </div>
                     )}
@@ -210,7 +232,16 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, onPl
                     {message.attachedVideos && message.attachedVideos.length > 0 && (
                         <div className="flex flex-wrap gap-2 mb-3">
                             {message.attachedVideos.map((src, index) => (
-                                <video key={index} controls src={src} className="max-w-xs max-h-60 rounded-lg border border-slate-600/50" />
+                                <div key={index} className="relative group inline-block">
+                                    <video controls src={src} className="max-w-xs max-h-60 rounded-lg border border-slate-600/50" />
+                                    <button
+                                        onClick={() => openMedia(src, 'video')}
+                                        className="absolute top-2 right-2 p-1.5 text-white bg-black/50 hover:bg-black/70 rounded-full opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-sm"
+                                        title="Expand Video"
+                                    >
+                                        <MaximizeIcon className="w-4 h-4" />
+                                    </button>
+                                </div>
                             ))}
                         </div>
                     )}
@@ -255,6 +286,13 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, onPl
                     <UserIcon className="w-5 h-5 text-sky-300" />
                 </div>
             )}
+
+            <MediaModal
+                isOpen={mediaModalOpen}
+                onClose={closeMedia}
+                src={selectedMedia?.src || ''}
+                type={selectedMedia?.type || null}
+            />
         </div>
     );
 };

@@ -108,6 +108,7 @@ async def run_assistant_agent_async(query, user_id, session_id, images=None, aud
         5. ▶ Tone & Style
         - Be friendly, helpful, and professional.
         - Keep responses concise but complete; avoid overly terse or robotic phrasing.
+        - **IMPORTANT**: Do not use markdown headers (lines starting with #, ##, ###). Use bold text (**Title**) for section headings instead.
 
         6. ▶ Behavior & Safety
         - Rely on your training knowledge and the current session context.
