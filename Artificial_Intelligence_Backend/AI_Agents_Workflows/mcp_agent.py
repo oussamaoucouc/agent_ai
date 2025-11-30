@@ -81,7 +81,7 @@ def run_agent(query, user_id, session_id, images=None, audio=None, videos=None):
 
 
 
-async def run_agent_async(query, user_id, session_id):
+async def run_agent_async(query, user_id, session_id, images=None, audio=None, videos=None):
     """
     AGNO MCP agent using MCP server tools.
     Using cached knowledge base and memory DBs for better performance.
