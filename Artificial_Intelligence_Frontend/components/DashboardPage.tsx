@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { AdminUser } from '../types';
 import { LogoutIcon, UserOutlineIcon, ChatIcon, FolderOpenIcon, PlusIcon, TrashIcon, SearchIcon, EditIcon, SettingsIcon } from './icons';
+import { CustomDropdown } from './CustomDropdown';
 
 interface DashboardPageProps {
     users: AdminUser[];
@@ -23,6 +24,7 @@ const StatCard: React.FC<{ title: string; value: string | number; icon: React.Re
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({ users, onLogout, onNavigateToAddUser, onNavigateToConfig, onDeleteUser, onEditUser }) => {
     const [searchQuery, setSearchQuery] = useState('');
+    const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'user'>('all');
 
     const stats = useMemo(() => ({
         totalUsers: users.length,
@@ -32,18 +34,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ users, onLogout, o
         totalLocalTools: users.reduce((acc, user) => acc + (user.mcpLocalTools ?? 0), 0),
     }), [users]);
 
-    const filteredUsers = useMemo(() => 
-        users.filter(user => 
-            user.name.toLowerCase().includes(searchQuery.toLowerCase())
-        ), 
-    [users, searchQuery]);
+    const filteredUsers = useMemo(() =>
+        users.filter(user => {
+            const matchesSearch = user.name.toLowerCase().includes(searchQuery.toLowerCase());
+            const matchesRole = roleFilter === 'all' || user.role === roleFilter;
+            return matchesSearch && matchesRole;
+        }),
+        [users, searchQuery, roleFilter]);
 
     const RoleBadge: React.FC<{ role: 'admin' | 'user' }> = ({ role }) => (
-        <span className={`px-2.5 py-1 text-xs font-semibold rounded-full capitalize ${
-            role === 'admin' 
-                ? 'bg-sky-500/20 text-sky-300' 
-                : 'bg-slate-700/50 text-slate-300'
-        }`}>
+        <span className={`px-2.5 py-1 text-xs font-semibold rounded-full capitalize ${role === 'admin'
+            ? 'bg-sky-500/20 text-sky-300'
+            : 'bg-slate-700/50 text-slate-300'
+            }`}>
             {role}
         </span>
     );
@@ -87,12 +90,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ users, onLogout, o
                             <StatCard title="Total Local Tools" value={stats.totalLocalTools} icon={<SettingsIcon className="w-8 h-8 text-pink-400" />} />
                         </div>
                     </section>
-                    
+
                     {/* User Management Section */}
                     <section className="bg-slate-900/30 backdrop-blur-md border border-slate-500/30 rounded-xl p-6">
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
                             <h2 className="text-2xl font-bold text-white">User Management</h2>
                             <div className="flex items-center gap-4">
+                                <div className="w-40">
+                                    <CustomDropdown
+                                        options={['all', 'admin', 'user']}
+                                        value={roleFilter}
+                                        onChange={(value) => setRoleFilter(value as 'all' | 'admin' | 'user')}
+                                        placeholder="Filter by Role"
+                                    />
+                                </div>
                                 <div className="relative">
                                     <input
                                         type="text"
@@ -112,7 +123,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ users, onLogout, o
                                 </button>
                             </div>
                         </div>
-                        
+
                         {/* Users Table */}
                         <div className="overflow-x-auto">
                             <table className="w-full text-left">
@@ -159,7 +170,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ users, onLogout, o
                                 </tbody>
                             </table>
                         </div>
-                         {filteredUsers.length === 0 && (
+                        {filteredUsers.length === 0 && (
                             <div className="text-center text-slate-500 p-8 border-2 border-dashed border-slate-600/50 rounded-lg mt-6">
                                 <p>{users.length > 0 ? "No users match your search." : "No users found. Add a new user to get started."}</p>
                             </div>
