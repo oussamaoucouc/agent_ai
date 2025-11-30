@@ -998,8 +998,9 @@ const App: React.FC = () => {
             await createUser(newUser.name.trim(), newUser.password, newUser.role);
             await refreshAdminUsers();
             setAdminView('dashboard');
-        } catch (err) {
-            showAlert('Error', 'Failed to create user.');
+        } catch (err: any) {
+            const errorMessage = err.message || 'Failed to create user.';
+            showAlert('Error', errorMessage);
             console.error('Create user failed:', err);
         }
     };
@@ -1017,8 +1018,9 @@ const App: React.FC = () => {
             await refreshAdminUsers();
             setEditingUser(null);
             setAdminView('dashboard');
-        } catch (err) {
-            showAlert('Error', 'Failed to update user.');
+        } catch (err: any) {
+            const errorMessage = err.message || 'Failed to update user.';
+            showAlert('Error', errorMessage);
             console.error('Update user failed:', err);
         }
     };
@@ -1042,8 +1044,9 @@ const App: React.FC = () => {
                 try {
                     await deleteUser(userId);
                     await refreshAdminUsers();
-                } catch (err) {
-                    showAlert('Error', 'Failed to delete user.');
+                } catch (err: any) {
+                    const errorMessage = err.message || 'Failed to delete user.';
+                    showAlert('Error', errorMessage);
                     console.error('Delete user failed:', err);
                 }
             }
