@@ -42,6 +42,18 @@ class RefreshTokenDB(Base):
     replaced_by = Column(String(64), nullable=True)
 
 
+class DocumentMetadata(Base):
+    __tablename__ = "document_metadata"
+    id = Column(String(64), primary_key=True)
+    user_id = Column(String(64), nullable=False, index=True)  # Owner of the document
+    filename = Column(String(256), nullable=False)
+    file_path = Column(String(512), nullable=False)
+    file_type = Column(String(32), nullable=False)  # pdf, docx, etc.
+    uploaded_by = Column(String(64), nullable=False)  # User ID of uploader (admin or user)
+    is_admin_uploaded = Column(Integer, default=0)  # 0=False, 1=True
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 engine = create_engine(DB_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base.metadata.create_all(bind=engine)
@@ -332,6 +344,12 @@ def delete_user(user_id: str, http_request: Request, db: SASession = Depends(get
             db.query(session_mod.SessionSettingsDB).filter(session_mod.SessionSettingsDB.user_id == user_id).delete(synchronize_session=False)
         except Exception:
             # Non-fatal: settings table may not exist in some deployments
+            pass
+
+        # Cleanup DocumentMetadata
+        try:
+            db.query(DocumentMetadata).filter(DocumentMetadata.user_id == user_id).delete(synchronize_session=False)
+        except Exception:
             pass
 
         # Robust deletes: check table existence before deleting, and rollback on errors to avoid transaction abort

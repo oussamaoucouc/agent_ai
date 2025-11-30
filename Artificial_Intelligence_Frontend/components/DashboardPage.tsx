@@ -1,7 +1,9 @@
-import React, { useState, useMemo } from 'react';
-import { AdminUser } from '../types';
-import { LogoutIcon, UserOutlineIcon, ChatIcon, FolderOpenIcon, PlusIcon, TrashIcon, SearchIcon, EditIcon, SettingsIcon } from './icons';
+import React, { useState, useMemo, useEffect } from 'react';
+import { AdminUser, UploadedFile } from '../types';
+import { LogoutIcon, UserOutlineIcon, ChatIcon, FolderOpenIcon, PlusIcon, TrashIcon, SearchIcon, EditIcon, SettingsIcon, DocumentIcon, UploadIcon, SpinnerIcon, CloseIcon } from './icons';
 import { CustomDropdown } from './CustomDropdown';
+import { listDocuments, uploadDocument, deleteDocument } from '../services/apiService';
+import * as storage from '../services/storageService';
 
 interface DashboardPageProps {
     users: AdminUser[];
@@ -10,6 +12,7 @@ interface DashboardPageProps {
     onNavigateToConfig: () => void;
     onDeleteUser: (userId: string) => void;
     onEditUser: (user: AdminUser) => void;
+    onShowConfirmation: (title: string, message: string, onConfirm: () => void) => void;
 }
 
 const StatCard: React.FC<{ title: string; value: string | number; icon: React.ReactNode }> = ({ title, value, icon }) => (
@@ -22,9 +25,208 @@ const StatCard: React.FC<{ title: string; value: string | number; icon: React.Re
     </div>
 );
 
-export const DashboardPage: React.FC<DashboardPageProps> = ({ users, onLogout, onNavigateToAddUser, onNavigateToConfig, onDeleteUser, onEditUser }) => {
+const DocumentManagementModal: React.FC<{
+    user: AdminUser;
+    onClose: () => void;
+    onShowConfirmation: (title: string, message: string, onConfirm: () => void) => void;
+}> = ({ user, onClose, onShowConfirmation }) => {
+    const [documents, setDocuments] = useState<UploadedFile[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [uploading, setUploading] = useState(false);
+    const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+    // Clear notification after 3 seconds
+    useEffect(() => {
+        if (notification) {
+            const timer = setTimeout(() => setNotification(null), 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [notification]);
+
+    // Fetch documents on mount
+    useEffect(() => {
+        loadDocuments();
+    }, [user.id]);
+
+    const loadDocuments = async () => {
+        try {
+            setLoading(true);
+            const currentUserId = storage.getCurrentUser();
+            if (!currentUserId) return;
+            const res = await listDocuments(currentUserId, undefined, user.id);
+            // Map response to UploadedFile
+            const mapped: UploadedFile[] = res.documents.map(d => ({
+                id: d.filename,
+                file: new File([], d.filename), // Dummy file object
+                status: 'success',
+                kind: d.kind,
+                is_admin_uploaded: d.is_admin_uploaded,
+                uploaded_by: d.uploaded_by
+            }));
+            setDocuments(mapped);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files || e.target.files.length === 0) return;
+        const file = e.target.files[0];
+        setUploading(true);
+
+        // Reset file input immediately to allow re-selection of the same file if this attempt fails or is blocked
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+
+        try {
+            const currentUserId = storage.getCurrentUser();
+            if (!currentUserId) return;
+
+            // Check for duplicate
+            const exists = documents.some(d => d.file.name === file.name);
+            if (exists) {
+                setNotification({ message: `File "${file.name}" already exists. Please delete it first.`, type: 'error' });
+                setUploading(false);
+                return;
+            }
+
+            // Optimistic update
+            const newDoc: UploadedFile = {
+                id: file.name,
+                file: file,
+                status: 'uploading',
+                is_admin_uploaded: true
+            };
+            setDocuments(prev => [...prev, newDoc]);
+
+            await uploadDocument({
+                file,
+                user_id: currentUserId, // Admin's ID
+                session_id: 'admin-upload', // Dummy session ID
+                target_user_id: user.id
+            });
+
+            setNotification({ message: `File "${file.name}" uploaded successfully.`, type: 'success' });
+
+            // Refresh list to get correct metadata
+            await loadDocuments();
+        } catch (e) {
+            console.error(e);
+            setNotification({ message: `Failed to upload "${file.name}".`, type: 'error' });
+            // Remove optimistic update on error
+            setDocuments(prev => prev.filter(d => d.file.name !== file.name));
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const handleDelete = async (filename: string, kind?: UploadedFile['kind']) => {
+        onShowConfirmation(
+            'Delete Document',
+            `Are you sure you want to delete ${filename}?`,
+            async () => {
+                try {
+                    const currentUserId = storage.getCurrentUser();
+                    if (!currentUserId) return;
+
+                    await deleteDocument({
+                        user_id: user.id, // Target user ID
+                        filename: filename,
+                        kind: kind
+                    });
+
+                    setDocuments(prev => prev.filter(d => d.file.name !== filename));
+                    setNotification({ message: `File "${filename}" deleted.`, type: 'success' });
+                } catch (e) {
+                    console.error(e);
+                    setNotification({ message: "Failed to delete document", type: 'error' });
+                }
+            }
+        );
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl relative">
+                {/* Notification Toast */}
+                {notification && (
+                    <div className={`absolute top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded-lg shadow-lg text-sm font-medium transition-all duration-300 z-10 ${notification.type === 'success' ? 'bg-green-500/90 text-white' :
+                            notification.type === 'error' ? 'bg-red-500/90 text-white' :
+                                'bg-blue-500/90 text-white'
+                        }`}>
+                        {notification.message}
+                    </div>
+                )}
+
+                <div className="flex items-center justify-between p-4 border-b border-slate-700">
+                    <h3 className="text-lg font-bold text-white">Manage Documents: {user.name}</h3>
+                    <button onClick={onClose} className="text-slate-400 hover:text-white">
+                        <CloseIcon className="w-5 h-5" />
+                    </button>
+                </div>
+
+                <div className="p-4 flex-1 overflow-y-auto">
+                    {/* Upload Area */}
+                    <div className="mb-6">
+                        <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-slate-600 border-dashed rounded-lg bg-slate-800/50 transition-colors ${uploading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-slate-800 hover:border-sky-500'}`}>
+                            <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                                <UploadIcon className="w-8 h-8 mb-3 text-slate-400" />
+                                <p className="mb-2 text-sm text-slate-400"><span className="font-semibold">Click to upload</span> or drag and drop</p>
+                                <p className="text-xs text-slate-500">PDF, DOCX, TXT, CSV</p>
+                            </div>
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                className="hidden"
+                                onChange={handleUpload}
+                                disabled={uploading}
+                            />
+                        </label>
+                    </div>
+
+                    {/* Document List */}
+                    {loading ? (
+                        <div className="flex justify-center p-4"><SpinnerIcon className="w-8 h-8 text-sky-500 animate-spin" /></div>
+                    ) : (
+                        <div className="space-y-2">
+                            {documents.length === 0 && <p className="text-center text-slate-500">No documents found.</p>}
+                            {documents.map((doc, idx) => (
+                                <div key={idx} className="flex items-center justify-between p-3 bg-slate-800 rounded-lg border border-slate-700">
+                                    <div className="flex items-center gap-3 overflow-hidden">
+                                        <DocumentIcon className="w-5 h-5 text-sky-400 flex-shrink-0" />
+                                        <div className="flex flex-col overflow-hidden">
+                                            <span className="text-sm text-white truncate" title={doc.file.name}>{doc.file.name}</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-slate-500 uppercase">{doc.kind}</span>
+                                                {doc.is_admin_uploaded && <span className="text-[10px] bg-sky-900/50 text-sky-200 px-1 rounded border border-sky-700/50">Admin Upload</span>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => handleDelete(doc.file.name, doc.kind)}
+                                        className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-900/20 rounded-full transition-colors"
+                                        title="Delete"
+                                    >
+                                        <TrashIcon className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export const DashboardPage: React.FC<DashboardPageProps> = ({ users, onLogout, onNavigateToAddUser, onNavigateToConfig, onDeleteUser, onEditUser, onShowConfirmation }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'user'>('all');
+    const [managingDocsUser, setManagingDocsUser] = useState<AdminUser | null>(null);
 
     const stats = useMemo(() => ({
         totalUsers: users.length,
@@ -151,6 +353,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ users, onLogout, o
                                             <td className="p-4 text-sm text-slate-400">{new Date(user.createdAt).toLocaleDateString()}</td>
                                             <td className="p-4 text-right">
                                                 <button
+                                                    onClick={() => setManagingDocsUser(user)}
+                                                    className="p-2 mr-2 text-slate-400 hover:text-indigo-400 hover:bg-indigo-900/50 rounded-full transition-colors"
+                                                    title="Manage Documents"
+                                                >
+                                                    <FolderOpenIcon className="w-5 h-5" />
+                                                </button>
+                                                <button
                                                     onClick={() => onEditUser(user)}
                                                     className="p-2 mr-2 text-slate-400 hover:text-sky-400 hover:bg-sky-900/50 rounded-full transition-colors"
                                                     title="Edit User"
@@ -178,6 +387,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ users, onLogout, o
                     </section>
                 </main>
             </div>
+            {managingDocsUser && (
+                <DocumentManagementModal
+                    user={managingDocsUser}
+                    onClose={() => setManagingDocsUser(null)}
+                    onShowConfirmation={onShowConfirmation}
+                />
+            )}
         </div>
     );
 };

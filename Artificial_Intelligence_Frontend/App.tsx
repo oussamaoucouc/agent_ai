@@ -280,7 +280,9 @@ const App: React.FC = () => {
                     id: crypto.randomUUID(),
                     file: new File([""], doc.filename),
                     status: 'success',
-                    kind: doc.kind as UploadedFile['kind']
+                    kind: doc.kind as UploadedFile['kind'],
+                    is_admin_uploaded: doc.is_admin_uploaded,
+                    uploaded_by: doc.uploaded_by
                 }));
                 setUploadedFiles(items);
             } catch (err) {
@@ -937,6 +939,17 @@ const App: React.FC = () => {
         const inputEl = event.target;
         if (inputEl.files && activeSessionId && currentUser) {
             const files = Array.from(inputEl.files);
+
+            // Check for duplicates against existing uploadedFiles
+            const duplicateFiles = files.filter((file: File) => uploadedFiles.some(existing => existing.file.name === file.name));
+
+            if (duplicateFiles.length > 0) {
+                const duplicateNames = duplicateFiles.map((f: File) => f.name).join(', ');
+                showAlert('Duplicate File', `The following file(s) already exist: ${duplicateNames}.`);
+                inputEl.value = ''; // Reset input
+                return;
+            }
+
             // FIX: Explicitly type `file` as `File` to resolve a TypeScript type inference error.
             const newUploads: UploadedFile[] = files.map((file: File) => ({
                 id: crypto.randomUUID(),
@@ -965,12 +978,19 @@ const App: React.FC = () => {
 
     const handleDeleteDocument = async (filename: string, kind?: UploadedFile['kind']) => {
         if (!currentUser) return;
-        try {
-            await deleteDocument({ user_id: currentUser, filename, kind });
-            setUploadedFiles(prev => prev.filter(f => !(f.file.name === filename && (kind ? f.kind === kind : true))));
-        } catch (err) {
-            console.error('Delete document failed:', err);
-        }
+        showConfirmation(
+            'Delete Document',
+            `Are you sure you want to delete ${filename}?`,
+            async () => {
+                try {
+                    await deleteDocument({ user_id: currentUser, filename, kind });
+                    setUploadedFiles(prev => prev.filter(f => !(f.file.name === filename && (kind ? f.kind === kind : true))));
+                } catch (err) {
+                    console.error('Delete document failed:', err);
+                    showAlert('Error', 'Failed to delete document.');
+                }
+            }
+        );
     };
 
     const handleAddAdminUser = async (newUser: { name: string; password: string; role: 'user' | 'admin' }) => {
@@ -1066,6 +1086,7 @@ const App: React.FC = () => {
                         onNavigateToConfig={() => setAdminView('config')}
                         onDeleteUser={handleDeleteAdminUser}
                         onEditUser={handleEditAdminUser}
+                        onShowConfirmation={showConfirmation}
                     />;
                 case 'config':
                     return <ConfigPage onCancel={() => setAdminView('dashboard')} onShowAlert={(message, title) => showAlert(title, message)} />;
@@ -1078,6 +1099,7 @@ const App: React.FC = () => {
                             onNavigateToConfig={() => setAdminView('config')}
                             onDeleteUser={handleDeleteAdminUser}
                             onEditUser={handleEditAdminUser}
+                            onShowConfirmation={showConfirmation}
                         />
                     );
             }

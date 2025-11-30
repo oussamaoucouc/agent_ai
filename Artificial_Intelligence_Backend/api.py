@@ -33,7 +33,7 @@ import users
 import logging
 from auth import get_user_from_auth_header
 from auth import verify_refresh_token, issue_access_token, issue_refresh_token, APP_ENV
-from users import SessionLocal as _UserSessionLocal
+from users import SessionLocal as _UserSessionLocal, DocumentMetadata
 from users import RefreshTokenDB, store_refresh, revoke_refresh, is_refresh_valid
 from agno.media import Image, Audio, Video
 
@@ -388,25 +388,45 @@ async def login(request: LoginRequest):
     return {"user_id": user_id, "session_id": session_id}
 
 @app.post("/upload_document", response_model=Dict[str, Any])
-async def upload_document_endpoint(file: UploadFile = File(...), user_id: str = Form(...), session_id: str = Form(...)):
+async def upload_document_endpoint(
+    request: Request,
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    session_id: str = Form(...),
+    target_user_id: Optional[str] = Form(None)
+):
     try:
+        # Auth check
+        token_payload = get_user_from_auth_header(request.headers.get("Authorization"))
+        auth_user_id = token_payload.get("uid") if token_payload else None
+        auth_role = token_payload.get("role") if token_payload else None
+
+        effective_user_id = user_id
+        is_admin_upload = False
+
+        if target_user_id:
+            if auth_role != "admin":
+                raise HTTPException(status_code=403, detail="Admin privileges required to upload for another user")
+            effective_user_id = target_user_id
+            is_admin_upload = True
+
         file_extension = os.path.splitext(file.filename)[1].lower()
         allowed = {".pdf", ".docx", ".doc", ".txt", ".md", ".csv"}
         if file_extension not in allowed:
             raise HTTPException(status_code=400, detail="Only pdf, docx, doc, txt, md, csv files are allowed")
 
-        # Save the uploaded file to the per-user PDFs directory
+        # Save the uploaded file to the per-user PDFs directory (using effective_user_id)
         if file_extension == ".pdf":
-            target_dir = str(get_user_pdf_dir(user_id))
+            target_dir = str(get_user_pdf_dir(effective_user_id))
             kind = "pdf"
         elif file_extension in {".doc", ".docx"}:
-            target_dir = str(get_user_docx_dir(user_id))
+            target_dir = str(get_user_docx_dir(effective_user_id))
             kind = "docx"
         elif file_extension in {".txt", ".md"}:
-            target_dir = str(get_user_text_dir(user_id))
+            target_dir = str(get_user_text_dir(effective_user_id))
             kind = "text"
         else:
-            target_dir = str(get_user_csv_dir(user_id))
+            target_dir = str(get_user_csv_dir(effective_user_id))
             kind = "csv"
         os.makedirs(target_dir, exist_ok=True)
         safe_name = os.path.basename(file.filename)
@@ -435,6 +455,28 @@ async def upload_document_endpoint(file: UploadFile = File(...), user_id: str = 
                         os.remove(tmp_path)
                     except Exception:
                         pass
+                    # Even if duplicate on disk, ensure metadata exists
+                    try:
+                        with _UserSessionLocal() as db:
+                            exists = db.query(DocumentMetadata).filter(
+                                DocumentMetadata.user_id == effective_user_id,
+                                DocumentMetadata.filename == safe_name
+                            ).first()
+                            if not exists:
+                                doc_meta = DocumentMetadata(
+                                    id=str(uuid.uuid4()),
+                                    user_id=effective_user_id,
+                                    filename=safe_name,
+                                    file_path=file_path,
+                                    file_type=kind,
+                                    uploaded_by=auth_user_id or user_id,
+                                    is_admin_uploaded=1 if is_admin_upload else 0
+                                )
+                                db.add(doc_meta)
+                                db.commit()
+                    except Exception as e:
+                        logging.error(f"Failed to ensure metadata for duplicate: {e}")
+
                     return {"message": "Already uploaded", "filename": safe_name, "path": file_path, "duplicate": True}
                 else:
                     # Same name but different content: generate a unique filename to avoid overwrite
@@ -467,42 +509,71 @@ async def upload_document_endpoint(file: UploadFile = File(...), user_id: str = 
             os.replace(tmp_path, file_path)
 
         # Immediately upsert into KB so the newly added/updated document is indexed
-        lock = get_user_kb_lock(user_id)
-        logging.info(f"Waiting for KB lock for user {user_id} (upload)")
+        lock = get_user_kb_lock(effective_user_id)
+        logging.info(f"Waiting for KB lock for user {effective_user_id} (upload)")
         async with lock:
-            logging.info(f"Entered KB lock for user {user_id} (upload)")
-            kb = await initialize_knowledge_base(user_id, only_path=file_path, only_kind=kind)
+            logging.info(f"Entered KB lock for user {effective_user_id} (upload)")
+            kb = await initialize_knowledge_base(effective_user_id, only_path=file_path, only_kind=kind)
             try:
                 await kb.aload(recreate=False, upsert=True)
-                logging.info(f"KB upsert load complete for user {user_id} (upload)")
+                logging.info(f"KB upsert load complete for user {effective_user_id} (upload)")
             except Exception as e:
                 # Fallback: first-time collection creation or backend hiccup
                 msg = str(e).lower()
                 if "not found" in msg or "does not exist" in msg or "no such" in msg:
-                    logging.info(f"Upsert failed; recreating collection for user {user_id} (upload)")
+                    logging.info(f"Upsert failed; recreating collection for user {effective_user_id} (upload)")
                     await kb.aload(recreate=True, upsert=False)
-                    logging.info(f"KB recreate load complete for user {user_id} (upload)")
+                    logging.info(f"KB recreate load complete for user {effective_user_id} (upload)")
                 else:
                     raise
+
+        # Save metadata
+        try:
+            with _UserSessionLocal() as db:
+                doc_meta = DocumentMetadata(
+                    id=str(uuid.uuid4()),
+                    user_id=effective_user_id,
+                    filename=safe_name,
+                    file_path=file_path,
+                    file_type=kind,
+                    uploaded_by=auth_user_id or user_id,
+                    is_admin_uploaded=1 if is_admin_upload else 0
+                )
+                db.add(doc_meta)
+                db.commit()
+        except Exception as e:
+            logging.error(f"Failed to save document metadata: {e}")
+
         return {"message": f"Successfully uploaded {safe_name}", "filename": safe_name, "path": file_path, "kind": kind}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error uploading document: {str(e)}")
 
 # List documents for a user (persisted on disk)
 @app.get("/list_documents", response_model=Dict[str, Any])
-async def list_documents(user_id: Optional[str] = None, request: Request = None):
+async def list_documents(user_id: Optional[str] = None, request: Request = None, target_user_id: Optional[str] = None):
     try:
         # Prefer token user_id if Authorization present
         token_payload = get_user_from_auth_header(request.headers.get("Authorization")) if request else None
-        if token_payload:
-            user_id = token_payload.get("uid")
-        if not user_id:
+        auth_user_id = token_payload.get("uid") if token_payload else None
+        auth_role = token_payload.get("role") if token_payload else None
+
+        if not user_id and auth_user_id:
+            user_id = auth_user_id
+        
+        effective_user_id = user_id
+        if target_user_id:
+            if auth_role != "admin":
+                raise HTTPException(status_code=403, detail="Admin privileges required to view another user's documents")
+            effective_user_id = target_user_id
+
+        if not effective_user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
+            
         dirs = [
-            (str(get_user_pdf_dir(user_id)), "pdf", {".pdf"}),
-            (str(get_user_docx_dir(user_id)), "docx", {".doc", ".docx"}),
-            (str(get_user_text_dir(user_id)), "text", {".txt", ".md"}),
-            (str(get_user_csv_dir(user_id)), "csv", {".csv"}),
+            (str(get_user_pdf_dir(effective_user_id)), "pdf", {".pdf"}),
+            (str(get_user_docx_dir(effective_user_id)), "docx", {".doc", ".docx"}),
+            (str(get_user_text_dir(effective_user_id)), "text", {".txt", ".md"}),
+            (str(get_user_csv_dir(effective_user_id)), "csv", {".csv"}),
         ]
         docs = []
         for d, kind, exts in dirs:
@@ -510,6 +581,27 @@ async def list_documents(user_id: Optional[str] = None, request: Request = None)
             for name in os.listdir(d):
                 if any(name.lower().endswith(ext) for ext in exts):
                     docs.append({"filename": name, "path": os.path.join(d, name), "kind": kind})
+        
+        # Merge with metadata
+        try:
+            with _UserSessionLocal() as db:
+                metas = db.query(DocumentMetadata).filter(DocumentMetadata.user_id == effective_user_id).all()
+                meta_map = {m.filename: m for m in metas}
+                
+                for doc in docs:
+                    fname = doc["filename"]
+                    if fname in meta_map:
+                        doc["is_admin_uploaded"] = bool(meta_map[fname].is_admin_uploaded)
+                        doc["uploaded_by"] = meta_map[fname].uploaded_by
+                    else:
+                        doc["is_admin_uploaded"] = False
+        except Exception as e:
+            logging.error(f"Error fetching document metadata: {e}")
+            # Fallback to defaults
+            for doc in docs:
+                if "is_admin_uploaded" not in doc:
+                    doc["is_admin_uploaded"] = False
+
         return {"documents": docs}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error listing documents: {str(e)}")
@@ -519,11 +611,30 @@ async def list_documents(user_id: Optional[str] = None, request: Request = None)
 async def delete_document(user_id: Optional[str] = None, filename: str = "", kind: Optional[str] = None, request: Request = None):
     try:
         token_payload = get_user_from_auth_header(request.headers.get("Authorization")) if request else None
-        if token_payload:
-            user_id = token_payload.get("uid")
+        auth_user_id = token_payload.get("uid") if token_payload else None
+        auth_role = token_payload.get("role") if token_payload else None
+
+        if not user_id and auth_user_id:
+            user_id = auth_user_id
         if not user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
+        
         safe_name = os.path.basename(filename)
+
+        # Permission check: prevent users from deleting admin-uploaded files
+        try:
+            with _UserSessionLocal() as db:
+                meta = db.query(DocumentMetadata).filter(
+                    DocumentMetadata.user_id == user_id,
+                    DocumentMetadata.filename == safe_name
+                ).first()
+                if meta and meta.is_admin_uploaded and auth_role != "admin":
+                    raise HTTPException(status_code=403, detail="Cannot delete admin-uploaded document")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logging.error(f"Error checking document permission: {e}")
+
         candidates = []
         if kind == "pdf":
             d = str(get_user_pdf_dir(user_id))
@@ -569,6 +680,18 @@ async def delete_document(user_id: Optional[str] = None, filename: str = "", kin
                 break
         if last_err is not None:
             raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(last_err)}")
+        
+        # Delete metadata record
+        try:
+            with _UserSessionLocal() as db:
+                db.query(DocumentMetadata).filter(
+                    DocumentMetadata.user_id == user_id,
+                    DocumentMetadata.filename == safe_name
+                ).delete()
+                db.commit()
+        except Exception as e:
+            logging.error(f"Error deleting document metadata: {e}")
+
         lock = get_user_kb_lock(user_id)
         logging.info(f"Waiting for KB lock for user {user_id} (delete)")
         async with lock:

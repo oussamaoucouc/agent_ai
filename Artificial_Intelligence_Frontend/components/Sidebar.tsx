@@ -436,16 +436,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             <div key={index} className="flex items-center justify-between p-2 bg-slate-800/50 rounded-lg">
                                 <div className="flex items-center space-x-2 overflow-hidden">
                                     <DocumentIcon className="w-4 h-4 text-sky-400 flex-shrink-0" />
-                                    <span className="text-sm text-slate-300 truncate">{file.file.name}</span>
+                                    <span className="text-sm text-slate-300 truncate" title={file.file.name}>{file.file.name}</span>
+                                    {file.is_admin_uploaded && (
+                                        <span className="text-[10px] bg-sky-900/50 text-sky-200 px-1 rounded border border-sky-700/50 ml-1 flex-shrink-0" title="Uploaded by Admin">
+                                            Admin
+                                        </span>
+                                    )}
                                 </div>
                                 <div className="flex items-center space-x-2 flex-shrink-0">
                                     <StatusIcon status={file.status} />
-                                    <button
-                                        onClick={() => onDeleteDocument(file.file.name, file.kind)}
-                                        className="text-slate-500 hover:text-red-400 transition-colors"
-                                    >
-                                        <TrashIcon className="w-4 h-4" />
-                                    </button>
+                                    {!file.is_admin_uploaded ? (
+                                        <button
+                                            onClick={() => onDeleteDocument(file.file.name, file.kind)}
+                                            className="text-slate-500 hover:text-red-400 transition-colors"
+                                            title="Delete document"
+                                        >
+                                            <TrashIcon className="w-4 h-4" />
+                                        </button>
+                                    ) : (
+                                        <div className="w-4 h-4" />
+                                    )}
                                 </div>
                             </div>
                         ))}

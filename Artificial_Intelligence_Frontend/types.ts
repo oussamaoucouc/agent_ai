@@ -46,6 +46,8 @@ export interface UploadedFile {
     file: File;
     status: UploadStatus;
     kind?: 'pdf' | 'docx' | 'text' | 'csv';
+    is_admin_uploaded?: boolean;
+    uploaded_by?: string;
 }
 
 export interface Session {
@@ -131,6 +133,7 @@ export interface UploadDocumentRequest {
     file: File;
     user_id: string;
     session_id: string;
+    target_user_id?: string;
 }
 
 export interface UploadDocumentResponse {
@@ -191,7 +194,13 @@ export interface SaveMessagesRequest {
 
 // List documents response for persisted user PDFs
 export interface ListDocumentsResponse {
-    documents: { filename: string; path: string; kind?: 'pdf' | 'docx' | 'text' | 'csv' }[];
+    documents: {
+        filename: string;
+        path: string;
+        kind?: 'pdf' | 'docx' | 'text' | 'csv';
+        is_admin_uploaded?: boolean;
+        uploaded_by?: string;
+    }[];
 }
 
 // --- Admin Configuration types ---

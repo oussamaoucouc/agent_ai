@@ -1,12 +1,12 @@
 import { API_BASE_URL } from '../constants';
 import { VoicesCatalogResponse, McpToolsCatalogResponse, SetMcpToolsRequest, McpStdioToolsCatalogResponse, ModelsCatalogLabeledResponse, VoicesCatalogLabeledResponse } from '../types';
 import { getAuthToken, setAuthToken } from './storageService';
-import { 
-    QueryRequest, 
-    QueryTTSResponse, 
-    FullAgentRequest, 
-    FullAgentResponse, 
-    QueryResponse, 
+import {
+    QueryRequest,
+    QueryTTSResponse,
+    FullAgentRequest,
+    FullAgentResponse,
+    QueryResponse,
     UploadDocumentRequest,
     UploadDocumentResponse,
     ListDocumentsResponse,
@@ -184,6 +184,9 @@ export const uploadDocument = async (request: UploadDocumentRequest, signal?: Ab
     formData.append('file', request.file);
     formData.append('user_id', request.user_id);
     formData.append('session_id', request.session_id);
+    if (request.target_user_id) {
+        formData.append('target_user_id', request.target_user_id);
+    }
 
     // Assuming a new endpoint for document uploads exists on the backend
     const response = await authedFetch(`${API_BASE_URL}/upload_document`, {
@@ -195,9 +198,12 @@ export const uploadDocument = async (request: UploadDocumentRequest, signal?: Ab
     return handleResponse<UploadDocumentResponse>(response);
 };
 
-export const listDocuments = async (user_id: string, signal?: AbortSignal): Promise<ListDocumentsResponse> => {
+export const listDocuments = async (user_id: string, signal?: AbortSignal, target_user_id?: string): Promise<ListDocumentsResponse> => {
     const url = new URL(`${API_BASE_URL}/list_documents`);
     url.searchParams.set('user_id', user_id);
+    if (target_user_id) {
+        url.searchParams.set('target_user_id', target_user_id);
+    }
     url.searchParams.set('ts', Date.now().toString());
     const response = await authedFetch(url.toString(), { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
     return handleResponse<ListDocumentsResponse>(response);
@@ -212,24 +218,24 @@ export const deleteDocument = async (request: DeleteDocumentRequest, signal?: Ab
     return handleResponse<DeleteDocumentResponse>(response);
 };
 
-export const setModel = async (request: SetModelRequest, signal?: AbortSignal): Promise<{success: boolean}> => {
+export const setModel = async (request: SetModelRequest, signal?: AbortSignal): Promise<{ success: boolean }> => {
     const response = await authedFetch(`${API_BASE_URL}/set_model`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
         signal,
     });
-    return handleResponse<{success: boolean}>(response);
+    return handleResponse<{ success: boolean }>(response);
 };
 
-export const setVoice = async (request: SetVoiceRequest, signal?: AbortSignal): Promise<{success: boolean}> => {
+export const setVoice = async (request: SetVoiceRequest, signal?: AbortSignal): Promise<{ success: boolean }> => {
     const response = await authedFetch(`${API_BASE_URL}/set_voice`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
         signal,
     });
-    return handleResponse<{success: boolean}>(response);
+    return handleResponse<{ success: boolean }>(response);
 };
 
 // --- Session persistence API ---
@@ -261,14 +267,14 @@ export const renameSession = async (sessionId: string, request: RenameSessionReq
     return handleResponse<Session>(response);
 };
 
-export const deleteSession = async (sessionId: string, request: DeleteSessionRequest, signal?: AbortSignal): Promise<{status: string}> => {
+export const deleteSession = async (sessionId: string, request: DeleteSessionRequest, signal?: AbortSignal): Promise<{ status: string }> => {
     const response = await authedFetch(`${API_BASE_URL}/sessions/${sessionId}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
         signal,
     });
-    return handleResponse<{status: string}>(response);
+    return handleResponse<{ status: string }>(response);
 };
 
 export const saveSessionMessages = async (sessionId: string, request: SaveMessagesRequest, signal?: AbortSignal): Promise<Session> => {
@@ -281,13 +287,13 @@ export const saveSessionMessages = async (sessionId: string, request: SaveMessag
     return handleResponse<Session>(response);
 };
 
-export const cancelSession = async (request: CancelRequest): Promise<{status: string}> => {
+export const cancelSession = async (request: CancelRequest): Promise<{ status: string }> => {
     const response = await authedFetch(`${API_BASE_URL}/cancel`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
     });
-    return handleResponse<{status: string}>(response);
+    return handleResponse<{ status: string }>(response);
 };
 
 // --- User management API ---
@@ -323,9 +329,9 @@ export const updateUser = async (user_id: string, payload: { password?: string; 
     return { id: u.id, name: u.username, role: u.role as 'admin' | 'user', sessions: 0, documents: 0, mcpTools: 0, mcpWebTools: 0, mcpLocalTools: 0, createdAt: u.createdAt };
 };
 
-export const deleteUser = async (user_id: string, signal?: AbortSignal): Promise<{status: string}> => {
+export const deleteUser = async (user_id: string, signal?: AbortSignal): Promise<{ status: string }> => {
     const response = await authedFetch(`${API_BASE_URL}/users/${user_id}`, { method: 'DELETE', headers: authHeaders(), signal });
-    return handleResponse<{status: string}>(response);
+    return handleResponse<{ status: string }>(response);
 };
 
 export const loginUser = async (username: string, password: string, signal?: AbortSignal): Promise<{ user_id: string; session_id: string; username: string; role: string; token?: string }> => {
@@ -416,14 +422,14 @@ export const getMcpStdioCatalog = async (user_id: string, signal?: AbortSignal):
     return handleResponse<McpStdioToolsCatalogResponse>(response);
 };
 
-export const setMcpStdioTools = async (payload: { user_id: string; session_id: string; commands: string[] }, signal?: AbortSignal): Promise<{success: boolean}> => {
+export const setMcpStdioTools = async (payload: { user_id: string; session_id: string; commands: string[] }, signal?: AbortSignal): Promise<{ success: boolean }> => {
     const response = await authedFetch(`${API_BASE_URL}/set_mcp_stdio_tools`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(payload),
         signal,
     });
-    return handleResponse<{success: boolean}>(response);
+    return handleResponse<{ success: boolean }>(response);
 };
 
 export const getConfigPath = async (user_id: string, signal?: AbortSignal): Promise<ConfigPathResponse> => {
@@ -444,12 +450,12 @@ export const getSessionSettings = async (user_id: string, session_id: string, si
 };
 
 // Persist per-user MCP tools selection (multi-select)
-export const setMcpTools = async (payload: SetMcpToolsRequest, signal?: AbortSignal): Promise<{success: boolean}> => {
+export const setMcpTools = async (payload: SetMcpToolsRequest, signal?: AbortSignal): Promise<{ success: boolean }> => {
     const response = await authedFetch(`${API_BASE_URL}/set_mcp_tools`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(payload),
         signal,
     });
-    return handleResponse<{success: boolean}>(response);
+    return handleResponse<{ success: boolean }>(response);
 };
