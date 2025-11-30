@@ -171,8 +171,8 @@ def ensure_admin_seed():
     - APP_ADMIN_USERNAME (default: 'adi')
     - APP_ADMIN_PASSWORD (default: 'adi123')
     """
-    admin_username = os.environ.get("APP_ADMIN_USERNAME", "adi").strip()
-    admin_password = os.environ.get("APP_ADMIN_PASSWORD", "adi123").strip()
+    admin_username = os.environ.get("APP_ADMIN_USERNAME", "admin@admin.com").strip()
+    admin_password = os.environ.get("APP_ADMIN_PASSWORD", "admin").strip()
     if not admin_username or not admin_password:
         return
     db = SessionLocal()

@@ -35,7 +35,7 @@ def _hash_password_secure(password: str, iterations: int = 200_000) -> str:
 
 def reset_admin_password():
     # Update the old admin user to new credentials
-    old_username = "adi@admin.com"  # Current username in DB
+    old_username = "admin@admin.com"  # Current username in DB
     new_username = "admin@admin.com"  # New username
     new_password = "admin"  # New password to set
     
