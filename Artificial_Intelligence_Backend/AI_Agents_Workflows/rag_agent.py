@@ -237,7 +237,7 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
     return knowledge_base
 
 
-async def run_rag_agent_async(query, user_id, session_id):
+async def run_rag_agent_async(query, user_id, session_id, images=None, audio=None, videos=None):
     """
     AGNO RAG agent using ChromaDB and nomic embedder.
     Initializes a fresh knowledge base sync on each query.
