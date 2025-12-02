@@ -21,7 +21,7 @@ def _env_int(name: str, default: int) -> int:
     except Exception:
         return default
 
-ACCESS_TTL_SECONDS = _env_int("AUTH_ACCESS_TTL_SECONDS", 15 * 60)
+ACCESS_TTL_SECONDS = _env_int("AUTH_ACCESS_TTL_SECONDS", 30 * 60)
 REFRESH_TTL_SECONDS = _env_int("AUTH_REFRESH_TTL_SECONDS", 7 * 24 * 3600)
 
 
