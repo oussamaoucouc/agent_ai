@@ -270,7 +270,17 @@ def check_model_multimodal_support(model_id: str) -> dict:
     return get_model_multimodal_capabilities(model_id)
 
 @app.post("/cancel")
-async def cancel_endpoint(request: CancelRequest):
+async def cancel_endpoint(request: CancelRequest, http_request: Request):
+    # Auth check
+    token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+    if not token_payload:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    uid = token_payload.get("uid")
+    
+    # Ensure user can only cancel their own session
+    if uid != request.user_id:
+        raise HTTPException(status_code=403, detail="Cannot cancel another user's task")
+
     key = f"{request.user_id}:{request.session_id}"
     task = active_tasks.pop(key, None)
     if task and not task.done():

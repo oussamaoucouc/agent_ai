@@ -216,10 +216,22 @@ def ensure_admin_seed():
 
 
 @router.get("", response_model=list[UserModel])
-def list_users(db: SASession = Depends(get_db)):
+def list_users(request: Request, db: SASession = Depends(get_db)):
     try:
+        # Admin-only
+        payload = get_user_from_auth_header(request.headers.get("Authorization"))
+        if not payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = payload.get("uid")
+        role = payload.get("role")
+        u_admin = db.query(UserDB).filter(UserDB.id == uid).first()
+        if not u_admin or role != "admin" or u_admin.role != "admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
+
         users = db.query(UserDB).order_by(UserDB.created_at.desc()).all()
         return [_db_to_user_model(u) for u in users]
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching users: {str(e)}")
 
@@ -468,6 +480,34 @@ def user_login(request: LoginRequest, response: Response, db: SASession = Depend
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error during login: {str(e)}")
 
+
+
+
+@router.post("/refresh")
+def refresh_token(request: Request, db: SASession = Depends(get_db)):
+    try:
+        refresh_token = request.cookies.get("refresh_token")
+        if not refresh_token:
+            raise HTTPException(status_code=401, detail="Refresh token missing")
+        
+        payload = verify_refresh_token(refresh_token)
+        if not payload:
+            raise HTTPException(status_code=401, detail="Invalid refresh token")
+        
+        jti = payload.get("jti")
+        if not is_refresh_valid(db, jti):
+            raise HTTPException(status_code=401, detail="Refresh token revoked or expired")
+        
+        # Issue new access token
+        user_id = payload.get("uid")
+        role = payload.get("role")
+        new_access_token = issue_access_token(user_id, role)
+        
+        return {"token": new_access_token}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error refreshing token: {str(e)}")
 
 
 @router.get("/stats", response_model=list[UserStatsModel])
