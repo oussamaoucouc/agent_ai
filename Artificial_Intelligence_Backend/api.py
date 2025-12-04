@@ -163,6 +163,15 @@ def clean_model_output(text: str) -> str:
 
     return text
 
+def ensure_response_content(text: str) -> str:
+    """
+    Ensure the model response is not empty.
+    Returns a default message if the response is empty or whitespace only.
+    """
+    if not text or not text.strip():
+        return "The model returned an empty response. Please try a different model or rephrase your query."
+    return text
+
 # Session models, schemas, and endpoints moved to sessions.py
 
 class LoginRequest(BaseModel):
@@ -371,6 +380,7 @@ async def query_assistant_multimodal(
         )
         
         response_text = clean_model_output(response_text)
+        response_text = ensure_response_content(response_text)
         
         return {
             "user_id": uid,
@@ -778,6 +788,7 @@ async def query_mcp(request: QueryRequest, http_request: Request):
                 raise HTTPException(status_code=404, detail="Session not found")
         response = await run_mcp_agent(request.query, uid, request.session_id)
         response = clean_model_output(response)
+        response = ensure_response_content(response)
         return QueryResponse(
             user_id=uid,
             session_id=request.session_id,
@@ -895,6 +906,7 @@ async def query_assistant(request: QueryRequest, http_request: Request):
                     logging.error(f"Failed to process video: {e}")
 
         response = await run_assistant_agent(request.query, uid, request.session_id, images=images if images else None, audio=audio_files if audio_files else None, videos=video_files if video_files else None)
+        response = ensure_response_content(response)
         return QueryResponse(
             user_id=uid,
             session_id=request.session_id,
@@ -1015,6 +1027,7 @@ async def query_assistant_direct(request: QueryRequest, http_request: Request):
 
         response = await run_assistant_agent(request.query, uid, request.session_id, images=images if images else None, audio=audio_files if audio_files else None, videos=video_files if video_files else None)
         response = clean_model_output(response)
+        response = ensure_response_content(response)
 
         return QueryResponse(
             user_id=uid,
@@ -1052,6 +1065,7 @@ async def query_mcp_direct(request: QueryRequest, http_request: Request):
         task = asyncio.create_task(run_mcp_agent(request.query, uid, request.session_id))
         response = await task
         response = clean_model_output(response)
+        response = ensure_response_content(response)
         return QueryResponse(
             user_id=uid,
             session_id=request.session_id,
@@ -1097,6 +1111,7 @@ async def stt_query_mcp_endpoint(
 
         # Process the query using the MCP agent
         response = await run_mcp_agent(query_text, user_id, session_id)
+        response = ensure_response_content(response)
 
         return {
             "text": query_text,
@@ -1138,6 +1153,7 @@ async def stt_query_assistant_endpoint(
             return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
 
         response = await run_assistant_agent(query_text, user_id, session_id)
+        response = ensure_response_content(response)
 
         return {
             "text": query_text,
@@ -1176,6 +1192,7 @@ async def stt_query_assistant_direct_endpoint(
 
         response = await run_assistant_agent(query_text, user_id, session_id)
         response = clean_model_output(response)
+        response = ensure_response_content(response)
 
         return {
             "text": query_text,
@@ -1221,6 +1238,7 @@ async def stt_query_mcp_direct_endpoint(
         # Process the query using the MCP agent
         response = await run_mcp_agent(query_text, user_id, session_id)
         response = clean_model_output(response)
+        response = ensure_response_content(response)
 
         return {
             "text": query_text,
@@ -1249,6 +1267,7 @@ async def query_mcp_tts_endpoint(request: QueryRequest, http_request: Request):
                 raise HTTPException(status_code=404, detail="Session not found")
         response_text = await run_mcp_agent(request.query, uid, request.session_id)
         response_text = clean_model_output(response_text)
+        response_text = ensure_response_content(response_text)
 
         # Generate audio and visemes
         # Apply per-session voice before generating audio
@@ -1383,6 +1402,7 @@ async def query_assistant_tts_endpoint(request: QueryRequest, http_request: Requ
                     logging.error(f"Failed to process video: {e}")
 
         response_text = await run_assistant_agent(request.query, uid, request.session_id, images=images if images else None, audio=audio_files if audio_files else None, videos=video_files if video_files else None)
+        response_text = ensure_response_content(response_text)
 
         with sessions.SessionLocal() as db:
             sessions.apply_session_voice(db, request.user_id, request.session_id)
@@ -1518,6 +1538,7 @@ async def query_assistant_tts_direct(request: QueryRequest, http_request: Reques
 
         response_text = await run_assistant_agent(request.query, uid, request.session_id, images=images if images else None, audio=audio_files if audio_files else None, videos=video_files if video_files else None)
         response_text = clean_model_output(response_text)
+        response_text = ensure_response_content(response_text)
 
         with sessions.SessionLocal() as db:
             sessions.apply_session_voice(db, request.user_id, request.session_id)
@@ -1561,6 +1582,7 @@ async def query_mcp_tts_direct(request: QueryRequest, http_request: Request):
                 raise HTTPException(status_code=404, detail="Session not found")
         response_text = await run_mcp_agent(request.query, uid, request.session_id)
         response_text = clean_model_output(response_text)
+        response_text = ensure_response_content(response_text)
 
         # Generate audio and visemes
         # Apply per-session voice before generating audio
