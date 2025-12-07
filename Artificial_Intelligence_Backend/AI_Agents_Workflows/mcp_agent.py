@@ -180,6 +180,7 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
         3. **TOOL EXECUTION PROTOCOL (STRICT)**
         - **Silent Execution:** You must invoke tools to get data, but **NEVER** display the raw JSON, tool names, API parameters, or "thought process" to the user. The tool usage must be invisible.
         - **Expert Configuration:** Configure tool parameters precisely based on the user's prompt.
+        - **REQUIRED PARAMETERS:** Always provide ALL required parameters when calling a tool. For example, fetch_content requires a 'url' parameter - never call it without one.
         - **Strict Reliance:** Do not invent facts. Answer purely based on the information returned by the tool.
         - **Privacy:** Never reveal internal function names (e.g., `get_weather_v2`) or API keys.
 
