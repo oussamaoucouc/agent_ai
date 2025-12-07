@@ -17,7 +17,7 @@ from AI_Agents_Workflows.rag_agent import run_rag_agent, initialize_knowledge_ba
 from AI_Agents_Workflows.locks import get_user_kb_lock
 from AI_Agents_Workflows.ai_agent_assistant import run_assistant_agent
 from AI_Agents_Workflows.config import get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir
-from AI_Agents_Workflows.mcp_agent import run_agent_async as run_mcp_agent
+from AI_Agents_Workflows.mcp_agent import run_agent_async as run_mcp_agent, reset_mcp_gateway_state
 from AI_Agents_Workflows.tts import text_to_speech
 from AI_Agents_Workflows.config import TTS_DELETE_AFTER_SERVE, TTS_DELETE_DELAY_SECONDS
 from typing import Optional
@@ -794,6 +794,22 @@ async def query_mcp(request: QueryRequest, http_request: Request):
             session_id=request.session_id,
             response=response
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/reset_mcp_gateway")
+async def reset_mcp_gateway_endpoint(http_request: Request):
+    """
+    Reset the MCP Gateway state to force re-registration of servers.
+    Call this after adding/removing MCP servers in Docker Desktop MCP Toolkit.
+    """
+    try:
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        reset_mcp_gateway_state()
+        return {"status": "success", "message": "MCP Gateway state reset. Servers will be re-registered on next query."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

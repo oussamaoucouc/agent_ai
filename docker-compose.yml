@@ -25,6 +25,7 @@ services:
       - ./Artificial_Intelligence_Backend:/app
       - tts_cache_vol:/app/tts_cache
       - /app/.venv
+      - ${USERPROFILE}/.docker/mcp:/root/.docker/mcp:ro # Mount user's MCP config for agent to read
     environment:
       - API_HOST=0.0.0.0
       - API_PORT=8000
@@ -89,6 +90,19 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    networks:
+      - ai-network
+
+  # MCP Gateway - Docker AI Model Context Protocol Gateway
+  # Provides MCP tools for AI agents (no authentication in container mode)
+  # Mounts user's local MCP registry so selected servers are available
+  mcp-gateway:
+    image: docker/mcp-gateway
+    ports:
+      - "8087:8080"
+    command: [ "--transport", "streaming", "--port", "8080", "--watch" ]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - ai-network
 

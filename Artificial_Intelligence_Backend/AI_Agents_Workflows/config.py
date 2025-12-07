@@ -55,7 +55,7 @@ _current_voice = "af_sky"
 
 # MCP runtime-configurable settings
 MCP_TRANSPORT = os.getenv("MCP_TRANSPORT", "streamable-http").strip()
-MCP_SERVER_URL = "https://server.smithery.ai/@Aas-ee/open-websearch/mcp?api_key=b5bc0f84-3f07-4e49-8821-969da7852f1a&profile=fascinating-dingo-CYbPI1"
+MCP_SERVER_URL = "http://mcp-gateway:8080/mcp"  # Docker MCP Gateway (no auth needed)
 MCP_STDIO_COMMAND = os.getenv("MCP_STDIO_COMMAND", "").strip()
 _MCP_STDIO_ARGS_RAW = os.getenv("MCP_STDIO_ARGS", "").strip()
 _MCP_STDIO_COMMANDS_RAW = os.getenv("MCP_STDIO_COMMANDS", "").strip()

@@ -438,8 +438,20 @@ const App: React.FC = () => {
                     // Otherwise, clear the selection; this effect will re-run when the catalog becomes available.
                     if (mcpToolsCatalog.length > 0) {
                         const urls = Array.isArray(settings.mcp_tools_urls) ? settings.mcp_tools_urls : [];
-                        const byUrl = new Map(mcpToolsCatalog.map(t => [t.url, t.label]));
-                        const labels = urls.map(u => byUrl.get(u)).filter((l): l is string => !!l);
+
+                        // Use fuzzy matching: stored URLs may have extra query params (e.g., Smithery profile URLs)
+                        // Match if stored URL starts with catalog URL or catalog URL starts with stored URL base
+                        const labels: string[] = [];
+                        for (const storedUrl of urls) {
+                            for (const tool of mcpToolsCatalog) {
+                                const storedBase = storedUrl.split('?')[0].split('&')[0]; // Remove query params  
+                                const catalogBase = tool.url.split('?')[0].split('&')[0];
+                                if (storedBase.includes(catalogBase) || catalogBase.includes(storedBase) || storedBase === catalogBase) {
+                                    labels.push(tool.label);
+                                    break;
+                                }
+                            }
+                        }
                         setSelectedMcpTools(labels);
                     } else {
                         setSelectedMcpTools([]);
