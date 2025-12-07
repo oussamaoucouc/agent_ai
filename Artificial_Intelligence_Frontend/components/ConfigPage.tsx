@@ -616,40 +616,87 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                 </div>
 
                 {config.mcp_transport === 'streamable-http' && (
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-slate-400">MCP Servers</span>
-                      <span className="text-xs text-slate-500 bg-slate-800 px-2 py-1 rounded">HTTP</span>
+                  <div className="space-y-6">
+                    {/* Autonomous Mode Section - Docker Gateway Tools */}
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-orange-400">🤖 Autonomous Mode</span>
+                        <span className="text-xs text-orange-400/60 bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/20">Docker Gateway</span>
+                      </div>
+                      <p className="text-xs text-orange-400/50 italic -mt-2">
+                        Full containerized tool access. Users can enable all Docker tools in one click.
+                      </p>
+                      <div className="grid grid-cols-1 gap-3">
+                        {(config.mcp_servers || []).filter(srv => srv.url.toLowerCase().includes('mcp-gateway')).length === 0 ? (
+                          <div className="text-xs text-slate-500 italic py-2">
+                            No Autonomous Mode servers configured. Add a server with "mcp-gateway" in the URL.
+                          </div>
+                        ) : (
+                          (config.mcp_servers || []).map((srv, idx) => {
+                            if (!srv.url.toLowerCase().includes('mcp-gateway')) return null;
+                            return (
+                              <div key={idx} className="group relative bg-gradient-to-r from-orange-500/10 to-amber-500/5 border border-orange-500/30 rounded-xl p-3 flex items-center gap-3 hover:border-orange-500/50 transition-all shadow-lg shadow-orange-500/5">
+                                <div className="p-2 bg-orange-500/20 rounded-lg text-orange-400">
+                                  <GlobeIcon className="w-5 h-5" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <input type="text" value={srv.label} onChange={(e) => updateServer(idx, 'label', e.target.value)} className="w-full bg-transparent border-none p-0 text-sm font-medium text-orange-200 focus:ring-0" placeholder="Server Label" />
+                                  <input type="text" value={srv.url} onChange={(e) => updateServer(idx, 'url', e.target.value)} className="w-full bg-transparent border-none p-0 text-xs text-orange-400/60 focus:text-orange-400 focus:ring-0 font-mono" placeholder="http://mcp-gateway:8080/mcp" />
+                                </div>
+                                <button onClick={() => removeServer(idx)} className="p-1.5 rounded-lg text-orange-400/50 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100">
+                                  <TrashIcon className="w-4 h-4" />
+                                </button>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
                     </div>
-                    <div className="grid grid-cols-1 gap-3">
-                      {(config.mcp_servers || []).map((srv, idx) => (
-                        <div key={idx} className="group relative bg-slate-800/40 border border-slate-700/50 rounded-xl p-3 flex items-center gap-3 hover:border-orange-500/30 transition-all">
-                          <div className="p-2 bg-slate-800 rounded-lg text-slate-500">
-                            <GlobeIcon className="w-5 h-5" />
+
+                    <div className="border-t border-slate-700/50"></div>
+
+                    {/* Regular Web Tools Section */}
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-slate-400">Web Tools</span>
+                        <span className="text-xs text-slate-500 bg-slate-800 px-2 py-1 rounded">HTTP</span>
+                      </div>
+                      <div className="grid grid-cols-1 gap-3">
+                        {(config.mcp_servers || []).map((srv, idx) => {
+                          if (srv.url.toLowerCase().includes('mcp-gateway')) return null;
+                          return (
+                            <div key={idx} className="group relative bg-slate-800/40 border border-slate-700/50 rounded-xl p-3 flex items-center gap-3 hover:border-sky-500/30 transition-all">
+                              <div className="p-2 bg-slate-800 rounded-lg text-slate-500">
+                                <GlobeIcon className="w-5 h-5" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <input type="text" value={srv.label} onChange={(e) => updateServer(idx, 'label', e.target.value)} className="w-full bg-transparent border-none p-0 text-sm font-medium text-slate-200 focus:ring-0" placeholder="Server Label" />
+                                <input type="text" value={srv.url} onChange={(e) => updateServer(idx, 'url', e.target.value)} className="w-full bg-transparent border-none p-0 text-xs text-slate-500 focus:text-sky-400 focus:ring-0 font-mono" placeholder="https://..." />
+                              </div>
+                              <button onClick={() => removeServer(idx)} className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100">
+                                <TrashIcon className="w-4 h-4" />
+                              </button>
+                            </div>
+                          );
+                        })}
+
+                        {/* Add Server */}
+                        <div className="group relative border-2 border-dashed border-slate-700/50 rounded-xl p-3 flex items-center gap-3 hover:border-sky-500/40 hover:bg-slate-800/30 transition-all">
+                          <div className="p-2 bg-slate-800 rounded-lg text-slate-500 group-hover:text-sky-400 transition-colors">
+                            <PlusIcon className="w-5 h-5" />
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <input type="text" value={srv.label} onChange={(e) => updateServer(idx, 'label', e.target.value)} className="w-full bg-transparent border-none p-0 text-sm font-medium text-slate-200 focus:ring-0" placeholder="Server Label" />
-                            <input type="text" value={srv.url} onChange={(e) => updateServer(idx, 'url', e.target.value)} className="w-full bg-transparent border-none p-0 text-xs text-slate-500 focus:text-orange-400 focus:ring-0 font-mono" placeholder="https://..." />
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <input type="text" value={newServer.label} onChange={(e) => setNewServer(prev => ({ ...prev, label: e.target.value }))} placeholder="New Server Label" className="w-full bg-transparent border-none p-0 text-sm font-medium text-slate-300 focus:ring-0" />
+                            <input type="text" value={newServer.url} onChange={(e) => setNewServer(prev => ({ ...prev, url: e.target.value }))} placeholder="https://mcp-server.com/sse or http://mcp-gateway:8080/mcp" className="w-full bg-transparent border-none p-0 text-xs text-slate-500 focus:text-sky-400 focus:ring-0 font-mono" />
                           </div>
-                          <button onClick={() => removeServer(idx)} className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100">
-                            <TrashIcon className="w-4 h-4" />
+                          <button onClick={addServer} className="p-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white shadow-lg shadow-sky-900/20 transition-all">
+                            <PlusIcon className="w-4 h-4" />
                           </button>
                         </div>
-                      ))}
-
-                      {/* Add Server */}
-                      <div className="group relative border-2 border-dashed border-slate-700/50 rounded-xl p-3 flex items-center gap-3 hover:border-orange-500/40 hover:bg-slate-800/30 transition-all">
-                        <div className="p-2 bg-slate-800 rounded-lg text-slate-500 group-hover:text-orange-400 transition-colors">
-                          <PlusIcon className="w-5 h-5" />
-                        </div>
-                        <div className="flex-1 min-w-0 space-y-1">
-                          <input type="text" value={newServer.label} onChange={(e) => setNewServer(prev => ({ ...prev, label: e.target.value }))} placeholder="New Server Label" className="w-full bg-transparent border-none p-0 text-sm font-medium text-slate-300 focus:ring-0" />
-                          <input type="text" value={newServer.url} onChange={(e) => setNewServer(prev => ({ ...prev, url: e.target.value }))} placeholder="https://mcp-server.com/sse" className="w-full bg-transparent border-none p-0 text-xs text-slate-500 focus:text-orange-400 focus:ring-0 font-mono" />
-                        </div>
-                        <button onClick={addServer} className="p-1.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white shadow-lg shadow-orange-900/20 transition-all">
-                          <PlusIcon className="w-4 h-4" />
-                        </button>
                       </div>
+                      <p className="text-xs text-slate-500 italic">
+                        Tip: Add a server with "mcp-gateway" in the URL to create an Autonomous Mode entry.
+                      </p>
                     </div>
                   </div>
                 )}

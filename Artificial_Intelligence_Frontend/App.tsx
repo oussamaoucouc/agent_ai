@@ -1156,6 +1156,7 @@ const App: React.FC = () => {
                     selectedMcpStdio={selectedMcpStdio}
                     onSelectedMcpStdioChange={handleSelectedMcpStdioChange}
                     isSettingsSyncing={isSettingsSyncing}
+                    onShowConfirmation={showConfirmation}
                 />
                 <main className={`flex flex-col flex-1 h-screen overflow-hidden transition-all duration-300 ease-in-out ${isSidebarOpen ? 'lg:ml-80' : 'lg:ml-0'}`}>
                     <Header
