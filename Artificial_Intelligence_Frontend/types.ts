@@ -224,7 +224,7 @@ export interface ConfigResponse {
     available_models: string[];
     available_voices_labeled?: { label: string; id: string }[];
     available_voices: string[];
-    mcp_servers: { label: string; url: string }[];
+    mcp_servers: { label: string; url: string; is_autonomous?: boolean }[];
 }
 
 export interface ConfigUpdateRequest {
@@ -248,7 +248,7 @@ export interface ConfigUpdateRequest {
     available_models?: string[];
     available_voices_labeled?: { label: string; id: string }[];
     available_voices?: string[];
-    mcp_servers?: { label: string; url: string }[];
+    mcp_servers?: { label: string; url: string; is_autonomous?: boolean }[];
 }
 
 export interface ModelsCatalogResponse {
@@ -280,6 +280,7 @@ export interface VoicesCatalogLabeledResponse {
 export interface McpToolItem {
     label: string;
     url: string;
+    is_autonomous?: boolean;
 }
 
 export interface McpToolsCatalogResponse {

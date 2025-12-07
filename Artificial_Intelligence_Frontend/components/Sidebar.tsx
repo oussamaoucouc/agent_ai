@@ -117,8 +117,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         return () => controller.abort();
     }, []);
 
-    // Docker MCP Gateway detection - checks if a tool URL contains "mcp-gateway"
+    // Docker MCP Gateway detection - uses is_autonomous flag (with fallback to URL pattern for backward compatibility)
     const isDockerGateway = (tool: McpToolItem): boolean => {
+        // Prefer explicit flag if set
+        if (tool.is_autonomous !== undefined) {
+            return tool.is_autonomous;
+        }
+        // Fallback to URL pattern for backward compatibility
         return tool.url.toLowerCase().includes('mcp-gateway');
     };
 

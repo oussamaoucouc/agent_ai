@@ -230,6 +230,19 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
     except Exception as e:
         logger.warning(f"Failed to resolve user-selected MCP tools; using runtime config. err={e}")
 
+    # Filter selected URLs to only include those still in admin catalog
+    # This prevents stale selections from being used after admin removes a server
+    user_had_selections = bool(selected_urls)  # Track if user originally had selections
+    if selected_urls and runtime_urls:
+        valid_selected_urls = []
+        for u in selected_urls:
+            url_str = str(u).strip().rstrip('/')
+            if any(url_str == runtime_url.rstrip('/') for runtime_url in runtime_urls):
+                valid_selected_urls.append(u)
+            else:
+                logger.info(f"Skipping stale MCP tool URL not in catalog: {u}")
+        selected_urls = valid_selected_urls
+
     # Prepare stdio commands list
     cmds = []
     if selected_cmds:
@@ -269,18 +282,36 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
     # 1. SETUP DOCKER GATEWAY (Only if user selected Docker tools)
     gateway_url = "http://mcp-gateway:8080/mcp"
     
-    # Check if Docker Gateway was selected by user
+    # Check if Docker Gateway (Autonomous Mode) was selected by user
+    # Uses is_autonomous flag from config, with URL fallback for backward compatibility
     docker_gateway_selected = False
+    autonomous_server_url = None
     if selected_urls:
         for u in selected_urls:
-            if "mcp-gateway" in str(u) or gateway_url.rstrip('/') in str(u).rstrip('/'):
+            url_str = str(u).strip()
+            # Check if this URL corresponds to an autonomous server in config
+            for srv in servers:
+                if isinstance(srv, dict):
+                    srv_url = str(srv.get("url", "")).strip()
+                    # Use is_autonomous flag with fallback to URL pattern
+                    is_autonomous = srv.get("is_autonomous", False) or "mcp-gateway" in srv_url.lower()
+                    if srv_url.rstrip('/') == url_str.rstrip('/') and is_autonomous:
+                        docker_gateway_selected = True
+                        autonomous_server_url = url_str
+                        break
+            # Also check legacy URL pattern as fallback
+            if not docker_gateway_selected and "mcp-gateway" in url_str.lower():
                 docker_gateway_selected = True
+                autonomous_server_url = url_str
+            if docker_gateway_selected:
                 break
     
     if docker_gateway_selected:
-        logger.info(f"Connecting to Local Docker Gateway: {gateway_url}")
+        # Use the actual selected URL or fallback to default gateway
+        actual_gateway_url = autonomous_server_url or gateway_url
+        logger.info(f"Connecting to Autonomous Mode Server: {actual_gateway_url}")
         gateway_toolkit = MCPTools(
-            url=gateway_url, 
+            url=actual_gateway_url, 
             transport="streamable-http",
             timeout_seconds=30
         )
@@ -288,33 +319,50 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
              await gateway_toolkit.connect()
              agent_toolkits.append(gateway_toolkit)
         except Exception as gw_err:
-             logger.error(f"Failed to connect to Docker Gateway: {gw_err}")
+             logger.error(f"Failed to connect to Autonomous Server: {gw_err}")
              gateway_toolkit = None
     else:
-        logger.info("Docker Gateway not selected, skipping Docker tools")
+        logger.info("Autonomous Mode not selected, skipping autonomous tools")
     
     # 2. SETUP USER SELECTED TOOLS (e.g. Smithery)
     # Extract user URLs (excluding gateway if present)
+    # Only fall back to runtime_urls if user NEVER made any selections (not if selections became stale)
     user_urls = []
     if selected_urls:
         user_urls = [str(u).strip() for u in selected_urls if str(u).strip()]
-    elif runtime_urls:
-         user_urls = runtime_urls
-    elif cfg.MCP_SERVER_URL:
-         user_urls = [cfg.MCP_SERVER_URL]
+    elif not user_had_selections and runtime_urls:
+        # Only use all runtime URLs if user never selected anything
+        user_urls = runtime_urls
+        logger.info("No user selections found, using all available MCP servers from config")
+    elif not user_had_selections and cfg.MCP_SERVER_URL:
+        user_urls = [cfg.MCP_SERVER_URL]
+    else:
+        # User had selections but they're all stale - don't fall back
+        logger.info("User had tool selections but they are no longer in catalog - no MCP tools will be loaded")
          
     for u in user_urls:
-        # Avoid duplicate gateway connection
-        if u.rstrip('/') == gateway_url.rstrip('/'):
+        url_str = str(u).strip()
+        # Skip if this is the autonomous server we already connected to
+        if autonomous_server_url and url_str.rstrip('/') == autonomous_server_url.rstrip('/'):
+            continue
+        # Also skip if this URL is marked as autonomous in config
+        is_autonomous_url = False
+        for srv in servers:
+            if isinstance(srv, dict):
+                srv_url = str(srv.get("url", "")).strip()
+                if srv_url.rstrip('/') == url_str.rstrip('/'):
+                    is_autonomous_url = srv.get("is_autonomous", False) or "mcp-gateway" in srv_url.lower()
+                    break
+        if is_autonomous_url:
             continue
             
         try:
-            logger.info(f"Connecting to User MCP Server: {u}")
-            tk = MCPTools(url=u, transport="streamable-http", timeout_seconds=30)
+            logger.info(f"Connecting to User MCP Server: {url_str}")
+            tk = MCPTools(url=url_str, transport="streamable-http", timeout_seconds=30)
             await tk.connect()
             agent_toolkits.append(tk)
         except Exception as e:
-            logger.warning(f"Failed to connect to user tool {u}: {e}")
+            logger.warning(f"Failed to connect to user tool {url_str}: {e}")
 
     # 3. SETUP STDIO COMMANDS
     if cmds:
@@ -440,9 +488,22 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
     try:
         response = await MCP_agent.arun(query)
     finally:
-        # Clean up all toolkits
+        # Clean up all toolkits - wrap each in try-except to handle cancel scope issues
         for tk in agent_toolkits:
-            await tk.close()
+            try:
+                await tk.close()
+            except asyncio.CancelledError:
+                # Ignore asyncio cancellation during cleanup - this is normal for multi-toolkit scenarios
+                logger.debug(f"Ignoring CancelledError during toolkit cleanup")
+            except RuntimeError as e:
+                # Handle "cancel scope" errors that occur with multiple async toolkits
+                if "cancel scope" in str(e).lower():
+                    logger.debug(f"Ignoring cancel scope cleanup error for toolkit: {e}")
+                else:
+                    logger.warning(f"Error closing toolkit: {e}")
+            except BaseException as e:
+                # Catch any other exception type to prevent cleanup from failing the request
+                logger.warning(f"Error closing toolkit (ignored): {type(e).__name__}: {e}")
 
     # --- Robust error checking for response.content ---
     # Explicit check for boolean response

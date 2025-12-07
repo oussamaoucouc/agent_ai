@@ -1090,6 +1090,9 @@ async def query_mcp_direct(request: QueryRequest, http_request: Request):
     except asyncio.CancelledError:
         raise HTTPException(status_code=499, detail="Request cancelled")
     except Exception as e:
+        logging.error(f"Error in query_mcp_direct: {type(e).__name__}: {str(e)}")
+        import traceback
+        logging.error(f"Full traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         active_tasks.pop(key, None)
