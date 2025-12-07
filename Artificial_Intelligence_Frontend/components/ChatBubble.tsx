@@ -12,6 +12,8 @@ interface ChatBubbleProps {
 
 const parseInlineMarkdown = (text: string): string => {
     let finalHtml = text;
+    // Inline code with backticks
+    finalHtml = finalHtml.replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 bg-slate-700/50 text-sky-300 rounded text-sm font-mono">$1</code>');
     // Links
     finalHtml = finalHtml.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:text-sky-300 hover:underline">$1</a>');
     // Bold
@@ -80,8 +82,24 @@ const parseMarkdown = (text: string): string => {
             continue;
         }
 
+        // Horizontal rule (---) - convert to styled divider
+        if (/^-{3,}$/.test(line.trim())) {
+            flushBlock();
+            html += `<hr class="my-4 border-t border-slate-600/30" />`;
+            continue;
+        }
+
+        // H4 heading (#### ) - for numbered tool sections
+        let match = line.match(/^####\s+(.*)/);
+        if (match) {
+            flushBlock();
+            const title = parseInlineMarkdown(match[1].replace(/^`|`$/g, '')); // Remove surrounding backticks if present
+            html += `<h4 class="text-lg font-semibold text-sky-300 mt-5 mb-2 first:mt-0">${title}</h4>`;
+            continue;
+        }
+
         // H3 heading with enhanced styling
-        let match = line.match(/^###\s+(.*)/);
+        match = line.match(/^###\s+(.*)/);
         if (match) {
             flushBlock();
             const title = parseInlineMarkdown(match[1].replace(/^\[|\]$/g, '')); // Remove brackets if present

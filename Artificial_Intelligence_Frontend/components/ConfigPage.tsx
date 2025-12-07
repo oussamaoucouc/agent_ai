@@ -627,28 +627,43 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                         Full containerized tool access. Users can enable all Docker tools in one click.
                       </p>
                       <div className="grid grid-cols-1 gap-3">
-                        {(config.mcp_servers || []).filter(srv => srv.url.toLowerCase().includes('mcp-gateway')).length === 0 ? (
-                          <div className="text-xs text-slate-500 italic py-2">
-                            No Autonomous Mode servers configured. Add a server with "mcp-gateway" in the URL.
-                          </div>
-                        ) : (
-                          (config.mcp_servers || []).map((srv, idx) => {
-                            if (!srv.url.toLowerCase().includes('mcp-gateway')) return null;
-                            return (
-                              <div key={idx} className="group relative bg-gradient-to-r from-orange-500/10 to-amber-500/5 border border-orange-500/30 rounded-xl p-3 flex items-center gap-3 hover:border-orange-500/50 transition-all shadow-lg shadow-orange-500/5">
-                                <div className="p-2 bg-orange-500/20 rounded-lg text-orange-400">
-                                  <GlobeIcon className="w-5 h-5" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <input type="text" value={srv.label} onChange={(e) => updateServer(idx, 'label', e.target.value)} className="w-full bg-transparent border-none p-0 text-sm font-medium text-orange-200 focus:ring-0" placeholder="Server Label" />
-                                  <input type="text" value={srv.url} onChange={(e) => updateServer(idx, 'url', e.target.value)} className="w-full bg-transparent border-none p-0 text-xs text-orange-400/60 focus:text-orange-400 focus:ring-0 font-mono" placeholder="http://mcp-gateway:8080/mcp" />
-                                </div>
-                                <button onClick={() => removeServer(idx)} className="p-1.5 rounded-lg text-orange-400/50 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100">
-                                  <TrashIcon className="w-4 h-4" />
-                                </button>
+                        {(config.mcp_servers || []).map((srv, idx) => {
+                          if (!srv.url.toLowerCase().includes('mcp-gateway')) return null;
+                          return (
+                            <div key={idx} className="group relative bg-gradient-to-r from-orange-500/10 to-amber-500/5 border border-orange-500/30 rounded-xl p-3 flex items-center gap-3 hover:border-orange-500/50 transition-all shadow-lg shadow-orange-500/5">
+                              <div className="p-2 bg-orange-500/20 rounded-lg text-orange-400">
+                                <GlobeIcon className="w-5 h-5" />
                               </div>
-                            );
-                          })
+                              <div className="flex-1 min-w-0">
+                                <input type="text" value={srv.label} onChange={(e) => updateServer(idx, 'label', e.target.value)} className="w-full bg-transparent border-none p-0 text-sm font-medium text-orange-200 focus:ring-0" placeholder="Server Label" />
+                                <input type="text" value={srv.url} onChange={(e) => updateServer(idx, 'url', e.target.value)} className="w-full bg-transparent border-none p-0 text-xs text-orange-400/60 focus:text-orange-400 focus:ring-0 font-mono" placeholder="http://mcp-gateway:8080/mcp" />
+                              </div>
+                              <button onClick={() => removeServer(idx)} className="p-1.5 rounded-lg text-orange-400/50 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100">
+                                <TrashIcon className="w-4 h-4" />
+                              </button>
+                            </div>
+                          );
+                        })}
+
+                        {/* Add Docker Gateway Button */}
+                        {(config.mcp_servers || []).filter(srv => srv.url.toLowerCase().includes('mcp-gateway')).length === 0 && (
+                          <button
+                            onClick={() => {
+                              setConfig(prev => prev ? {
+                                ...prev,
+                                mcp_servers: [...(prev.mcp_servers || []), { label: 'Docker Tools Container', url: 'http://mcp-gateway:8080/mcp' }]
+                              } : prev);
+                            }}
+                            className="group relative border-2 border-dashed border-orange-500/30 rounded-xl p-3 flex items-center gap-3 hover:border-orange-500/50 hover:bg-orange-500/5 transition-all"
+                          >
+                            <div className="p-2 bg-orange-500/10 rounded-lg text-orange-400/60 group-hover:text-orange-400 transition-colors">
+                              <PlusIcon className="w-5 h-5" />
+                            </div>
+                            <div className="flex-1 text-left">
+                              <span className="block text-sm font-medium text-orange-300/80 group-hover:text-orange-300">Add Docker Gateway</span>
+                              <span className="block text-xs text-orange-400/40 font-mono">http://mcp-gateway:8080/mcp</span>
+                            </div>
+                          </button>
                         )}
                       </div>
                     </div>
