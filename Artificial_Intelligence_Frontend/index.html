@@ -1,183 +1,531 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI Assistant</title>
-    
-    <style>
-      /* Custom Scrollbar Styling */
-      /* For Webkit-based browsers (Chrome, Safari, new Edge) */
-      ::-webkit-scrollbar {
-        width: 10px;
-        height: 10px;
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Assistant</title>
+
+  <style>
+    /* Custom Scrollbar Styling */
+    /* For Webkit-based browsers (Chrome, Safari, new Edge) */
+    ::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+      /* Makes the track invisible */
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background-color: rgba(156, 163, 175, 0.4);
+      /* Semi-transparent gray-400 */
+      border-radius: 20px;
+      border: 2px solid transparent;
+      background-clip: content-box;
+      /* Clips the background to the content box, creating padding */
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background-color: rgba(156, 163, 175, 0.6);
+      /* Semi-transparent gray-400 on hover */
+    }
+
+    /* For Firefox */
+    html {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(156, 163, 175, 0.4) transparent;
+      /* thumb color track color */
+    }
+
+    body {
+      background-color: #0f172a;
+      /* slate-900 */
+    }
+
+    /* Custom Avatar Animation */
+    @keyframes energetic-hover {
+
+      0%,
+      100% {
+        transform: translateY(0px) rotate(-1deg);
       }
 
-      ::-webkit-scrollbar-track {
-        background: transparent; /* Makes the track invisible */
+      50% {
+        transform: translateY(-12px) rotate(1deg);
+      }
+    }
+
+    .animate-energetic-hover {
+      animation: energetic-hover 5s ease-in-out infinite;
+    }
+
+    /* Animations for Speaking State */
+    @keyframes floating {
+
+      0%,
+      100% {
+        transform: translateY(0);
       }
 
-      ::-webkit-scrollbar-thumb {
-        background-color: rgba(156, 163, 175, 0.4); /* Semi-transparent gray-400 */
-        border-radius: 20px;
-        border: 2px solid transparent;
-        background-clip: content-box; /* Clips the background to the content box, creating padding */
+      50% {
+        transform: translateY(-10px);
       }
+    }
 
-      ::-webkit-scrollbar-thumb:hover {
-        background-color: rgba(156, 163, 175, 0.6); /* Semi-transparent gray-400 on hover */
-      }
-
-      /* For Firefox */
-      html {
-        scrollbar-width: thin;
-        scrollbar-color: rgba(156, 163, 175, 0.4) transparent; /* thumb color track color */
-      }
-      
-      body {
-        background-color: #0f172a; /* slate-900 */
-      }
-
-      /* Custom Avatar Animation */
-      @keyframes energetic-hover {
-        0%, 100% {
-          transform: translateY(0px) rotate(-1deg);
-        }
-        50% {
-          transform: translateY(-12px) rotate(1deg);
-        }
-      }
-      .animate-energetic-hover {
-        animation: energetic-hover 5s ease-in-out infinite;
-      }
-
-      /* Animations for Speaking State */
-      @keyframes floating {
-        0%, 100% {
-          transform: translateY(0);
-        }
-        50% {
-          transform: translateY(-10px);
-        }
-      }
-
-      .animate-floating {
-        animation: floating 3s ease-in-out infinite;
-      }
+    .animate-floating {
+      animation: floating 3s ease-in-out infinite;
+    }
 
 
-      /* Floating Aurora Blobs - enhanced for background */
-       @keyframes rotate {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-      }
-      @keyframes gradient-fade {
-        0%, 100% { opacity: 0.6; }
-        50% { opacity: 1; }
-      }
-      .aurora-blob {
-        position: absolute;
-        filter: blur(100px); /* Increased blur for softer look */
-        animation: gradient-fade 10s ease-in-out infinite alternate;
-        will-change: transform, opacity;
-      }
-      .aurora-blob-1 {
-        top: -15%; left: -15%; width: 55%; height: 55%;
-        background: radial-gradient(circle at center, rgba(56, 189, 248, 0.4), transparent 70%); /* sky-400 */
-        animation-duration: 15s;
-        animation-name: rotate, gradient-fade;
-      }
-      .aurora-blob-2 {
-        top: 10%; right: -20%; width: 60%; height: 60%;
-        background: radial-gradient(circle at center, rgba(236, 72, 153, 0.3), transparent 70%); /* pink-500 */
-        animation-duration: 20s;
-         animation-name: rotate, gradient-fade;
-      }
-      .aurora-blob-3 {
-        bottom: -20%; left: 20%; width: 45%; height: 45%;
-        background: radial-gradient(circle at center, rgba(129, 140, 248, 0.4), transparent 70%); /* indigo-400 */
-        animation-duration: 18s;
-         animation-name: rotate, gradient-fade;
-      }
-       .aurora-blob-4 {
-        bottom: -10%; right: 10%; width: 50%; height: 50%;
-        background: radial-gradient(circle at center, rgba(34, 211, 238, 0.4), transparent 70%); /* cyan-400 */
-        animation-duration: 22s;
-        animation-name: rotate, gradient-fade;
+    /* Floating Aurora Blobs - enhanced for background */
+    @keyframes rotate {
+      0% {
+        transform: rotate(0deg);
       }
 
+      100% {
+        transform: rotate(360deg);
+      }
+    }
 
-      /* Natural Blinking Animation */
-      @keyframes blink {
-        0%, 95% { transform: scaleY(1); }
-        97.5% { transform: scaleY(0.1); }
-        100% { transform: scaleY(1); }
-      }
-      .eye {
-        transform-origin: center;
-        animation: blink 7s infinite;
-      }
-      
-      /* Subtle Glance for idle avatar */
-      @keyframes subtle-glance {
-        0%, 80%, 100% {
-          transform: translateX(0);
-        }
-        85% {
-          transform: translateX(-0.8px); /* SVG units */
-        }
-        95% {
-          transform: translateX(0.8px); /* SVG units */
-        }
-      }
-      .animate-subtle-glance {
-        animation: subtle-glance 8s infinite ease-in-out;
+    @keyframes gradient-fade {
+
+      0%,
+      100% {
+        opacity: 0.6;
       }
 
-      /* Thinking pulse for avatar glow */
-      @keyframes thinking-pulse {
-        0%, 100% {
-            transform: scale(0.9);
-            opacity: 0.7;
-        }
-        50% {
-            transform: scale(1.1);
-            opacity: 1;
-        }
+      50% {
+        opacity: 1;
       }
-       @keyframes glow-pulse {
-        0%, 100% {
-            box-shadow: 0 0 40px rgba(14, 165, 233, 0.6), 0 0 60px rgba(14, 165, 233, 0.5);
-        }
-        50% {
-            box-shadow: 0 0 55px rgba(14, 165, 233, 0.8), 0 0 85px rgba(14, 165, 233, 0.7);
-        }
-      }
-      .animate-thinking-pulse {
-        animation: thinking-pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        transform-origin: center;
-      }
-      .animate-glow-pulse {
-        animation: glow-pulse 2s ease-in-out infinite;
+    }
+
+    .aurora-blob {
+      position: absolute;
+      filter: blur(100px);
+      /* Increased blur for softer look */
+      animation: gradient-fade 10s ease-in-out infinite alternate;
+      will-change: transform, opacity;
+    }
+
+    .aurora-blob-1 {
+      top: -15%;
+      left: -15%;
+      width: 55%;
+      height: 55%;
+      background: radial-gradient(circle at center, rgba(56, 189, 248, 0.4), transparent 70%);
+      /* sky-400 */
+      animation-duration: 15s;
+      animation-name: rotate, gradient-fade;
+    }
+
+    .aurora-blob-2 {
+      top: 10%;
+      right: -20%;
+      width: 60%;
+      height: 60%;
+      background: radial-gradient(circle at center, rgba(236, 72, 153, 0.3), transparent 70%);
+      /* pink-500 */
+      animation-duration: 20s;
+      animation-name: rotate, gradient-fade;
+    }
+
+    .aurora-blob-3 {
+      bottom: -20%;
+      left: 20%;
+      width: 45%;
+      height: 45%;
+      background: radial-gradient(circle at center, rgba(129, 140, 248, 0.4), transparent 70%);
+      /* indigo-400 */
+      animation-duration: 18s;
+      animation-name: rotate, gradient-fade;
+    }
+
+    .aurora-blob-4 {
+      bottom: -10%;
+      right: 10%;
+      width: 50%;
+      height: 50%;
+      background: radial-gradient(circle at center, rgba(34, 211, 238, 0.4), transparent 70%);
+      /* cyan-400 */
+      animation-duration: 22s;
+      animation-name: rotate, gradient-fade;
+    }
+
+
+    /* Natural Blinking Animation */
+    @keyframes blink {
+
+      0%,
+      95% {
+        transform: scaleY(1);
       }
 
-      /* Modern bounce animation for loading dots */
-      @keyframes modernBounce {
-        0%, 80%, 100% {
-          transform: translateY(0) scale(1);
-          opacity: 0.7;
-        }
-        40% {
-          transform: translateY(-8px) scale(1.15);
-          opacity: 1;
-        }
+      97.5% {
+        transform: scaleY(0.1);
       }
 
-    </style>
-  
-  </head>
-  <body class="text-white selection:bg-sky-500/30">
-    <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
-  </body>
+      100% {
+        transform: scaleY(1);
+      }
+    }
+
+    .eye {
+      transform-origin: center;
+      animation: blink 7s infinite;
+    }
+
+    /* Subtle Glance for idle avatar */
+    @keyframes subtle-glance {
+
+      0%,
+      80%,
+      100% {
+        transform: translateX(0);
+      }
+
+      85% {
+        transform: translateX(-0.8px);
+        /* SVG units */
+      }
+
+      95% {
+        transform: translateX(0.8px);
+        /* SVG units */
+      }
+    }
+
+    .animate-subtle-glance {
+      animation: subtle-glance 8s infinite ease-in-out;
+    }
+
+    /* Thinking pulse for avatar glow */
+    @keyframes thinking-pulse {
+
+      0%,
+      100% {
+        transform: scale(0.9);
+        opacity: 0.7;
+      }
+
+      50% {
+        transform: scale(1.1);
+        opacity: 1;
+      }
+    }
+
+    @keyframes glow-pulse {
+
+      0%,
+      100% {
+        box-shadow: 0 0 40px rgba(14, 165, 233, 0.6), 0 0 60px rgba(14, 165, 233, 0.5);
+      }
+
+      50% {
+        box-shadow: 0 0 55px rgba(14, 165, 233, 0.8), 0 0 85px rgba(14, 165, 233, 0.7);
+      }
+    }
+
+    .animate-thinking-pulse {
+      animation: thinking-pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      transform-origin: center;
+    }
+
+    .animate-glow-pulse {
+      animation: glow-pulse 2s ease-in-out infinite;
+    }
+
+    /* Modern bounce animation for loading dots */
+    @keyframes modernBounce {
+
+      0%,
+      80%,
+      100% {
+        transform: translateY(0) scale(1);
+        opacity: 0.7;
+      }
+
+      40% {
+        transform: translateY(-8px) scale(1.15);
+        opacity: 1;
+      }
+    }
+
+    /* ============================================
+         MODERN AVATAR ANIMATIONS (2025 Edition)
+         ============================================ */
+
+    /* Breathing animation - subtle life-like feel */
+    @keyframes breathing {
+
+      0%,
+      100% {
+        transform: scale(1);
+      }
+
+      50% {
+        transform: scale(1.02);
+      }
+    }
+
+    .animate-breathing {
+      animation: breathing 4s ease-in-out infinite;
+    }
+
+    /* Orbital ring rotations */
+    @keyframes orbit-1 {
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+
+    @keyframes orbit-2 {
+      0% {
+        transform: rotate(180deg);
+      }
+
+      100% {
+        transform: rotate(-180deg);
+      }
+    }
+
+    @keyframes orbit-3 {
+      0% {
+        transform: rotate(90deg) rotateX(60deg);
+      }
+
+      100% {
+        transform: rotate(450deg) rotateX(60deg);
+      }
+    }
+
+    .animate-orbit-1 {
+      animation: orbit-1 8s linear infinite;
+    }
+
+    .animate-orbit-2 {
+      animation: orbit-2 12s linear infinite;
+    }
+
+    .animate-orbit-3 {
+      animation: orbit-3 15s linear infinite;
+    }
+
+    /* Speaking glow pulse - more dramatic */
+    @keyframes speakingGlow {
+
+      0%,
+      100% {
+        box-shadow: 0 0 30px rgba(34, 211, 238, 0.5),
+          0 0 60px rgba(34, 211, 238, 0.3),
+          0 0 90px rgba(34, 211, 238, 0.1);
+      }
+
+      50% {
+        box-shadow: 0 0 40px rgba(34, 211, 238, 0.7),
+          0 0 80px rgba(34, 211, 238, 0.5),
+          0 0 120px rgba(34, 211, 238, 0.2);
+      }
+    }
+
+    .animate-speaking-glow {
+      animation: speakingGlow 1s ease-in-out infinite;
+    }
+
+    /* Sound wave expansion effect */
+    @keyframes soundWave {
+      0% {
+        transform: scale(1);
+        opacity: 0.6;
+        border-width: 2px;
+      }
+
+      100% {
+        transform: scale(1.8);
+        opacity: 0;
+        border-width: 0px;
+      }
+    }
+
+    .animate-sound-wave {
+      animation: soundWave 1.5s ease-out infinite;
+    }
+
+    .animate-sound-wave-delay-1 {
+      animation: soundWave 1.5s ease-out infinite 0.3s;
+    }
+
+    .animate-sound-wave-delay-2 {
+      animation: soundWave 1.5s ease-out infinite 0.6s;
+    }
+
+    /* Particle float animation */
+    @keyframes particleFloat {
+      0% {
+        transform: translateY(0) translateX(0) scale(1);
+        opacity: 0.8;
+      }
+
+      100% {
+        transform: translateY(-40px) translateX(var(--drift, 10px)) scale(0);
+        opacity: 0;
+      }
+    }
+
+    .animate-particle {
+      animation: particleFloat 2s ease-out forwards;
+    }
+
+    /* Eyebrow raise for emphasis */
+    @keyframes eyebrowPulse {
+
+      0%,
+      100% {
+        transform: translateY(0);
+      }
+
+      50% {
+        transform: translateY(-0.5px);
+      }
+    }
+
+    .animate-eyebrow {
+      animation: eyebrowPulse 0.3s ease-in-out;
+    }
+
+    /* Color shifting gradient for thinking */
+    @keyframes colorShift {
+
+      0%,
+      100% {
+        background: linear-gradient(135deg, rgba(14, 165, 233, 0.4), rgba(6, 182, 212, 0.3));
+      }
+
+      33% {
+        background: linear-gradient(135deg, rgba(139, 92, 246, 0.4), rgba(236, 72, 153, 0.3));
+      }
+
+      66% {
+        background: linear-gradient(135deg, rgba(167, 139, 250, 0.4), rgba(244, 114, 182, 0.3));
+      }
+    }
+
+    .animate-color-shift {
+      animation: colorShift 4s ease-in-out infinite;
+    }
+
+    /* Eye shimmer effect */
+    @keyframes eyeShimmer {
+
+      0%,
+      100% {
+        opacity: 0.9;
+      }
+
+      50% {
+        opacity: 0.5;
+      }
+    }
+
+    .animate-eye-shimmer {
+      animation: eyeShimmer 3s ease-in-out infinite;
+    }
+
+    /* Thinking dots orbit */
+    @keyframes thinkingOrbit {
+      0% {
+        transform: rotate(0deg) translateX(20px) rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg) translateX(20px) rotate(-360deg);
+      }
+    }
+
+    .animate-thinking-orbit {
+      animation: thinkingOrbit 2s linear infinite;
+    }
+
+    /* Mouth glow when speaking */
+    @keyframes mouthGlow {
+
+      0%,
+      100% {
+        filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.3));
+      }
+
+      50% {
+        filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.7));
+      }
+    }
+
+    /* Avatar entrance animation */
+    @keyframes avatarEntrance {
+      0% {
+        transform: scale(0.8) translateY(20px);
+        opacity: 0;
+      }
+
+      100% {
+        transform: scale(1) translateY(0);
+        opacity: 1;
+      }
+    }
+
+    .animate-entrance {
+      animation: avatarEntrance 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    /* Liquid morphing blob for background */
+    @keyframes liquidMorph {
+
+      0%,
+      100% {
+        border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
+        transform: rotate(0deg);
+      }
+
+      50% {
+        border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%;
+        transform: rotate(180deg);
+      }
+    }
+
+    .animate-liquid {
+      animation: liquidMorph 20s ease-in-out infinite;
+    }
+
+    /* Ring pulse for orbital effects */
+    @keyframes ringPulse {
+
+      0%,
+      100% {
+        opacity: 0.3;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: 0.6;
+        transform: scale(1.05);
+      }
+    }
+
+    .animate-ring-pulse {
+      animation: ringPulse 2s ease-in-out infinite;
+    }
+  </style>
+</head>
+
+<body class="text-white selection:bg-sky-500/30">
+  <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+
 </html>
