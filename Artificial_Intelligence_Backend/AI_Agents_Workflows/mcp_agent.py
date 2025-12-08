@@ -70,7 +70,7 @@ def _clean_output_artifacts(text: str) -> str:
     Strategy:
     - Drop lines that are only an artifact token.
     - Remove tokens anywhere using a compiled regex with surrounding whitespace.
-    - Tidy trailing unmatched angle brackets that can appear due to partial tokens.
+    - Only remove clearly identified artifact patterns, preserve all other content.
     """
     if not isinstance(text, str):
         return text
@@ -82,23 +82,18 @@ def _clean_output_artifacts(text: str) -> str:
     lines = [ln for ln in text.splitlines() if not _is_artifact_line(ln)]
     cleaned = "\n".join(lines)
 
-    # 2) Remove artifact tokens appearing inline
-    cleaned = _ARTIFACT_TOKEN_REGEX.sub(" ", cleaned)
+    # 2) Remove artifact tokens appearing inline (but preserve surrounding structure)
+    cleaned = _ARTIFACT_TOKEN_REGEX.sub("", cleaned)
 
-    # 3) Normalize spacing and trim
-    cleaned = re.sub(r"[ \t]+", " ", cleaned)
-    cleaned = re.sub(r"\s*\n\s*", "\n", cleaned).strip()
-
-    # 4) Remove stray terminal angle brackets only if not part of a tag
-    if cleaned.endswith(">") and not re.search(r"</?\w+>$", cleaned):
-        cleaned = cleaned[:-1].rstrip()
-    if cleaned.endswith("<"):
-        cleaned = cleaned[:-1].rstrip()
-
-    # 5) Strip common partial artifact tails like "<|" or a lone "|"
-    cleaned = re.sub(r"\s*(?:<\|?|\|)\s*$", "", cleaned).rstrip()
-
-    return cleaned
+    # 3) Only strip trailing artifact patterns, not general characters
+    # Remove only if there's a clear partial artifact at the end
+    cleaned = re.sub(r"\s*<\|[^>]*$", "", cleaned)  # Incomplete <|...|> at end
+    cleaned = re.sub(r"\s*<\|im_[^>]*$", "", cleaned, flags=re.IGNORECASE)  # Partial im_start/end
+    
+    # 4) Clean up excessive blank lines but preserve structure
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    
+    return cleaned.strip()
 
 
 def run_agent(query, user_id, session_id, images=None, audio=None, videos=None):

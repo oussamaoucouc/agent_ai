@@ -93,73 +93,32 @@ def clean_model_output(text: str) -> str:
     if not text:
         return ""
 
-    # Remove <think> blocks (case-insensitive, multiline)
+    # Remove <think> blocks (case-insensitive, multiline) - these are reasoning traces
     text = re.sub(r'(?is)<think>.*?</think>', '', text)
 
-    # Remove common chain-of-thought or tool traces enclosed in bracket tags
+    # Remove specific chain-of-thought markers ONLY if they're clearly delimited
     labels = [
-        'TOOL_CALLS', 'ANALYSIS', 'REASONING', 'INTERNAL', 'SYSTEM', 'DEBUG', 'SCRATCHPAD'
+        'TOOL_CALLS', 'INTERNAL', 'SYSTEM', 'DEBUG', 'SCRATCHPAD'
     ]
     for label in labels:
         # [LABEL] ... [/LABEL]
         text = re.sub(rf'(?is)\[{label}\].*?\[/{label}\]', '', text)
-        # [LABEL] ... [LABEL] (duplicate marker style)
-        text = re.sub(rf'(?is)\[{label}\].*?\[{label}\]', '', text)
-        # [LABEL] ... end-of-line
-        text = re.sub(rf'(?is)\[{label}\].*?(?=\n|$)', '', text)
 
-    # Prefer explicit final-response markers if present
-    m = re.search(r'(?is)(Final Response:|Final Answer:|Assistant Response:|User-facing response:)\s*(.*)', text)
-    if m:
-        text = m.group(2)
-    else:
-        m2 = re.search(r'(?is)(Response:|Answer:)\s*(.*)', text)
-        if m2:
-            text = m2.group(2)
+    # Remove common model artifact tokens (chat template markers)
+    artifact_tokens = [
+        r'<\|im_end\|>', r'<\|im_start\|>', r'<\|eot\|>', r'<eot>', 
+        r'</s>', r'<end_of_role>', r'<end_of_turn>', r'end_of_turn'
+    ]
+    for token in artifact_tokens:
+        text = re.sub(token, '', text, flags=re.IGNORECASE)
 
-    # Remove markdown code fences and language hints
-    text = re.sub(r'```[a-zA-Z]*\s*', '', text)
-    text = re.sub(r'```', '', text)
-
-    # Strip list/step markers and drop internal API/function-like traces
-    lines = text.splitlines()
-    cleaned_lines = []
-    func_like = re.compile(r"\b[a-zA-Z_][a-zA-Z0-9_]*\s*\(.*\)")
-    bulk_like = re.compile(r"\bget[a-zA-Z0-9]+(?:TTMBulk|Bulk)\b")
-    api_examples = re.compile(r"(?is)examples of API calls|API calls you can make")
-    for line in lines:
-        base = re.sub(r'^\s*(?:[-*]\s+|\d+[.)]\s+|Step\s*\d+\s*:)', '', line)
-        # Drop lines that look like internal examples or function identifiers
-        if (
-            api_examples.search(base)
-            or bulk_like.search(base)
-            or func_like.search(base)
-            or re.search(r'^\s*\"?arguments\"?\s*:\s*\{.*\}\s*$', base)
-            or re.fullmatch(r"\s*[{}]\s*", base)
-        ):
-            continue
-        cleaned_lines.append(base)
-    text = '\n'.join(cleaned_lines)
+    # Remove markdown code fences ONLY if they wrap JSON/code blocks (not user content)
+    # Only remove fences that start with specific language hints
+    text = re.sub(r'```(?:json|python|javascript|bash)\s*(.*?)```', r'\1', text, flags=re.DOTALL)
 
     # Collapse excessive blank lines and trim
     text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
     text = text.strip()
-
-    # Fallback: choose a sensible paragraph if brackets remain or text is meta-heavy
-    if not text or re.search(r'(?is)\[[A-Z][A-Z_]+\]', text):
-        paragraphs = [p.strip() for p in re.split(r'\n\s*\n', text) if p.strip()]
-        candidates = [p for p in paragraphs if not re.search(r'(?is)\[[A-Z][A-Z_]+\]', p)]
-        if candidates:
-            # Prefer last sentence-like paragraph, else the longest
-            selected = None
-            for p in reversed(candidates):
-                if re.search(r'[.!?]\s*$', p):
-                    selected = p
-                    break
-            text = selected or max(candidates, key=len)
-        else:
-            # As last resort, remove any bracket tags and trim
-            text = re.sub(r'(?is)\[[A-Z][A-Z_]+\]', '', text).strip()
 
     return text
 
