@@ -11,7 +11,39 @@ from agno.agent import Agent, RunResponse
 from agno.storage.postgres import PostgresStorage
 from agno.tools.mcp import MultiMCPTools, MCPTools
 from . import config as cfg
+
 from . import model_factory
+
+class MCPToolFunction:
+    """Wrapper for MCP tool function to satisfy Agno's expected interface."""
+    def __init__(self, name, description, parameters, callable_func):
+        self.name = name
+        self.description = description
+        self.parameters = parameters
+        # Support both likely expected attribute names
+        self.entrypoint = callable_func
+        self.callable = callable_func
+        # Additional attributes that agno may expect
+        self._processed = False
+        self.strict = False
+    
+    def process_entrypoint(self, strict: bool = False):
+        """Process the entrypoint - required by agno framework."""
+        self.strict = strict
+        self._processed = True
+        # No-op for MCP tools since they're already processed
+        pass
+    
+    def to_dict(self) -> dict:
+        """Serialize this function to a dict for model consumption - required by agno."""
+        return {
+            "name": self.name,
+            "description": self.description or f"Tool: {self.name}",
+            "parameters": self.parameters or {"type": "object", "properties": {}}
+        }
+    
+    def __call__(self, *args, **kwargs):
+        return self.entrypoint(*args, **kwargs)
 
 logger = logging.getLogger(__name__)
 
@@ -425,10 +457,22 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
     if gateway_toolkit and gateway_toolkit.session:
         for name, env_vars in servers_to_add:
             try:
-                args = {'name': name, 'activate': True}  # activate=True exposes tools in list_tools!
+                # First, use mcp-config-set to configure any required env vars for this server
                 if env_vars:
-                    args['env'] = env_vars
-                    
+                    for key, value in env_vars.items():
+                        try:
+                            # mcp-config-set requires: server, key, value as separate parameters
+                            config_result = await gateway_toolkit.session.call_tool(
+                                'mcp-config-set', 
+                                {'server': name, 'key': key, 'value': str(value)}
+                            )
+                            config_text = str(config_result.content[0].text) if config_result.content else ""
+                            logger.info(f"Set config {name}.{key}: {config_text[:80]}")
+                        except Exception as cfg_err:
+                            logger.warning(f"Failed to set config {name}.{key}: {cfg_err}")
+                
+                # Now add the server
+                args = {'name': name, 'activate': True}  # activate=True exposes tools in list_tools!
                 result = await gateway_toolkit.session.call_tool('mcp-add', args)
                 result_text = str(result.content[0].text) if result.content else ""
                 logger.info(f"MCP server {name} added to Gateway: {result_text[:100]}")
@@ -458,12 +502,14 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
                         return await gateway_toolkit.session.call_tool(name, kwargs)
                     
                     # Register with Agno's function format
-                    gateway_toolkit.functions[tool_name] = {
-                        "name": tool_name,
-                        "description": tool_def.description or f"Tool: {tool_name}",
-                        "parameters": tool_def.inputSchema or {},
-                        "callable": tool_caller
-                    }
+                    # Register with Agno's function format using our wrapper object
+                    # Resolves AttributeError: 'dict' object has no attribute 'parameters'
+                    gateway_toolkit.functions[tool_name] = MCPToolFunction(
+                        name=tool_name,
+                        description=tool_def.description or f"Tool: {tool_name}",
+                        parameters=tool_def.inputSchema or {},
+                        callable_func=tool_caller
+                    )
                     logger.info(f"Registered tool: {tool_name}")
             
             final_tools = list(gateway_toolkit.functions.keys())
