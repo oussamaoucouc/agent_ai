@@ -1208,18 +1208,22 @@ const App: React.FC = () => {
                         </div>
                     </div>
                 </main>
-                {spokenResponses && (
-                    <aside className="w-[28rem] flex-shrink-0 bg-slate-900/30 backdrop-blur-2xl border-l border-slate-500/30 hidden lg:flex flex-col p-6">
-                        <div className="flex-1 flex items-center justify-center">
-                            <AvatarView
-                                isSpeaking={isSpeaking}
-                                currentViseme={currentViseme}
-                                isLoading={isLoading}
-                                isConversationStarted={isConversationStarted}
-                            />
-                        </div>
-                    </aside>
-                )}
+                {/* Avatar Panel with smooth transition */}
+                <aside
+                    className={`w-[28rem] flex-shrink-0 bg-slate-900/30 backdrop-blur-2xl border-l border-slate-500/30 hidden lg:flex flex-col p-6 transition-all duration-500 ease-in-out ${spokenResponses
+                            ? 'translate-x-0 opacity-100'
+                            : 'translate-x-full opacity-0 pointer-events-none absolute right-0 top-0 bottom-0'
+                        }`}
+                >
+                    <div className="flex-1 flex items-center justify-center">
+                        <AvatarView
+                            isSpeaking={isSpeaking}
+                            currentViseme={currentViseme}
+                            isLoading={isLoading}
+                            isConversationStarted={isConversationStarted}
+                        />
+                    </div>
+                </aside>
             </div>
         );
     };

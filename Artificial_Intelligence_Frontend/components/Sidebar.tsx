@@ -149,8 +149,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         if (isSelectingGateway && !isAlreadySelected) {
             if (onShowConfirmation) {
                 onShowConfirmation(
-                    'Docker MCP Gateway Mode',
-                    'Selecting Docker Gateway enables exclusive mode. All other Web Tools and Local Tools will be cleared. Do you want to continue?',
+                    'Docker Tools Mode',
+                    'Selecting Docker Tools enables exclusive mode. All other Web Tools and Local Tools will be cleared. Do you want to continue?',
                     () => {
                         // On confirm: select only Docker gateway and clear Local Tools
                         onSelectedMcpToolsChange([label]);
@@ -398,44 +398,64 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             {/* Autonomous Mode - Docker Gateway Section */}
                             {mcpToolsCatalog.some(isDockerGateway) && (
                                 <>
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <h3 className="text-sm font-medium text-orange-400">🤖 Autonomous Mode</h3>
-                                        {isDockerGatewayActive && (
-                                            <span className="text-[10px] bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full border border-orange-500/30 animate-pulse">
-                                                Active
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className="grid grid-cols-1 gap-2 mb-3">
-                                        {mcpToolsCatalog.filter(isDockerGateway).map(tool => {
-                                            const isSelected = selectedMcpTools.includes(tool.label);
-                                            return (
-                                                <button
-                                                    key={tool.label}
-                                                    onClick={() => toggleMcpTool(tool.label)}
-                                                    disabled={!canSelectTools}
-                                                    className={`px-3 py-2 text-xs rounded-lg transition-all duration-200 border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-orange-500 ${isSelected
-                                                        ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold border-orange-400 shadow-lg shadow-orange-500/30'
-                                                        : canSelectTools
-                                                            ? 'bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 border-orange-500/30 hover:border-orange-500/60'
-                                                            : 'bg-slate-800/50 opacity-50 cursor-not-allowed text-slate-300 border-slate-600'
-                                                        }`}
-                                                    title="Enable full autonomous mode with all Docker tools"
-                                                >
-                                                    <span className="flex items-center justify-center gap-2">
-                                                        <span>⚡</span>
-                                                        <span>{tool.label}</span>
+                                    {/* Compact Autonomous Mode Card */}
+                                    <div className={`relative overflow-hidden rounded-lg p-[1px] transition-all duration-300 ${isDockerGatewayActive ? 'bg-gradient-to-r from-orange-700/60 via-amber-700/50 to-orange-700/60' : 'bg-slate-700/40'}`}>
+                                        <div className="relative bg-slate-900/95 backdrop-blur-sm rounded-lg p-3">
+                                            {/* Header */}
+                                            <div className="flex items-center justify-between mb-2 relative z-10">
+                                                <div className="flex items-center gap-2">
+                                                    <div className={`p-1 rounded transition-all duration-300 ${isDockerGatewayActive ? 'bg-orange-700/80' : 'bg-slate-700/60'}`}>
+                                                        <svg className={`w-3.5 h-3.5 ${isDockerGatewayActive ? 'text-orange-200' : 'text-slate-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                                        </svg>
+                                                    </div>
+                                                    <h3 className={`text-xs font-medium ${isDockerGatewayActive ? 'text-orange-300' : 'text-slate-400'}`}>
+                                                        Autonomous Mode
+                                                    </h3>
+                                                </div>
+                                                {isDockerGatewayActive && (
+                                                    <span className="flex items-center gap-1 text-[9px] font-medium bg-orange-800/60 text-orange-200 px-1.5 py-0.5 rounded-full">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse"></span>
+                                                        ACTIVE
                                                     </span>
-                                                </button>
-                                            );
-                                        })}
+                                                )}
+                                            </div>
+
+                                            {/* Docker Tools */}
+                                            <div className="relative z-10">
+                                                {mcpToolsCatalog.filter(isDockerGateway).map(tool => {
+                                                    const isSelected = selectedMcpTools.includes(tool.label);
+                                                    return (
+                                                        <button
+                                                            key={tool.label}
+                                                            onClick={() => toggleMcpTool(tool.label)}
+                                                            disabled={!canSelectTools}
+                                                            className={`w-full px-3 py-2 text-xs rounded-md transition-all duration-200 border focus:outline-none ${isSelected
+                                                                ? 'bg-orange-800/70 text-orange-100 font-medium border-orange-700/50'
+                                                                : canSelectTools
+                                                                    ? 'bg-slate-800/60 hover:bg-slate-800/80 text-slate-300 border-slate-600/50 hover:border-slate-500/60'
+                                                                    : 'bg-slate-800/30 opacity-50 cursor-not-allowed text-slate-500 border-slate-700/30'
+                                                                }`}
+                                                            title="Enable full autonomous mode with all Docker tools"
+                                                        >
+                                                            <span className="flex items-center justify-center gap-2">
+                                                                <span className="text-sm">⚡</span>
+                                                                <span>{tool.label}</span>
+                                                            </span>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            {/* Description */}
+                                            <p className="text-[10px] text-slate-500 mt-2 relative z-10">
+                                                {isDockerGatewayActive
+                                                    ? '✓ All Docker tools active. Other tools disabled.'
+                                                    : 'Enables all containerized tools in one click.'}
+                                            </p>
+                                        </div>
                                     </div>
-                                    <p className="text-xs text-orange-400/60 mb-4 italic">
-                                        {isDockerGatewayActive
-                                            ? 'All Docker tools active. Other tools disabled.'
-                                            : 'Enables all containerized tools in one click.'}
-                                    </p>
-                                    <div className="border-t border-slate-700/50 my-3"></div>
+                                    <div className="border-t border-slate-700/30 my-3"></div>
                                 </>
                             )}
 

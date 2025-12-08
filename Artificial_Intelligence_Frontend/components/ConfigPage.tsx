@@ -618,31 +618,56 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                 {config.mcp_transport === 'streamable-http' && (
                   <div className="space-y-6">
                     {/* Autonomous Mode Section - Docker Gateway Tools */}
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-orange-400">🤖 Autonomous Mode</span>
-                        <span className="text-xs text-orange-400/60 bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/20">Exclusive Selection</span>
+                    <div className="space-y-3">
+                      {/* Compact Header */}
+                      <div className="relative overflow-hidden rounded-lg p-[1px] bg-slate-700/50">
+                        <div className="relative bg-slate-900/95 backdrop-blur-sm rounded-lg p-3">
+                          {/* Header */}
+                          <div className="flex items-center justify-between mb-1.5 relative z-10">
+                            <div className="flex items-center gap-2">
+                              <div className="p-1.5 bg-orange-800/60 rounded">
+                                <svg className="w-4 h-4 text-orange-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                </svg>
+                              </div>
+                              <h3 className="text-sm font-medium text-slate-300">
+                                Autonomous Mode
+                              </h3>
+                            </div>
+                            <span className="flex items-center gap-1 text-[10px] font-medium bg-slate-800 text-slate-400 px-2 py-1 rounded border border-slate-600/50">
+                              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                              </svg>
+                              Exclusive
+                            </span>
+                          </div>
+
+                          <p className="text-[10px] text-slate-500 relative z-10">
+                            Only one Autonomous Mode server can be selected at a time.
+                          </p>
+                        </div>
                       </div>
-                      <p className="text-xs text-orange-400/50 italic -mt-2">
-                        Users can only select one Autonomous Mode server at a time. All other tools will be disabled.
-                      </p>
-                      <div className="grid grid-cols-1 gap-3">
+
+                      {/* Server Entries */}
+                      <div className="grid grid-cols-1 gap-2">
                         {(config.mcp_servers || []).map((srv, idx) => {
                           // Use is_autonomous flag with fallback to URL pattern for backward compatibility
                           const isAutonomous = srv.is_autonomous ?? srv.url.toLowerCase().includes('mcp-gateway');
                           if (!isAutonomous) return null;
                           return (
-                            <div key={idx} className="group relative bg-gradient-to-r from-orange-500/10 to-amber-500/5 border border-orange-500/30 rounded-xl p-3 flex items-center gap-3 hover:border-orange-500/50 transition-all shadow-lg shadow-orange-500/5">
-                              <div className="p-2 bg-orange-500/20 rounded-lg text-orange-400">
-                                <GlobeIcon className="w-5 h-5" />
+                            <div key={idx} className="group relative overflow-hidden rounded-lg p-[1px] bg-slate-700/60 hover:bg-orange-800/40 transition-all duration-200">
+                              <div className="relative bg-slate-900/95 backdrop-blur-sm rounded-lg p-3 flex items-center gap-3">
+                                <div className="p-1.5 bg-orange-800/50 rounded relative z-10">
+                                  <GlobeIcon className="w-4 h-4 text-orange-300" />
+                                </div>
+                                <div className="flex-1 min-w-0 relative z-10">
+                                  <input type="text" value={srv.label} onChange={(e) => updateServer(idx, 'label', e.target.value)} className="w-full bg-transparent border-none p-0 text-sm font-medium text-slate-200 focus:ring-0 placeholder-slate-500" placeholder="Server Label" />
+                                  <input type="text" value={srv.url} onChange={(e) => updateServer(idx, 'url', e.target.value)} className="w-full bg-transparent border-none p-0 text-[11px] text-slate-500 focus:text-slate-400 focus:ring-0 font-mono transition-colors" placeholder="http://host.docker.internal:8087/mcp" />
+                                </div>
+                                <button onClick={() => removeServer(idx)} className="p-1.5 rounded text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-all opacity-0 group-hover:opacity-100 relative z-10">
+                                  <TrashIcon className="w-4 h-4" />
+                                </button>
                               </div>
-                              <div className="flex-1 min-w-0">
-                                <input type="text" value={srv.label} onChange={(e) => updateServer(idx, 'label', e.target.value)} className="w-full bg-transparent border-none p-0 text-sm font-medium text-orange-200 focus:ring-0" placeholder="Server Label" />
-                                <input type="text" value={srv.url} onChange={(e) => updateServer(idx, 'url', e.target.value)} className="w-full bg-transparent border-none p-0 text-xs text-orange-400/60 focus:text-orange-400 focus:ring-0 font-mono" placeholder="http://host.docker.internal:8087/mcp" />
-                              </div>
-                              <button onClick={() => removeServer(idx)} className="p-1.5 rounded-lg text-orange-400/50 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100">
-                                <TrashIcon className="w-4 h-4" />
-                              </button>
                             </div>
                           );
                         })}
@@ -656,14 +681,16 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                                 mcp_servers: [...(prev.mcp_servers || []), { label: 'Docker Tools Container', url: 'http://mcp-gateway:8080/mcp', is_autonomous: true }]
                               } : prev);
                             }}
-                            className="group relative border-2 border-dashed border-orange-500/30 rounded-xl p-3 flex items-center gap-3 hover:border-orange-500/50 hover:bg-orange-500/5 transition-all"
+                            className="group relative rounded-lg border border-dashed border-slate-600/60 hover:border-slate-500 bg-slate-900/50 hover:bg-slate-800/50 transition-all duration-200"
                           >
-                            <div className="p-2 bg-orange-500/10 rounded-lg text-orange-400/60 group-hover:text-orange-400 transition-colors">
-                              <PlusIcon className="w-5 h-5" />
-                            </div>
-                            <div className="flex-1 text-left">
-                              <span className="block text-sm font-medium text-orange-300/80 group-hover:text-orange-300">Add Autonomous Server</span>
-                              <span className="block text-xs text-orange-400/40">Any URL - port and host configurable</span>
+                            <div className="p-3 flex items-center gap-3">
+                              <div className="p-1.5 bg-slate-800 rounded text-slate-500 group-hover:text-orange-400 transition-colors">
+                                <PlusIcon className="w-4 h-4" />
+                              </div>
+                              <div className="flex-1 text-left">
+                                <span className="block text-sm font-medium text-slate-400 group-hover:text-slate-300 transition-colors">Add Autonomous Server</span>
+                                <span className="block text-[10px] text-slate-600">Any URL - port and host configurable</span>
+                              </div>
                             </div>
                           </button>
                         )}
