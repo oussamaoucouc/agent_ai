@@ -14,7 +14,7 @@ export const AvatarView: React.FC<AvatarViewProps> = ({ isSpeaking, isLoading, c
             <Avatar isSpeaking={isSpeaking} currentViseme={currentViseme} isLoading={isLoading} />
             <h2 className="mt-8 text-2xl font-bold text-slate-200">AI Assistant</h2>
             {isLoading ? (
-                <p className="mt-2 text-sky-300 max-w-sm">Thinking...</p>
+                <p className="mt-2 text-sky-300 max-w-sm">Generating Speaking...</p>
             ) : isSpeaking ? (
                 <div className="flex items-center justify-center gap-2 mt-2">
                     <div className="flex gap-0.5">

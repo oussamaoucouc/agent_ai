@@ -25,7 +25,8 @@ import {
     ConfigUpdateRequest,
     ModelsCatalogResponse,
     ConfigPathResponse,
-    SessionSettingsResponse
+    SessionSettingsResponse,
+    VisemeData
 } from '../types';
 
 const authHeaders = (): Record<string, string> => {
@@ -268,38 +269,193 @@ export const queryAgent = async (
     }
 };
 
-export const queryTTS = async (request: QueryRequest, signal?: AbortSignal): Promise<QueryTTSResponse> => {
+const handleTTSStream = async (
+    response: Response,
+    request: QueryRequest,
+    onChunk?: (text: string) => void
+): Promise<QueryTTSResponse> => {
+    // Check if it's a streaming response
+    const contentType = response.headers.get('content-type');
+    if (contentType?.includes('text/event-stream') && onChunk) {
+        // Handle SSE streaming
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let fullResponse = '';
+        let audioFilename: string | undefined;
+        let visemes: VisemeData | undefined;
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n\n');
+            buffer = lines.pop() || ''; // Keep incomplete chunk in buffer
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.slice(6));
+                        if (data.content) {
+                            onChunk(data.content);
+                            fullResponse += data.content;
+                        }
+                        if (data.done) {
+                            if (data.full_response) fullResponse = data.full_response;
+                            if (data.audio_filename) audioFilename = data.audio_filename;
+                            if (data.visemes) visemes = data.visemes;
+                        }
+                        if (data.error) {
+                            throw new Error(data.error);
+                        }
+                    } catch (e) {
+                        // Ignore parse errors for incomplete chunks
+                        if (e instanceof SyntaxError) continue;
+                        throw e;
+                    }
+                }
+            }
+        }
+
+        return {
+            user_id: request.user_id,
+            session_id: request.session_id,
+            response: fullResponse,
+            audio_filename: audioFilename,
+            visemes: visemes,
+            status: 'success'
+        };
+    } else {
+        // Fallback to non-streaming response
+        return handleResponse<QueryTTSResponse>(response);
+    }
+};
+
+export const queryTTS = async (
+    request: QueryRequest,
+    signal?: AbortSignal,
+    onChunk?: (text: string) => void
+): Promise<QueryTTSResponse> => {
     const response = await authedFetch(`${API_BASE_URL}/query_tts_direct`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
         signal,
     });
-    return handleResponse<QueryTTSResponse>(response);
+    return handleTTSStream(response, request, onChunk);
 };
 
-export const queryMcpTTS = async (request: QueryRequest, signal?: AbortSignal): Promise<QueryTTSResponse> => {
+export const queryMcpTTS = async (
+    request: QueryRequest,
+    signal?: AbortSignal,
+    onChunk?: (text: string) => void
+): Promise<QueryTTSResponse> => {
     const response = await authedFetch(`${API_BASE_URL}/query_mcp_tts_direct`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
         signal,
     });
-    return handleResponse<QueryTTSResponse>(response);
+    return handleTTSStream(response, request, onChunk);
 };
 
-export const queryAgentTTS = async (request: QueryRequest, signal?: AbortSignal): Promise<QueryTTSResponse> => {
+export const queryAgentTTS = async (
+    request: QueryRequest,
+    signal?: AbortSignal,
+    onChunk?: (text: string) => void
+): Promise<QueryTTSResponse> => {
     const response = await authedFetch(`${API_BASE_URL}/query_assistant_tts_direct`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
         signal,
     });
-    return handleResponse<QueryTTSResponse>(response);
+    return handleTTSStream(response, request, onChunk);
 };
 
 
-export const fullAgent = async (request: FullAgentRequest, signal?: AbortSignal): Promise<FullAgentResponse> => {
+const handleFullAgentStream = async (
+    response: Response,
+    request: FullAgentRequest,
+    onChunk?: (text: string) => void,
+    onTranscription?: (text: string) => void
+): Promise<FullAgentResponse> => {
+    // Check if it's a streaming response
+    const contentType = response.headers.get('content-type');
+    if (contentType?.includes('text/event-stream') && (onChunk || onTranscription)) {
+        // Handle SSE streaming
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let fullResponse = '';
+        let audioFilename: string | undefined;
+        let visemes: VisemeData | undefined;
+        let transcribedText = '';
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n\n');
+            buffer = lines.pop() || ''; // Keep incomplete chunk in buffer
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.slice(6));
+
+                        // Handle transcription event (new)
+                        if (data.type === 'transcription' && data.text) {
+                            transcribedText = data.text;
+                            if (onTranscription) onTranscription(data.text);
+                        }
+
+                        if (data.content) {
+                            onChunk && onChunk(data.content);
+                            fullResponse += data.content;
+                        }
+                        if (data.done) {
+                            if (data.full_response) fullResponse = data.full_response;
+                            if (data.audio_filename) audioFilename = data.audio_filename;
+                            if (data.visemes) visemes = data.visemes;
+                            // Update transcribedText if provided in done event (fallback)
+                            if (data.text) transcribedText = data.text;
+                        }
+                        if (data.error) {
+                            throw new Error(data.error);
+                        }
+                    } catch (e) {
+                        // Ignore parse errors for incomplete chunks
+                        if (e instanceof SyntaxError) continue;
+                        throw e;
+                    }
+                }
+            }
+        }
+
+        return {
+            user_id: request.user_id,
+            session_id: request.session_id,
+            text: transcribedText,
+            response: fullResponse,
+            audio_filename: audioFilename || null,
+            visemes: visemes!,
+            status: 'success'
+        };
+    } else {
+        // Fallback to non-streaming response
+        return handleResponse<FullAgentResponse>(response);
+    }
+};
+
+export const fullAgent = async (
+    request: FullAgentRequest,
+    signal?: AbortSignal,
+    onChunk?: (text: string) => void,
+    onTranscription?: (text: string) => void
+): Promise<FullAgentResponse> => {
     const formData = new FormData();
     formData.append('file', request.file, 'recording.webm');
     formData.append('user_id', request.user_id);
@@ -314,10 +470,15 @@ export const fullAgent = async (request: FullAgentRequest, signal?: AbortSignal)
         headers: authHeaders(),
         signal,
     });
-    return handleResponse<FullAgentResponse>(response);
+    return handleFullAgentStream(response, request, onChunk, onTranscription);
 };
 
-export const fullAgentMcp = async (request: FullAgentRequest, signal?: AbortSignal): Promise<FullAgentResponse> => {
+export const fullAgentMcp = async (
+    request: FullAgentRequest,
+    signal?: AbortSignal,
+    onChunk?: (text: string) => void,
+    onTranscription?: (text: string) => void
+): Promise<FullAgentResponse> => {
     const formData = new FormData();
     formData.append('file', request.file, 'recording.webm');
     formData.append('user_id', request.user_id);
@@ -332,10 +493,15 @@ export const fullAgentMcp = async (request: FullAgentRequest, signal?: AbortSign
         headers: authHeaders(),
         signal,
     });
-    return handleResponse<FullAgentResponse>(response);
+    return handleFullAgentStream(response, request, onChunk, onTranscription);
 };
 
-export const fullAgentAgent = async (request: FullAgentRequest, signal?: AbortSignal): Promise<FullAgentResponse> => {
+export const fullAgentAgent = async (
+    request: FullAgentRequest,
+    signal?: AbortSignal,
+    onChunk?: (text: string) => void,
+    onTranscription?: (text: string) => void
+): Promise<FullAgentResponse> => {
     const formData = new FormData();
     formData.append('file', request.file, 'recording.webm');
     formData.append('user_id', request.user_id);
@@ -350,7 +516,7 @@ export const fullAgentAgent = async (request: FullAgentRequest, signal?: AbortSi
         headers: authHeaders(),
         signal,
     });
-    return handleResponse<FullAgentResponse>(response);
+    return handleFullAgentStream(response, request, onChunk, onTranscription);
 };
 
 export const uploadDocument = async (request: UploadDocumentRequest, signal?: AbortSignal): Promise<UploadDocumentResponse> => {

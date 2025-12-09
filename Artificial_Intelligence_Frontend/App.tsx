@@ -794,16 +794,52 @@ const App: React.FC = () => {
             switch (queryMode) {
                 case 'agent':
                     if (spokenResponses) {
-                        const data = await queryAgentTTS(requestParams, controller.signal);
+                        const streamingMessageId = crypto.randomUUID();
                         assistantMessage = {
-                            id: crypto.randomUUID(),
-                            text: formatAssistantText(data.response),
+                            id: streamingMessageId,
+                            text: '',
                             sender: User.ASSISTANT,
-                            audioUrl: data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}` : undefined,
-                            visemes: data.visemes,
                         };
-                        if (assistantMessage.audioUrl && assistantMessage.visemes) {
-                            playAudioWithVisemes(assistantMessage.audioUrl, assistantMessage.visemes, assistantMessage.id);
+                        setMessages(prev => [...prev, assistantMessage]);
+                        // Keep isLoading=true so Avatar stays in thinking/generating mode while text streams
+                        isStreamingRef.current = true;
+
+                        const data = await queryAgentTTS(requestParams, controller.signal, (chunk) => {
+                            setMessages(prev => prev.map(m => {
+                                if (m.id === streamingMessageId) {
+                                    const newText = m.text + chunk;
+                                    const formatted = newText
+                                        .replace(/^\s*\{\s*$/gm, '')
+                                        .replace(/^\s*\}\s*$/gm, '')
+                                        .replace(/^\s*"[^"]*":\s*\[\s*$/gm, '')
+                                        .replace(/^\s*"[^"]*":\s*"([^"]*)"[,]?\s*$/gm, '$1')
+                                        .replace(/^\s*\]\s*[,]?\s*$/gm, '')
+                                        .replace(/^\s*[,]\s*$/gm, '')
+                                        .replace(/key_findings/gi, 'Key Points')
+                                        .replace(/\bdetails\b/gi, 'Explanation')
+                                        .replace(/\bconclusion\b/gi, 'Summary')
+                                        .replace(/(?<!Additional\s)\bnotes\b/gi, 'Additional Notes');
+                                    return { ...m, text: formatted };
+                                }
+                                return m;
+                            }));
+                        });
+
+                        const audioUrl = data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}` : undefined;
+
+                        setMessages(prev => prev.map(m =>
+                            m.id === streamingMessageId
+                                ? { ...m, text: formatAssistantText(data.response) || ' ', audioUrl, visemes: data.visemes }
+                                : m
+                        ));
+
+                        setIsLoading(false); // Now we stop the thinking animation
+                        isStreamingRef.current = false;
+                        // Cleanup any stuck empty messages
+                        setMessages(prev => prev.filter(m => m.text.trim().length > 0 || (m.attachedImages?.length ?? 0) > 0 || (m.attachedAudio?.length ?? 0) > 0 || (m.attachedVideos?.length ?? 0) > 0));
+
+                        if (audioUrl && data.visemes) {
+                            playAudioWithVisemes(audioUrl, data.visemes, streamingMessageId);
                         }
                     } else {
                         // Create empty assistant message for streaming
@@ -813,15 +849,12 @@ const App: React.FC = () => {
                             text: '',
                             sender: User.ASSISTANT,
                         };
-                        // Add empty message immediately for smooth UX
                         setMessages(prev => [...prev, assistantMessage]);
                         // Stop showing loading indicator since we're now streaming
                         setIsLoading(false);
                         // Mark as streaming to prevent session save spam
                         isStreamingRef.current = true;
 
-
-                        // Stream the response with progressive updates
                         const data = await queryAgent(requestParams, controller.signal, (chunk) => {
                             // Append chunk and format immediately for smooth display
                             setMessages(prev => prev.map(m => {
@@ -865,16 +898,50 @@ const App: React.FC = () => {
                     break;
                 case 'tools':
                     if (spokenResponses) {
-                        const data = await queryMcpTTS(requestParams, controller.signal);
+                        const streamingMessageId = crypto.randomUUID();
                         assistantMessage = {
-                            id: crypto.randomUUID(),
-                            text: formatAssistantText(data.response),
+                            id: streamingMessageId,
+                            text: '',
                             sender: User.ASSISTANT,
-                            audioUrl: data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}` : undefined,
-                            visemes: data.visemes,
                         };
-                        if (assistantMessage.audioUrl && assistantMessage.visemes) {
-                            playAudioWithVisemes(assistantMessage.audioUrl, assistantMessage.visemes, assistantMessage.id);
+                        setMessages(prev => [...prev, assistantMessage]);
+                        isStreamingRef.current = true; // Keep isLoading=true for avatar
+
+                        const data = await queryMcpTTS(requestParams, controller.signal, (chunk) => {
+                            setMessages(prev => prev.map(m => {
+                                if (m.id === streamingMessageId) {
+                                    const newText = m.text + chunk;
+                                    const formatted = newText
+                                        .replace(/^\s*\{\s*$/gm, '')
+                                        .replace(/^\s*\}\s*$/gm, '')
+                                        .replace(/^\s*"[^"]*":\s*\[\s*$/gm, '')
+                                        .replace(/^\s*"[^"]*":\s*"([^"]*)"[,]?\s*$/gm, '$1')
+                                        .replace(/^\s*\]\s*[,]?\s*$/gm, '')
+                                        .replace(/^\s*[,]\s*$/gm, '')
+                                        .replace(/key_findings/gi, 'Key Points')
+                                        .replace(/\bdetails\b/gi, 'Explanation')
+                                        .replace(/\bconclusion\b/gi, 'Summary')
+                                        .replace(/(?<!Additional\s)\bnotes\b/gi, 'Additional Notes');
+                                    return { ...m, text: formatted };
+                                }
+                                return m;
+                            }));
+                        });
+
+                        const audioUrl = data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}` : undefined;
+
+                        setMessages(prev => prev.map(m =>
+                            m.id === streamingMessageId
+                                ? { ...m, text: formatAssistantText(data.response), audioUrl, visemes: data.visemes }
+                                : m
+                        ));
+
+                        setIsLoading(false);
+                        isStreamingRef.current = false;
+                        setMessages(prev => prev.filter(m => m.text.trim().length > 0 || (m.attachedImages?.length ?? 0) > 0 || (m.attachedAudio?.length ?? 0) > 0 || (m.attachedVideos?.length ?? 0) > 0));
+
+                        if (audioUrl && data.visemes) {
+                            playAudioWithVisemes(audioUrl, data.visemes, streamingMessageId);
                         }
                     } else {
                         // Create empty assistant message for streaming
@@ -919,7 +986,7 @@ const App: React.FC = () => {
                         // Update with final formatted response (full cleanup)
                         setMessages(prev => prev.map(m =>
                             m.id === streamingMessageId
-                                ? { ...m, text: formatAssistantText(data.response) }
+                                ? { ...m, text: formatAssistantText(data.response) || ' ' }
                                 : m
                         ));
 
@@ -934,16 +1001,50 @@ const App: React.FC = () => {
                 case 'direct':
                 default:
                     if (spokenResponses) {
-                        const data = await queryTTS(requestParams, controller.signal);
+                        const streamingMessageId = crypto.randomUUID();
                         assistantMessage = {
-                            id: crypto.randomUUID(),
-                            text: formatAssistantText(data.response),
+                            id: streamingMessageId,
+                            text: '',
                             sender: User.ASSISTANT,
-                            audioUrl: data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}` : undefined,
-                            visemes: data.visemes,
                         };
-                        if (assistantMessage.audioUrl && assistantMessage.visemes) {
-                            playAudioWithVisemes(assistantMessage.audioUrl, assistantMessage.visemes, assistantMessage.id);
+                        setMessages(prev => [...prev, assistantMessage]);
+                        isStreamingRef.current = true; // Keep isLoading=true for avatar
+
+                        const data = await queryTTS(requestParams, controller.signal, (chunk) => {
+                            setMessages(prev => prev.map(m => {
+                                if (m.id === streamingMessageId) {
+                                    const newText = m.text + chunk;
+                                    const formatted = newText
+                                        .replace(/^\s*\{\s*$/gm, '')
+                                        .replace(/^\s*\}\s*$/gm, '')
+                                        .replace(/^\s*"[^"]*":\s*\[\s*$/gm, '')
+                                        .replace(/^\s*"[^"]*":\s*"([^"]*)"[,]?\s*$/gm, '$1')
+                                        .replace(/^\s*\]\s*[,]?\s*$/gm, '')
+                                        .replace(/^\s*[,]\s*$/gm, '')
+                                        .replace(/key_findings/gi, 'Key Points')
+                                        .replace(/\bdetails\b/gi, 'Explanation')
+                                        .replace(/\bconclusion\b/gi, 'Summary')
+                                        .replace(/(?<!Additional\s)\bnotes\b/gi, 'Additional Notes');
+                                    return { ...m, text: formatted };
+                                }
+                                return m;
+                            }));
+                        });
+
+                        const audioUrl = data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}` : undefined;
+
+                        setMessages(prev => prev.map(m =>
+                            m.id === streamingMessageId
+                                ? { ...m, text: formatAssistantText(data.response) || ' ', audioUrl, visemes: data.visemes }
+                                : m
+                        ));
+
+                        setIsLoading(false);
+                        isStreamingRef.current = false;
+                        setMessages(prev => prev.filter(m => m.text.trim().length > 0 || (m.attachedImages?.length ?? 0) > 0 || (m.attachedAudio?.length ?? 0) > 0 || (m.attachedVideos?.length ?? 0) > 0));
+
+                        if (audioUrl && data.visemes) {
+                            playAudioWithVisemes(audioUrl, data.visemes, streamingMessageId);
                         }
                     } else {
                         // Create empty assistant message for streaming
@@ -996,12 +1097,12 @@ const App: React.FC = () => {
                         isStreamingRef.current = false;
                         // Skip adding message again since we already added it
                         setIsLoading(false);
+                        setMessages(prev => prev.filter(m => m.text.trim().length > 0 || (m.attachedImages?.length ?? 0) > 0 || (m.attachedAudio?.length ?? 0) > 0 || (m.attachedVideos?.length ?? 0) > 0));
                         abortControllerRef.current = null;
                         return;
                     }
                     break;
             }
-            setMessages(prev => [...prev, assistantMessage]);
 
         } catch (error: any) {
             if (error.name === 'AbortError') {
@@ -1028,6 +1129,10 @@ const App: React.FC = () => {
         const controller = new AbortController();
         abortControllerRef.current = controller;
 
+        isStreamingRef.current = true;
+        const streamingMessageId = crypto.randomUUID();
+        let assistantMessageAdded = false;
+
         try {
             const requestParams = {
                 file: audioBlob,
@@ -1035,34 +1140,72 @@ const App: React.FC = () => {
                 session_id: activeSessionId,
                 system_prompt: systemPrompt
             };
-            let data: FullAgentResponse;
 
-            switch (queryMode) {
-                case 'agent':
-                    data = await fullAgentAgent(requestParams, controller.signal);
-                    break;
-                case 'tools':
-                    data = await fullAgentMcp(requestParams, controller.signal);
-                    break;
-                case 'direct':
-                default:
-                    data = await fullAgent(requestParams, controller.signal);
-                    break;
-            }
-
-            const userMessage: Message = { id: crypto.randomUUID(), text: `🎤: "${data.text}"`, sender: User.USER };
-            const assistantMessage: Message = {
-                id: crypto.randomUUID(),
-                text: formatAssistantText(data.response),
-                sender: User.ASSISTANT,
-                audioUrl: data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}` : undefined,
-                visemes: data.visemes,
+            const onTranscription = (text: string) => {
+                if (assistantMessageAdded) return;
+                const userMessage: Message = { id: crypto.randomUUID(), text: `🎤: "${text}"`, sender: User.USER };
+                const assistantMessage: Message = {
+                    id: streamingMessageId,
+                    text: '',
+                    sender: User.ASSISTANT,
+                };
+                setMessages(prev => [...prev, userMessage, assistantMessage]);
+                assistantMessageAdded = true;
             };
 
-            setMessages(prev => [...prev, userMessage, assistantMessage]);
+            const onChunk = (chunk: string) => {
+                setMessages(prev => prev.map(m => {
+                    if (m.id === streamingMessageId) {
+                        const newText = m.text + chunk;
+                        const formatted = newText
+                            .replace(/^\s*\{\s*$/gm, '')
+                            .replace(/^\s*\}\s*$/gm, '')
+                            .replace(/^\s*"[^"]*":\s*\[\s*$/gm, '')
+                            .replace(/^\s*"[^"]*":\s*"([^"]*)"[,]?\s*$/gm, '$1')
+                            .replace(/^\s*\]\s*[,]?\s*$/gm, '')
+                            .replace(/^\s*[,]\s*$/gm, '')
+                            .replace(/key_findings/gi, 'Key Points')
+                            .replace(/\bdetails\b/gi, 'Explanation')
+                            .replace(/\bconclusion\b/gi, 'Summary')
+                            .replace(/(?<!Additional\s)\bnotes\b/gi, 'Additional Notes');
+                        return { ...m, text: formatted };
+                    }
+                    return m;
+                }));
+            };
 
-            if (assistantMessage.audioUrl && assistantMessage.visemes) {
-                playAudioWithVisemes(assistantMessage.audioUrl, assistantMessage.visemes, assistantMessage.id);
+            let data: FullAgentResponse;
+            const apiFn = queryMode === 'agent' ? fullAgentAgent : (queryMode === 'tools' ? fullAgentMcp : fullAgent);
+
+            data = await apiFn(requestParams, controller.signal, onChunk, onTranscription);
+
+            const audioUrl = data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}` : undefined;
+
+            setMessages(prev => {
+                if (!assistantMessageAdded) {
+                    const userMessage: Message = { id: crypto.randomUUID(), text: `🎤: "${data.text}"`, sender: User.USER };
+                    const assistantMessage: Message = {
+                        id: streamingMessageId,
+                        text: formatAssistantText(data.response),
+                        sender: User.ASSISTANT,
+                        audioUrl,
+                        visemes: data.visemes,
+                    };
+                    return [...prev, userMessage, assistantMessage];
+                }
+
+                return prev.map(m =>
+                    m.id === streamingMessageId
+                        ? { ...m, text: formatAssistantText(data.response) || ' ', audioUrl, visemes: data.visemes }
+                        : m
+                );
+            });
+
+            if (audioUrl && data.visemes) {
+                // Short delay to ensure DOM is ready
+                setTimeout(() => {
+                    playAudioWithVisemes(audioUrl, data.visemes!, streamingMessageId);
+                }, 50);
             }
 
         } catch (error: any) {
@@ -1078,7 +1221,9 @@ const App: React.FC = () => {
                 setMessages(prev => [...prev, errorMessage]);
             }
         } finally {
+            setMessages(prev => prev.filter(m => m.text.trim().length > 0 || (m.attachedImages?.length ?? 0) > 0 || (m.attachedAudio?.length ?? 0) > 0 || (m.attachedVideos?.length ?? 0) > 0));
             setIsLoading(false);
+            isStreamingRef.current = false;
             abortControllerRef.current = null;
         }
     };
@@ -1309,7 +1454,7 @@ const App: React.FC = () => {
                     <div className="flex-1 flex flex-col p-4 md:p-6 lg:p-8 overflow-hidden">
                         <ChatWindow
                             messages={messages}
-                            isLoading={isLoading}
+                            isLoading={isLoading && !spokenResponses}
                             playingAudioId={playingAudioId}
                             onPlayAudio={handlePlayAudio}
                             onStopAudio={handleStopAudio}
