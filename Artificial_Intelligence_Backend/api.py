@@ -84,6 +84,10 @@ def _seed_default_admin():
     except Exception as e:
         logging.warning(f"Admin seeding skipped/failed: {e}")
 
+# Global regex for filtering tool execution logs
+import re
+tool_log_regex = re.compile(r"[\w_]+\([^)]*\)\s*completed\s+in\s+[\d.]+s\.?", re.IGNORECASE)
+
 # Registry of active tasks per user/session for cancellation
 active_tasks: Dict[str, asyncio.Task] = {}
 
@@ -1994,7 +1998,6 @@ async def query_direct(request: QueryRequest, http_request: Request):
     if not token_payload:
         raise HTTPException(status_code=401, detail="Unauthorized")
     uid = token_payload.get("uid")
-    
     with sessions.SessionLocal() as db:
         s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
         if not s:
@@ -2011,8 +2014,13 @@ async def query_direct(request: QueryRequest, http_request: Request):
             
             async for chunk in stream_gen:
                 if chunk:
+                    # Clean each chunk in real-time to prevent tool logs from appearing
+                    # Replace with newline to ensure separation
+                    cleaned_chunk = tool_log_regex.sub("\n", chunk)
                     full_response += chunk
-                    yield f"data: {json.dumps({'content': chunk})}\n\n"
+                    
+                    if cleaned_chunk.strip():
+                        yield f"data: {json.dumps({'content': cleaned_chunk})}\n\n"
             
             # Clean and send done event
             cleaned_response = clean_model_output(full_response)

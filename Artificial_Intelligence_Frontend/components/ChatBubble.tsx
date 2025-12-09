@@ -141,6 +141,11 @@ const parseMarkdown = (text: string): string => {
             continue;
         }
 
+        // Code block handling - Ignore fences for now to prevent artifacts around tables
+        if (/^\s*```/.test(line)) {
+            continue;
+        }
+
         // Table detection - check for pipe-separated values
         if (line.includes('|') && line.trim().split('|').length >= 3) {
             // Check if it's a separator line (like |---|---|)

@@ -841,7 +841,7 @@ const App: React.FC = () => {
                                         .replace(/key_findings/gi, 'Key Points')
                                         .replace(/\bdetails\b/gi, 'Explanation')
                                         .replace(/\bconclusion\b/gi, 'Summary')
-                                        .replace(/\bnotes\b/gi, 'Additional Notes');
+                                        .replace(/(?<!Additional\s)\bnotes\b/gi, 'Additional Notes');
                                     return { ...m, text: formatted };
                                 }
                                 return m;
@@ -909,7 +909,7 @@ const App: React.FC = () => {
                                         .replace(/key_findings/gi, 'Key Points')
                                         .replace(/\bdetails\b/gi, 'Explanation')
                                         .replace(/\bconclusion\b/gi, 'Summary')
-                                        .replace(/\bnotes\b/gi, 'Additional Notes');
+                                        .replace(/(?<!Additional\s)\bnotes\b/gi, 'Additional Notes');
                                     return { ...m, text: formatted };
                                 }
                                 return m;
@@ -978,7 +978,7 @@ const App: React.FC = () => {
                                         .replace(/key_findings/gi, 'Key Points')
                                         .replace(/\bdetails\b/gi, 'Explanation')
                                         .replace(/\bconclusion\b/gi, 'Summary')
-                                        .replace(/\bnotes\b/gi, 'Additional Notes');
+                                        .replace(/(?<!Additional\s)\bnotes\b/gi, 'Additional Notes');
                                     return { ...m, text: formatted };
                                 }
                                 return m;
