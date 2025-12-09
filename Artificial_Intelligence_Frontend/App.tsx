@@ -130,6 +130,7 @@ const App: React.FC = () => {
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const animationFrameIdRef = useRef<number | null>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
+    const isStreamingRef = useRef<boolean>(false); // Track streaming to prevent session save spam
 
     const showAlert = (title: string, message: string) => {
         setModalConfig({
@@ -471,8 +472,9 @@ const App: React.FC = () => {
 
 
     // Save sessions whenever messages change for the active session
+    // Skip saving during streaming to prevent excessive API calls
     useEffect(() => {
-        if (currentUser && !isAdmin && activeSessionId) {
+        if (currentUser && !isAdmin && activeSessionId && !isStreamingRef.current) {
             (async () => {
                 try {
                     const saved = await saveSessionMessages(activeSessionId, { user_id: currentUser, messages });
@@ -804,12 +806,61 @@ const App: React.FC = () => {
                             playAudioWithVisemes(assistantMessage.audioUrl, assistantMessage.visemes, assistantMessage.id);
                         }
                     } else {
-                        const data = await queryAgent(requestParams, controller.signal);
+                        // Create empty assistant message for streaming
+                        const streamingMessageId = crypto.randomUUID();
                         assistantMessage = {
-                            id: crypto.randomUUID(),
-                            text: formatAssistantText(data.response),
+                            id: streamingMessageId,
+                            text: '',
                             sender: User.ASSISTANT,
                         };
+                        // Add empty message immediately for smooth UX
+                        setMessages(prev => [...prev, assistantMessage]);
+                        // Stop showing loading indicator since we're now streaming
+                        setIsLoading(false);
+                        // Mark as streaming to prevent session save spam
+                        isStreamingRef.current = true;
+
+
+                        // Stream the response with progressive updates
+                        const data = await queryAgent(requestParams, controller.signal, (chunk) => {
+                            // Append chunk and format immediately for smooth display
+                            setMessages(prev => prev.map(m => {
+                                if (m.id === streamingMessageId) {
+                                    const newText = m.text + chunk;
+                                    // Apply comprehensive formatting during stream to match final output
+                                    // Identify if we're dealing with JSON-like structure keys
+                                    const formatted = newText
+                                        // Clean potential JSON structure artifacts if they appear raw in stream
+                                        .replace(/^\s*\{\s*$/gm, '')
+                                        .replace(/^\s*\}\s*$/gm, '')
+                                        .replace(/^\s*"[^"]*":\s*\[\s*$/gm, '')
+                                        .replace(/^\s*"[^"]*":\s*"([^"]*)"[,]?\s*$/gm, '$1')
+                                        .replace(/^\s*\]\s*[,]?\s*$/gm, '')
+                                        .replace(/^\s*[,]\s*$/gm, '')
+                                        // content cleanup
+                                        .replace(/key_findings/gi, 'Key Points')
+                                        .replace(/\bdetails\b/gi, 'Explanation')
+                                        .replace(/\bconclusion\b/gi, 'Summary')
+                                        .replace(/\bnotes\b/gi, 'Additional Notes');
+                                    return { ...m, text: formatted };
+                                }
+                                return m;
+                            }));
+                        });
+
+                        // Update with final formatted response (full cleanup)
+                        setMessages(prev => prev.map(m =>
+                            m.id === streamingMessageId
+                                ? { ...m, text: formatAssistantText(data.response) }
+                                : m
+                        ));
+
+                        // Streaming done - allow session save
+                        isStreamingRef.current = false;
+                        // Skip adding message again since we already added it
+                        setIsLoading(false);
+                        abortControllerRef.current = null;
+                        return;
                     }
                     break;
                 case 'tools':
@@ -826,12 +877,58 @@ const App: React.FC = () => {
                             playAudioWithVisemes(assistantMessage.audioUrl, assistantMessage.visemes, assistantMessage.id);
                         }
                     } else {
-                        const data = await queryMcp(requestParams, controller.signal);
+                        // Create empty assistant message for streaming
+                        const streamingMessageId = crypto.randomUUID();
                         assistantMessage = {
-                            id: crypto.randomUUID(),
-                            text: formatAssistantText(data.response),
+                            id: streamingMessageId,
+                            text: '',
                             sender: User.ASSISTANT,
                         };
+                        // Add empty message immediately for smooth UX
+                        setMessages(prev => [...prev, assistantMessage]);
+                        // Stop showing loading indicator since we're now streaming
+                        setIsLoading(false);
+                        // Mark as streaming to prevent session save spam
+                        isStreamingRef.current = true;
+
+                        // Stream the response with progressive updates
+                        const data = await queryMcp(requestParams, controller.signal, (chunk) => {
+                            // Append chunk and format immediately
+                            setMessages(prev => prev.map(m => {
+                                if (m.id === streamingMessageId) {
+                                    const newText = m.text + chunk;
+                                    const formatted = newText
+                                        // Clean potential JSON structure artifacts if they appear raw in stream
+                                        .replace(/^\s*\{\s*$/gm, '')
+                                        .replace(/^\s*\}\s*$/gm, '')
+                                        .replace(/^\s*"[^"]*":\s*\[\s*$/gm, '')
+                                        .replace(/^\s*"[^"]*":\s*"([^"]*)"[,]?\s*$/gm, '$1')
+                                        .replace(/^\s*\]\s*[,]?\s*$/gm, '')
+                                        .replace(/^\s*[,]\s*$/gm, '')
+                                        // content cleanup
+                                        .replace(/key_findings/gi, 'Key Points')
+                                        .replace(/\bdetails\b/gi, 'Explanation')
+                                        .replace(/\bconclusion\b/gi, 'Summary')
+                                        .replace(/\bnotes\b/gi, 'Additional Notes');
+                                    return { ...m, text: formatted };
+                                }
+                                return m;
+                            }));
+                        });
+
+                        // Update with final formatted response (full cleanup)
+                        setMessages(prev => prev.map(m =>
+                            m.id === streamingMessageId
+                                ? { ...m, text: formatAssistantText(data.response) }
+                                : m
+                        ));
+
+                        // Streaming done - allow session save
+                        isStreamingRef.current = false;
+                        // Skip adding message again since we already added it
+                        setIsLoading(false);
+                        abortControllerRef.current = null;
+                        return;
                     }
                     break;
                 case 'direct':
@@ -849,12 +946,58 @@ const App: React.FC = () => {
                             playAudioWithVisemes(assistantMessage.audioUrl, assistantMessage.visemes, assistantMessage.id);
                         }
                     } else {
-                        const data = await query(requestParams, controller.signal);
+                        // Create empty assistant message for streaming
+                        const streamingMessageId = crypto.randomUUID();
                         assistantMessage = {
-                            id: crypto.randomUUID(),
-                            text: formatAssistantText(data.response),
+                            id: streamingMessageId,
+                            text: '',
                             sender: User.ASSISTANT,
                         };
+                        // Add empty message immediately for smooth UX
+                        setMessages(prev => [...prev, assistantMessage]);
+                        // Stop showing loading indicator since we're now streaming
+                        setIsLoading(false);
+                        // Mark as streaming to prevent session save spam
+                        isStreamingRef.current = true;
+
+                        // Stream the response with progressive updates
+                        const data = await query(requestParams, controller.signal, (chunk) => {
+                            // Append chunk and format immediately
+                            setMessages(prev => prev.map(m => {
+                                if (m.id === streamingMessageId) {
+                                    const newText = m.text + chunk;
+                                    const formatted = newText
+                                        // Clean potential JSON structure artifacts if they appear raw in stream
+                                        .replace(/^\s*\{\s*$/gm, '')
+                                        .replace(/^\s*\}\s*$/gm, '')
+                                        .replace(/^\s*"[^"]*":\s*\[\s*$/gm, '')
+                                        .replace(/^\s*"[^"]*":\s*"([^"]*)"[,]?\s*$/gm, '$1')
+                                        .replace(/^\s*\]\s*[,]?\s*$/gm, '')
+                                        .replace(/^\s*[,]\s*$/gm, '')
+                                        // content cleanup
+                                        .replace(/key_findings/gi, 'Key Points')
+                                        .replace(/\bdetails\b/gi, 'Explanation')
+                                        .replace(/\bconclusion\b/gi, 'Summary')
+                                        .replace(/\bnotes\b/gi, 'Additional Notes');
+                                    return { ...m, text: formatted };
+                                }
+                                return m;
+                            }));
+                        });
+
+                        // Update with final formatted response (full cleanup)
+                        setMessages(prev => prev.map(m =>
+                            m.id === streamingMessageId
+                                ? { ...m, text: formatAssistantText(data.response) }
+                                : m
+                        ));
+
+                        // Streaming done - allow session save
+                        isStreamingRef.current = false;
+                        // Skip adding message again since we already added it
+                        setIsLoading(false);
+                        abortControllerRef.current = null;
+                        return;
                     }
                     break;
             }
@@ -1211,8 +1354,8 @@ const App: React.FC = () => {
                 {/* Avatar Panel with smooth transition */}
                 <aside
                     className={`w-[28rem] flex-shrink-0 bg-slate-900/30 backdrop-blur-2xl border-l border-slate-500/30 hidden lg:flex flex-col p-6 transition-all duration-500 ease-in-out ${spokenResponses
-                            ? 'translate-x-0 opacity-100'
-                            : 'translate-x-full opacity-0 pointer-events-none absolute right-0 top-0 bottom-0'
+                        ? 'translate-x-0 opacity-100'
+                        : 'translate-x-full opacity-0 pointer-events-none absolute right-0 top-0 bottom-0'
                         }`}
                 >
                     <div className="flex-1 flex items-center justify-center">

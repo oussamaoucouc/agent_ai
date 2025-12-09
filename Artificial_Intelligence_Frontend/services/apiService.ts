@@ -64,34 +64,208 @@ const handleResponse = async <T,>(response: Response): Promise<T> => {
     return Promise.resolve({ success: true } as unknown as T);
 };
 
-export const query = async (request: QueryRequest, signal?: AbortSignal): Promise<QueryResponse> => {
+export const query = async (
+    request: QueryRequest,
+    signal?: AbortSignal,
+    onChunk?: (text: string) => void
+): Promise<QueryResponse> => {
     const response = await authedFetch(`${API_BASE_URL}/query_direct`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
         signal,
     });
-    return handleResponse<QueryResponse>(response);
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error occurred' }));
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+    }
+
+    // Check if it's a streaming response
+    const contentType = response.headers.get('content-type');
+    if (contentType?.includes('text/event-stream') && onChunk) {
+        // Handle SSE streaming
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let fullResponse = '';
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n\n');
+            buffer = lines.pop() || ''; // Keep incomplete chunk in buffer
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.slice(6));
+                        if (data.content) {
+                            onChunk(data.content);
+                            fullResponse += data.content;
+                        }
+                        if (data.done && data.full_response) {
+                            fullResponse = data.full_response;
+                        }
+                        if (data.error) {
+                            throw new Error(data.error);
+                        }
+                    } catch (e) {
+                        // Ignore parse errors for incomplete chunks
+                        if (e instanceof SyntaxError) continue;
+                        throw e;
+                    }
+                }
+            }
+        }
+
+        return {
+            user_id: request.user_id,
+            session_id: request.session_id,
+            response: fullResponse
+        };
+    } else {
+        // Fallback to non-streaming response
+        return handleResponse<QueryResponse>(response);
+    }
 };
 
-export const queryMcp = async (request: QueryRequest, signal?: AbortSignal): Promise<QueryResponse> => {
+export const queryMcp = async (
+    request: QueryRequest,
+    signal?: AbortSignal,
+    onChunk?: (text: string) => void
+): Promise<QueryResponse> => {
     const response = await authedFetch(`${API_BASE_URL}/query_mcp_direct`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
         signal,
     });
-    return handleResponse<QueryResponse>(response);
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error occurred' }));
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+    }
+
+    // Check if it's a streaming response
+    const contentType = response.headers.get('content-type');
+    if (contentType?.includes('text/event-stream') && onChunk) {
+        // Handle SSE streaming
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let fullResponse = '';
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n\n');
+            buffer = lines.pop() || ''; // Keep incomplete chunk in buffer
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.slice(6));
+                        if (data.content) {
+                            onChunk(data.content);
+                            fullResponse += data.content;
+                        }
+                        if (data.done && data.full_response) {
+                            fullResponse = data.full_response;
+                        }
+                        if (data.error) {
+                            throw new Error(data.error);
+                        }
+                    } catch (e) {
+                        // Ignore parse errors for incomplete chunks
+                        if (e instanceof SyntaxError) continue;
+                        throw e;
+                    }
+                }
+            }
+        }
+
+        return {
+            user_id: request.user_id,
+            session_id: request.session_id,
+            response: fullResponse
+        };
+    } else {
+        // Fallback to non-streaming response
+        return handleResponse<QueryResponse>(response);
+    }
 };
 
-export const queryAgent = async (request: QueryRequest, signal?: AbortSignal): Promise<QueryResponse> => {
+export const queryAgent = async (
+    request: QueryRequest,
+    signal?: AbortSignal,
+    onChunk?: (text: string) => void
+): Promise<QueryResponse> => {
     const response = await authedFetch(`${API_BASE_URL}/query_assistant_direct`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(request),
         signal,
     });
-    return handleResponse<QueryResponse>(response);
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error occurred' }));
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+    }
+
+    // Check if it's a streaming response
+    const contentType = response.headers.get('content-type');
+    if (contentType?.includes('text/event-stream') && onChunk) {
+        // Handle SSE streaming
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let fullResponse = '';
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n\n');
+            buffer = lines.pop() || ''; // Keep incomplete chunk in buffer
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.slice(6));
+                        if (data.content) {
+                            onChunk(data.content);
+                            fullResponse += data.content;
+                        }
+                        if (data.done && data.full_response) {
+                            fullResponse = data.full_response;
+                        }
+                        if (data.error) {
+                            throw new Error(data.error);
+                        }
+                    } catch (e) {
+                        // Ignore parse errors for incomplete chunks
+                        if (e instanceof SyntaxError) continue;
+                        throw e;
+                    }
+                }
+            }
+        }
+
+        return {
+            user_id: request.user_id,
+            session_id: request.session_id,
+            response: fullResponse
+        };
+    } else {
+        // Fallback to non-streaming response
+        return handleResponse<QueryResponse>(response);
+    }
 };
 
 export const queryTTS = async (request: QueryRequest, signal?: AbortSignal): Promise<QueryTTSResponse> => {

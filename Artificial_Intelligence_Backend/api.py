@@ -2,7 +2,7 @@
 API endpoints for the AI Assistant application (FastAPI app instance).
 """
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, BackgroundTasks
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, constr
 from typing import Optional, Dict, Any, List
@@ -92,6 +92,9 @@ def clean_model_output(text: str) -> str:
     import re
     if not text:
         return ""
+
+    # Remove AGNO tool execution logs like "search(query=...) completed in 1.9721s."
+    text = re.sub(r"[\w_]+\([^)]*\)\s*completed\s+in\s+[\d.]+s\.?", "", text, flags=re.IGNORECASE)
 
     # Remove <think> blocks (case-insensitive, multiline) - these are reasoning traces
     text = re.sub(r'(?is)<think>.*?</think>', '', text)
@@ -712,49 +715,123 @@ async def delete_document(user_id: Optional[str] = None, filename: str = "", kin
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting document: {str(e)}")
 
-#LLM QUERY
-@app.post("/query", response_model=QueryResponse)
+#LLM QUERY (with SSE Streaming)
+@app.post("/query")
 async def query_agent(request: QueryRequest, http_request: Request):
-    try:
-        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
-        if not token_payload:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        uid = token_payload.get("uid")
-        with sessions.SessionLocal() as db:
-            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
-            if not s:
-                raise HTTPException(status_code=404, detail="Session not found")
-        response = await run_rag_agent(request.query, uid, request.session_id)
-        return QueryResponse(
-            user_id=uid,
-            session_id=request.session_id,
-            response=response
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    key = f"{request.user_id}:{request.session_id}"
+    active_tasks[key] = asyncio.current_task()
+    
+    # Auth check outside the generator
+    token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+    if not token_payload:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    uid = token_payload.get("uid")
+    
+    with sessions.SessionLocal() as db:
+        s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+        if not s:
+            raise HTTPException(status_code=404, detail="Session not found")
 
-# MCP LLM QUERY
-@app.post("/query_mcp", response_model=QueryResponse)
+    async def stream_response():
+        full_response = ""
+        try:
+            # Get streaming generator from RAG agent
+            stream_gen = await run_rag_agent(
+                request.query, uid, request.session_id,
+                stream=True
+            )
+            
+            async for chunk in stream_gen:
+                if chunk:
+                    full_response += chunk
+                    yield f"data: {json.dumps({'content': chunk})}\n\n"
+            
+            # Send done event with complete response
+            cleaned_response = ensure_response_content(full_response)
+            yield f"data: {json.dumps({'done': True, 'full_response': cleaned_response})}\n\n"
+            
+        except asyncio.CancelledError:
+            yield f"data: {json.dumps({'error': 'Request cancelled'})}\n\n"
+        except Exception as e:
+            logging.error(f"Error in RAG streaming: {type(e).__name__}: {str(e)}")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        finally:
+            active_tasks.pop(key, None)
+    
+    return StreamingResponse(
+        stream_response(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+# MCP LLM QUERY (with SSE Streaming)
+@app.post("/query_mcp")
 async def query_mcp(request: QueryRequest, http_request: Request):
-    try:
-        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
-        if not token_payload:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        uid = token_payload.get("uid")
-        with sessions.SessionLocal() as db:
-            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
-            if not s:
-                raise HTTPException(status_code=404, detail="Session not found")
-        response = await run_mcp_agent(request.query, uid, request.session_id)
-        response = clean_model_output(response)
-        response = ensure_response_content(response)
-        return QueryResponse(
-            user_id=uid,
-            session_id=request.session_id,
-            response=response
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    key = f"{request.user_id}:{request.session_id}"
+    active_tasks[key] = asyncio.current_task()
+    
+    # Auth check outside the generator
+    token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+    if not token_payload:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    uid = token_payload.get("uid")
+    
+    with sessions.SessionLocal() as db:
+        s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+        if not s:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+    # Regex for filtering tool execution logs from streaming chunks
+    import re
+    tool_log_regex = re.compile(r"[\w_]+\([^)]*\)\s*completed\s+in\s+[\d.]+s\.?", re.IGNORECASE)
+
+    async def stream_response():
+        full_response = ""
+        try:
+            # Get streaming generator from MCP agent
+            stream_gen = await run_mcp_agent(
+                request.query, uid, request.session_id,
+                stream=True
+            )
+            
+            async for chunk in stream_gen:
+                if chunk:
+                    # Clean each chunk in real-time to prevent tool logs from appearing
+                    # Replace with newline to ensure separation (prevents "TitleContent" merging)
+                    cleaned_chunk = tool_log_regex.sub("\n", chunk)
+                    full_response += chunk  # Keep original for final cleaning
+                    # Only send non-empty cleaned chunks
+                    if cleaned_chunk.strip():
+                        yield f"data: {json.dumps({'content': cleaned_chunk})}\n\n"
+            
+            # Clean and send done event
+            cleaned_response = clean_model_output(full_response)
+            cleaned_response = ensure_response_content(cleaned_response)
+            yield f"data: {json.dumps({'done': True, 'full_response': cleaned_response})}\n\n"
+            
+        except asyncio.CancelledError:
+            yield f"data: {json.dumps({'error': 'Request cancelled'})}\n\n"
+        except Exception as e:
+            logging.error(f"Error in MCP streaming: {type(e).__name__}: {str(e)}")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        finally:
+            active_tasks.pop(key, None)
+    
+    return StreamingResponse(
+        stream_response(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
 
 @app.post("/reset_mcp_gateway")
 async def reset_mcp_gateway_endpoint(http_request: Request):
@@ -772,289 +849,378 @@ async def reset_mcp_gateway_endpoint(http_request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# ASSISTANT LLM QUERY
-@app.post("/query_assistant", response_model=QueryResponse)
+# ASSISTANT LLM QUERY (with SSE Streaming)
+@app.post("/query_assistant")
 async def query_assistant(request: QueryRequest, http_request: Request):
-    try:
-        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
-        if not token_payload:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        uid = token_payload.get("uid")
-        with sessions.SessionLocal() as db:
-            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
-            if not s:
-                raise HTTPException(status_code=404, detail="Session not found")
-        
-        # Handle images
-        images = []
-        if request.images:
-            for img_str in request.images:
-                try:
-                    # Check if it's a data URI and strip header if present
-                    if "base64," in img_str:
-                        header, encoded = img_str.split("base64,", 1)
-                        # Guess extension from header
-                        ext = ".png" # Default
-                        if "image/jpeg" in header: ext = ".jpg"
-                        elif "image/png" in header: ext = ".png"
-                        elif "image/webp" in header: ext = ".webp"
-                        elif "image/gif" in header: ext = ".gif"
-                    else:
-                        encoded = img_str
-                        ext = ".png"
+    key = f"{request.user_id}:{request.session_id}"
+    active_tasks[key] = asyncio.current_task()
+    
+    # Auth check outside the generator
+    token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+    if not token_payload:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    uid = token_payload.get("uid")
+    
+    with sessions.SessionLocal() as db:
+        s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+        if not s:
+            raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Handle images
+    images = []
+    if request.images:
+        for img_str in request.images:
+            try:
+                # Check if it's a data URI and strip header if present
+                if "base64," in img_str:
+                    header, encoded = img_str.split("base64,", 1)
+                    # Guess extension from header
+                    ext = ".png" # Default
+                    if "image/jpeg" in header: ext = ".jpg"
+                    elif "image/png" in header: ext = ".png"
+                    elif "image/webp" in header: ext = ".webp"
+                    elif "image/gif" in header: ext = ".gif"
+                else:
+                    encoded = img_str
+                    ext = ".png"
 
-                    # Decode base64
-                    image_data = base64.b64decode(encoded)
-                    
-                    # Create temp file
-                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_img:
-                        temp_img.write(image_data)
-                        temp_path = temp_img.name
-                    
-                    # Add to images list using filepath
-                    images.append(Image(filepath=temp_path))
-                    logging.info(f"Processed image to temp file: {temp_path}")
-                except Exception as e:
-                    logging.error(f"Failed to process image: {e}")
+                # Decode base64
+                image_data = base64.b64decode(encoded)
+                
+                # Create temp file
+                with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_img:
+                    temp_img.write(image_data)
+                    temp_path = temp_img.name
+                
+                # Add to images list using filepath
+                images.append(Image(filepath=temp_path))
+                logging.info(f"Processed image to temp file: {temp_path}")
+            except Exception as e:
+                logging.error(f"Failed to process image: {e}")
 
-        # Handle audio
-        audio_files = []
-        if request.audio:
-            for audio_str in request.audio:
-                try:
-                    # Check if it's a data URI and strip header if present
-                    if "base64," in audio_str:
-                        header, encoded = audio_str.split("base64,", 1)
-                        # Guess extension from header
-                        ext = ".mp3" # Default
-                        if "audio/mpeg" in header: ext = ".mp3"
-                        elif "audio/wav" in header: ext = ".wav"
-                        elif "audio/ogg" in header: ext = ".ogg"
-                        elif "audio/webm" in header: ext = ".webm"
-                    else:
-                        encoded = audio_str
-                        ext = ".mp3"
+    # Handle audio
+    audio_files = []
+    if request.audio:
+        for audio_str in request.audio:
+            try:
+                # Check if it's a data URI and strip header if present
+                if "base64," in audio_str:
+                    header, encoded = audio_str.split("base64,", 1)
+                    # Guess extension from header
+                    ext = ".mp3" # Default
+                    if "audio/mpeg" in header: ext = ".mp3"
+                    elif "audio/wav" in header: ext = ".wav"
+                    elif "audio/ogg" in header: ext = ".ogg"
+                    elif "audio/webm" in header: ext = ".webm"
+                else:
+                    encoded = audio_str
+                    ext = ".mp3"
 
-                    # Decode base64
-                    audio_data = base64.b64decode(encoded)
-                    
-                    # Create temp file
-                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_audio:
-                        temp_audio.write(audio_data)
-                        temp_path = temp_audio.name
-                    
-                    # Add to audio list using filepath
-                    audio_files.append(Audio(filepath=temp_path))
-                    logging.info(f"Processed audio to temp file: {temp_path}")
-                except Exception as e:
-                    logging.error(f"Failed to process audio: {e}")
+                # Decode base64
+                audio_data = base64.b64decode(encoded)
+                
+                # Create temp file
+                with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_audio:
+                    temp_audio.write(audio_data)
+                    temp_path = temp_audio.name
+                
+                # Add to audio list using filepath
+                audio_files.append(Audio(filepath=temp_path))
+                logging.info(f"Processed audio to temp file: {temp_path}")
+            except Exception as e:
+                logging.error(f"Failed to process audio: {e}")
 
-        # Handle videos
-        video_files = []
-        if request.videos:
-            for video_str in request.videos:
-                try:
-                    # Check if it's a data URI and strip header if present
-                    if "base64," in video_str:
-                        header, encoded = video_str.split("base64,", 1)
-                        # Guess extension from header
-                        ext = ".mp4" # Default
-                        if "video/mp4" in header: ext = ".mp4"
-                        elif "video/webm" in header: ext = ".webm"
-                        elif "video/ogg" in header: ext = ".ogg"
-                    else:
-                        encoded = video_str
-                        ext = ".mp4"
+    # Handle videos
+    video_files = []
+    if request.videos:
+        for video_str in request.videos:
+            try:
+                # Check if it's a data URI and strip header if present
+                if "base64," in video_str:
+                    header, encoded = video_str.split("base64,", 1)
+                    # Guess extension from header
+                    ext = ".mp4" # Default
+                    if "video/mp4" in header: ext = ".mp4"
+                    elif "video/webm" in header: ext = ".webm"
+                    elif "video/ogg" in header: ext = ".ogg"
+                else:
+                    encoded = video_str
+                    ext = ".mp4"
 
-                    # Decode base64
-                    video_data = base64.b64decode(encoded)
-                    
-                    # Create temp file
-                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_video:
-                        temp_video.write(video_data)
-                        temp_path = temp_video.name
-                    
-                    # Add to videos list using filepath
-                    video_files.append(Video(filepath=temp_path))
-                    logging.info(f"Processed video to temp file: {temp_path}")
-                except Exception as e:
-                    logging.error(f"Failed to process video: {e}")
+                # Decode base64
+                video_data = base64.b64decode(encoded)
+                
+                # Create temp file
+                with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_video:
+                    temp_video.write(video_data)
+                    temp_path = temp_video.name
+                
+                # Add to videos list using filepath
+                video_files.append(Video(filepath=temp_path))
+                logging.info(f"Processed video to temp file: {temp_path}")
+            except Exception as e:
+                logging.error(f"Failed to process video: {e}")
 
-        response = await run_assistant_agent(request.query, uid, request.session_id, images=images if images else None, audio=audio_files if audio_files else None, videos=video_files if video_files else None)
-        response = ensure_response_content(response)
-        return QueryResponse(
-            user_id=uid,
-            session_id=request.session_id,
-            response=response
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    async def stream_response():
+        full_response = ""
+        try:
+            # Get streaming generator from assistant agent
+            stream_gen = await run_assistant_agent(
+                request.query, uid, request.session_id,
+                images=images if images else None,
+                audio=audio_files if audio_files else None,
+                videos=video_files if video_files else None,
+                stream=True
+            )
+            
+            async for chunk in stream_gen:
+                if chunk:
+                    full_response += chunk
+                    yield f"data: {json.dumps({'content': chunk})}\n\n"
+            
+            # Send done event with complete response
+            cleaned_response = ensure_response_content(full_response)
+            yield f"data: {json.dumps({'done': True, 'full_response': cleaned_response})}\n\n"
+            
+        except asyncio.CancelledError:
+            yield f"data: {json.dumps({'error': 'Request cancelled'})}\n\n"
+        except Exception as e:
+            logging.error(f"Error in assistant streaming: {type(e).__name__}: {str(e)}")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        finally:
+            active_tasks.pop(key, None)
+    
+    return StreamingResponse(
+        stream_response(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
-# ASSISTANT LLM QUERY not displayed Reasoning
-@app.post("/query_assistant_direct", response_model=QueryResponse)
+
+# ASSISTANT LLM QUERY not displayed Reasoning (with SSE Streaming)
+@app.post("/query_assistant_direct")
 async def query_assistant_direct(request: QueryRequest, http_request: Request):
     key = f"{request.user_id}:{request.session_id}"
     active_tasks[key] = asyncio.current_task()
-    try:
-        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
-        if not token_payload:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        uid = token_payload.get("uid")
-        with sessions.SessionLocal() as db:
-            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
-            if not s:
-                raise HTTPException(status_code=404, detail="Session not found")
-        
-        # Handle images
-        images = []
-        if request.images:
-            for img_str in request.images:
-                try:
-                    # Check if it's a data URI and strip header if present
-                    if "base64," in img_str:
-                        header, encoded = img_str.split("base64,", 1)
-                        # Guess extension from header
-                        ext = ".png" # Default
-                        if "image/jpeg" in header: ext = ".jpg"
-                        elif "image/png" in header: ext = ".png"
-                        elif "image/webp" in header: ext = ".webp"
-                        elif "image/gif" in header: ext = ".gif"
-                    else:
-                        encoded = img_str
-                        ext = ".png"
+    
+    # Auth check outside the generator
+    token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+    if not token_payload:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    uid = token_payload.get("uid")
+    
+    with sessions.SessionLocal() as db:
+        s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+        if not s:
+            raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Handle images
+    images = []
+    if request.images:
+        for img_str in request.images:
+            try:
+                # Check if it's a data URI and strip header if present
+                if "base64," in img_str:
+                    header, encoded = img_str.split("base64,", 1)
+                    # Guess extension from header
+                    ext = ".png" # Default
+                    if "image/jpeg" in header: ext = ".jpg"
+                    elif "image/png" in header: ext = ".png"
+                    elif "image/webp" in header: ext = ".webp"
+                    elif "image/gif" in header: ext = ".gif"
+                else:
+                    encoded = img_str
+                    ext = ".png"
 
-                    # Decode base64
-                    image_data = base64.b64decode(encoded)
-                    
-                    # Create temp file
-                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_img:
-                        temp_img.write(image_data)
-                        temp_path = temp_img.name
-                    
-                    # Add to images list using filepath
-                    images.append(Image(filepath=temp_path))
-                    logging.info(f"Processed image to temp file: {temp_path}")
-                except Exception as e:
-                    logging.error(f"Failed to process image: {e}")
+                # Decode base64
+                image_data = base64.b64decode(encoded)
+                
+                # Create temp file
+                with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_img:
+                    temp_img.write(image_data)
+                    temp_path = temp_img.name
+                
+                # Add to images list using filepath
+                images.append(Image(filepath=temp_path))
+                logging.info(f"Processed image to temp file: {temp_path}")
+            except Exception as e:
+                logging.error(f"Failed to process image: {e}")
 
-        # Handle audio
-        audio_files = []
-        if request.audio:
-            for audio_str in request.audio:
-                try:
-                    # Check if it's a data URI and strip header if present
-                    if "base64," in audio_str:
-                        header, encoded = audio_str.split("base64,", 1)
-                        # Guess extension from header
-                        ext = ".mp3" # Default
-                        if "audio/mpeg" in header: ext = ".mp3"
-                        elif "audio/wav" in header: ext = ".wav"
-                        elif "audio/ogg" in header: ext = ".ogg"
-                        elif "audio/webm" in header: ext = ".webm"
-                    else:
-                        encoded = audio_str
-                        ext = ".mp3"
+    # Handle audio
+    audio_files = []
+    if request.audio:
+        for audio_str in request.audio:
+            try:
+                # Check if it's a data URI and strip header if present
+                if "base64," in audio_str:
+                    header, encoded = audio_str.split("base64,", 1)
+                    # Guess extension from header
+                    ext = ".mp3" # Default
+                    if "audio/mpeg" in header: ext = ".mp3"
+                    elif "audio/wav" in header: ext = ".wav"
+                    elif "audio/ogg" in header: ext = ".ogg"
+                    elif "audio/webm" in header: ext = ".webm"
+                else:
+                    encoded = audio_str
+                    ext = ".mp3"
 
-                    # Decode base64
-                    audio_data = base64.b64decode(encoded)
-                    
-                    # Create temp file
-                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_audio:
-                        temp_audio.write(audio_data)
-                        temp_path = temp_audio.name
-                    
-                    # Add to audio list using filepath
-                    audio_files.append(Audio(filepath=temp_path))
-                    logging.info(f"Processed audio to temp file: {temp_path}")
-                except Exception as e:
-                    logging.error(f"Failed to process audio: {e}")
+                # Decode base64
+                audio_data = base64.b64decode(encoded)
+                
+                # Create temp file
+                with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_audio:
+                    temp_audio.write(audio_data)
+                    temp_path = temp_audio.name
+                
+                # Add to audio list using filepath
+                audio_files.append(Audio(filepath=temp_path))
+                logging.info(f"Processed audio to temp file: {temp_path}")
+            except Exception as e:
+                logging.error(f"Failed to process audio: {e}")
 
-        # Handle videos
-        video_files = []
-        if request.videos:
-            for video_str in request.videos:
-                try:
-                    # Check if it's a data URI and strip header if present
-                    if "base64," in video_str:
-                        header, encoded = video_str.split("base64,", 1)
-                        # Guess extension from header
-                        ext = ".mp4" # Default
-                        if "video/mp4" in header: ext = ".mp4"
-                        elif "video/webm" in header: ext = ".webm"
-                        elif "video/ogg" in header: ext = ".ogg"
-                    else:
-                        encoded = video_str
-                        ext = ".mp4"
+    # Handle videos
+    video_files = []
+    if request.videos:
+        for video_str in request.videos:
+            try:
+                # Check if it's a data URI and strip header if present
+                if "base64," in video_str:
+                    header, encoded = video_str.split("base64,", 1)
+                    # Guess extension from header
+                    ext = ".mp4" # Default
+                    if "video/mp4" in header: ext = ".mp4"
+                    elif "video/webm" in header: ext = ".webm"
+                    elif "video/ogg" in header: ext = ".ogg"
+                else:
+                    encoded = video_str
+                    ext = ".mp4"
 
-                    # Decode base64
-                    video_data = base64.b64decode(encoded)
-                    
-                    # Create temp file
-                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_video:
-                        temp_video.write(video_data)
-                        temp_path = temp_video.name
-                    
-                    # Add to videos list using filepath
-                    video_files.append(Video(filepath=temp_path))
-                    logging.info(f"Processed video to temp file: {temp_path}")
-                except Exception as e:
-                    logging.error(f"Failed to process video: {e}")
+                # Decode base64
+                video_data = base64.b64decode(encoded)
+                
+                # Create temp file
+                with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_video:
+                    temp_video.write(video_data)
+                    temp_path = temp_video.name
+                
+                # Add to videos list using filepath
+                video_files.append(Video(filepath=temp_path))
+                logging.info(f"Processed video to temp file: {temp_path}")
+            except Exception as e:
+                logging.error(f"Failed to process video: {e}")
 
-        response = await run_assistant_agent(request.query, uid, request.session_id, images=images if images else None, audio=audio_files if audio_files else None, videos=video_files if video_files else None)
-        response = clean_model_output(response)
-        response = ensure_response_content(response)
+    async def stream_response():
+        full_response = ""
+        try:
+            # Get streaming generator from assistant agent
+            stream_gen = await run_assistant_agent(
+                request.query, uid, request.session_id,
+                images=images if images else None,
+                audio=audio_files if audio_files else None,
+                videos=video_files if video_files else None,
+                stream=True
+            )
+            
+            async for chunk in stream_gen:
+                if chunk:
+                    full_response += chunk
+                    # SSE format: data: JSON\n\n
+                    yield f"data: {json.dumps({'content': chunk})}\n\n"
+            
+            # Clean the final response and send done event
+            cleaned_response = clean_model_output(full_response)
+            cleaned_response = ensure_response_content(cleaned_response)
+            
+            yield f"data: {json.dumps({'done': True, 'full_response': cleaned_response})}\n\n"
+            
+        except asyncio.CancelledError:
+            yield f"data: {json.dumps({'error': 'Request cancelled'})}\n\n"
+        except Exception as e:
+            logging.error(f"Error in streaming: {type(e).__name__}: {str(e)}")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        finally:
+            active_tasks.pop(key, None)
+    
+    return StreamingResponse(
+        stream_response(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
-        return QueryResponse(
-            user_id=uid,
-            session_id=request.session_id,
-            response=response
-        )
-    except asyncio.CancelledError:
-        raise HTTPException(status_code=499, detail="Request cancelled")
-    except Exception as e:
-        logging.error(f"Error in query_mcp_tts_direct: {type(e).__name__}: {str(e)}")
-        import traceback
-        logging.error(f"Full traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        active_tasks.pop(key, None)
 
-# MCP LLM QUERY not displayed Reasoning
-@app.post("/query_mcp_direct", response_model=QueryResponse)
+# MCP LLM QUERY not displayed Reasoning (with SSE Streaming)
+@app.post("/query_mcp_direct")
 async def query_mcp_direct(request: QueryRequest, http_request: Request):
     key = f"{request.user_id}:{request.session_id}"
-    try:
-        # Track the current handler task for cancellation as well
-        current = asyncio.current_task()
-        if current:
-            active_tasks[key] = current
-        # Run MCP agent as a cancellable task
-        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
-        if not token_payload:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        uid = token_payload.get("uid")
-        with sessions.SessionLocal() as db:
-            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
-            if not s:
-                raise HTTPException(status_code=404, detail="Session not found")
-        task = asyncio.create_task(run_mcp_agent(request.query, uid, request.session_id))
-        response = await task
-        response = clean_model_output(response)
-        response = ensure_response_content(response)
-        return QueryResponse(
-            user_id=uid,
-            session_id=request.session_id,
-            response=response
-        )
-    except asyncio.CancelledError:
-        raise HTTPException(status_code=499, detail="Request cancelled")
-    except Exception as e:
-        logging.error(f"Error in query_mcp_direct: {type(e).__name__}: {str(e)}")
-        import traceback
-        logging.error(f"Full traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        active_tasks.pop(key, None)
+    active_tasks[key] = asyncio.current_task()
+    
+    # Auth check outside the generator
+    token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+    if not token_payload:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    uid = token_payload.get("uid")
+    
+    with sessions.SessionLocal() as db:
+        s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+        if not s:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+    # Regex for filtering tool execution logs from streaming chunks
+    import re
+    tool_log_regex = re.compile(r"[\w_]+\([^)]*\)\s*completed\s+in\s+[\d.]+s\.?", re.IGNORECASE)
+
+    async def stream_response():
+        full_response = ""
+        try:
+            # Get streaming generator from MCP agent
+            stream_gen = await run_mcp_agent(
+                request.query, uid, request.session_id,
+                stream=True
+            )
+            
+            async for chunk in stream_gen:
+                if chunk:
+                    # Clean each chunk in real-time to prevent tool logs from appearing
+                    # Replace with newline to ensure separation (prevents "TitleContent" merging)
+                    cleaned_chunk = tool_log_regex.sub("\n", chunk)
+                    full_response += chunk  # Keep original for final cleaning
+                    # Only send non-empty cleaned chunks
+                    # SSE format: data: JSON\n\n
+                    if cleaned_chunk.strip():
+                        yield f"data: {json.dumps({'content': cleaned_chunk})}\n\n"
+            
+            # Clean the final response and send done event
+            cleaned_response = clean_model_output(full_response)
+            cleaned_response = ensure_response_content(cleaned_response)
+            
+            yield f"data: {json.dumps({'done': True, 'full_response': cleaned_response})}\n\n"
+            
+        except asyncio.CancelledError:
+            yield f"data: {json.dumps({'error': 'Request cancelled'})}\n\n"
+        except Exception as e:
+            logging.error(f"Error in MCP streaming: {type(e).__name__}: {str(e)}")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        finally:
+            active_tasks.pop(key, None)
+    
+    return StreamingResponse(
+        stream_response(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
 
 # MCP Speech-to-text then Query
 @app.post("/stt_query_mcp", response_model=Dict[str, str])
@@ -1817,35 +1983,60 @@ async def stt_query_mcp_tts_direct_endpoint(
         raise HTTPException(status_code=500, detail=f"Error processing audio query with TTS: {str(e)}")
     finally:
         active_tasks.pop(key, None)
-#LLM QUERY not displayed Reasoning
-@app.post("/query_direct", response_model=QueryResponse)
+#LLM QUERY not displayed Reasoning (with SSE Streaming)
+@app.post("/query_direct")
 async def query_direct(request: QueryRequest, http_request: Request):
     key = f"{request.user_id}:{request.session_id}"
     active_tasks[key] = asyncio.current_task()
-    try:
-        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
-        if not token_payload:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        uid = token_payload.get("uid")
-        with sessions.SessionLocal() as db:
-            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
-            if not s:
-                raise HTTPException(status_code=404, detail="Session not found")
-        response = await run_rag_agent(request.query, uid, request.session_id)
-        # Clean model output to remove think/tool traces and formatting
-        response = clean_model_output(response)
+    
+    # Auth check outside the generator
+    token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+    if not token_payload:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    uid = token_payload.get("uid")
+    
+    with sessions.SessionLocal() as db:
+        s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+        if not s:
+            raise HTTPException(status_code=404, detail="Session not found")
 
-        return QueryResponse(
-            user_id=uid,
-            session_id=request.session_id,
-            response=response
-        )
-    except asyncio.CancelledError:
-        raise HTTPException(status_code=499, detail="Request cancelled")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        active_tasks.pop(key, None)
+    async def stream_response():
+        full_response = ""
+        try:
+            # Get streaming generator from RAG agent
+            stream_gen = await run_rag_agent(
+                request.query, uid, request.session_id,
+                stream=True
+            )
+            
+            async for chunk in stream_gen:
+                if chunk:
+                    full_response += chunk
+                    yield f"data: {json.dumps({'content': chunk})}\n\n"
+            
+            # Clean and send done event
+            cleaned_response = clean_model_output(full_response)
+            cleaned_response = ensure_response_content(cleaned_response)
+            yield f"data: {json.dumps({'done': True, 'full_response': cleaned_response})}\n\n"
+            
+        except asyncio.CancelledError:
+            yield f"data: {json.dumps({'error': 'Request cancelled'})}\n\n"
+        except Exception as e:
+            logging.error(f"Error in RAG streaming: {type(e).__name__}: {str(e)}")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        finally:
+            active_tasks.pop(key, None)
+    
+    return StreamingResponse(
+        stream_response(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
 
 #Speach to text
 @app.post("/stt", response_model=Dict[str, str])

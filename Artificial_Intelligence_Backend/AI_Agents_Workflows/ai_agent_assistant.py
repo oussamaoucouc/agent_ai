@@ -16,7 +16,7 @@ from . import model_factory
 logging.basicConfig(level=logging.INFO)
 
 
-async def run_assistant_agent_async(query, user_id, session_id, images=None, audio=None, videos=None):
+async def run_assistant_agent_async(query, user_id, session_id, images=None, audio=None, videos=None, stream=False):
     """
     AGNO Assistant agent with multimodal support.
     Using cached knowledge base and memory DBs for better performance.
@@ -28,6 +28,7 @@ async def run_assistant_agent_async(query, user_id, session_id, images=None, aud
         images: Optional list of Agno Image objects
         audio: Optional list of Agno Audio objects
         videos: Optional list of Agno Video objects
+        stream: If True, returns an async generator yielding content chunks
     """
     logging.info(f"Starting AI Assistant agent with Ollama at: {cfg.OLLAMA_BASE_URL}")
     logging.info(f"OpenAI-compatible base URL: {cfg.get_openai_base_url()}")
@@ -124,46 +125,71 @@ async def run_assistant_agent_async(query, user_id, session_id, images=None, aud
     )
 
     try:
-        # Pass multimodal inputs to agent if provided
-        response = await assistant_agent.arun(
-            query,
-            images=images if images else None,
-            audio=audio if audio else None,
-            videos=videos if videos else None
-        )
-        # --- Robust error checking for response.content ---
-        # Explicit check for boolean response
-        if isinstance(response, bool):
-            raise RuntimeError(
-                f"AGNO agent returned a boolean ({response}) instead of a response object. "
-                "This usually means the agent or routing failed. Please check the agent configuration and query."
-            )
-
-        # Check for callable (function) or string content
-        if hasattr(response, 'content'):
-            if callable(response.content):
+        if stream:
+            # Streaming mode: return an async generator that yields content chunks
+            async def stream_generator():
                 try:
-                    content_result = response.content()
+                    # AGNO v1.8: arun with stream=True returns Iterator[RunResponse]
+                    # stream_intermediate_steps=False prevents tool execution logs from appearing
+                    run_response = await assistant_agent.arun(
+                        query,
+                        stream=True,
+                        stream_intermediate_steps=False,
+                        images=images if images else None,
+                        audio=audio if audio else None,
+                        videos=videos if videos else None
+                    )
+                    # In v1.8, just access chunk.content directly
+                    async for chunk in run_response:
+                        if hasattr(chunk, 'content') and chunk.content:
+                            yield chunk.content
                 except Exception as e:
-                    raise RuntimeError(f"Error calling response.content(): {e}")
-                if not isinstance(content_result, str):
-                    raise RuntimeError(f"response.content() did not return a string: got {type(content_result)}")
-                result_content = content_result
-            elif isinstance(response.content, str):
-                result_content = response.content
+                    logging.error(f"Error in streaming: {type(e).__name__}: {str(e)}")
+                    raise
+            
+            logging.info("INFO Starting streaming assistant response for query.")
+            return stream_generator()
+        else:
+            # Non-streaming mode: return complete response
+            response = await assistant_agent.arun(
+                query,
+                images=images if images else None,
+                audio=audio if audio else None,
+                videos=videos if videos else None
+            )
+            # --- Robust error checking for response.content ---
+            # Explicit check for boolean response
+            if isinstance(response, bool):
+                raise RuntimeError(
+                    f"AGNO agent returned a boolean ({response}) instead of a response object. "
+                    "This usually means the agent or routing failed. Please check the agent configuration and query."
+                )
+
+            # Check for callable (function) or string content
+            if hasattr(response, 'content'):
+                if callable(response.content):
+                    try:
+                        content_result = response.content()
+                    except Exception as e:
+                        raise RuntimeError(f"Error calling response.content(): {e}")
+                    if not isinstance(content_result, str):
+                        raise RuntimeError(f"response.content() did not return a string: got {type(content_result)}")
+                    result_content = content_result
+                elif isinstance(response.content, str):
+                    result_content = response.content
+                else:
+                    raise RuntimeError(
+                        f"response.content is not a string or callable, got type: {type(response.content)} and value: {response.content}"
+                    )
             else:
                 raise RuntimeError(
-                    f"response.content is not a string or callable, got type: {type(response.content)} and value: {response.content}"
+                    f"Response object of type {type(response)} does not have a 'content' attribute. Value: {response}"
                 )
-        else:
-            raise RuntimeError(
-                f"Response object of type {type(response)} does not have a 'content' attribute. Value: {response}"
-            )
 
-        # --- MINIMAL LOGGING ---
-        logging.info("INFO Generated assistant response for query.")
+            # --- MINIMAL LOGGING ---
+            logging.info("INFO Generated assistant response for query.")
 
-        return result_content
+            return result_content
 
     except Exception as e:
         logging.error(f"Error in assistant agent: {type(e).__name__}: {str(e)}")
@@ -172,10 +198,11 @@ async def run_assistant_agent_async(query, user_id, session_id, images=None, aud
         raise RuntimeError(f"An error occurred while generating a response: {e}")
 
 
-def run_assistant_agent(query, user_id, session_id, images=None, audio=None, videos=None):
+
+def run_assistant_agent(query, user_id, session_id, images=None, audio=None, videos=None, stream=False):
     """
     Entry point for Assistant agent that works in both synchronous and asynchronous contexts.
-    Supports multimodal inputs (images, audio, videos).
+    Supports multimodal inputs (images, audio, videos) and streaming.
     """
     import asyncio
 
@@ -189,8 +216,8 @@ def run_assistant_agent(query, user_id, session_id, images=None, audio=None, vid
     if is_in_loop:
         # Return coroutine that caller can await
         logging.info("Running assistant in existing event loop")
-        return run_assistant_agent_async(query, user_id, session_id, images, audio, videos)
+        return run_assistant_agent_async(query, user_id, session_id, images, audio, videos, stream)
     else:
         # No event loop running, so create a new one
         logging.info("Creating new event loop for assistant agent")
-        return asyncio.run(run_assistant_agent_async(query, user_id, session_id, images, audio, videos))
+        return asyncio.run(run_assistant_agent_async(query, user_id, session_id, images, audio, videos, stream))

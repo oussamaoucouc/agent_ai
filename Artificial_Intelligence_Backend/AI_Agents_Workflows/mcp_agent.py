@@ -64,42 +64,55 @@ _ARTIFACT_TOKEN_REGEX = re.compile(
     re.IGNORECASE,
 )
 
+# Pattern to match AGNO tool execution logs like:
+# "search(query=...) completed in 1.9721s."
+# "fetch_content(url=...) completed in 2.0278s."
+# "get_chat_history(num_chats=1) completed in 0.0004s."
+_TOOL_EXECUTION_LOG_REGEX = re.compile(
+    r"[\w_]+\([^)]*\)\s*completed\s+in\s+[\d.]+s\.?",
+    re.IGNORECASE,
+)
+
 def _clean_output_artifacts(text: str) -> str:
-    """Robustly remove chat-template artifact tokens without harming legitimate content.
+    """Robustly remove chat-template artifact tokens and tool execution logs.
 
     Strategy:
     - Drop lines that are only an artifact token.
     - Remove tokens anywhere using a compiled regex with surrounding whitespace.
+    - Remove AGNO tool execution logs (e.g., "search(query=...) completed in 1.9721s.")
     - Only remove clearly identified artifact patterns, preserve all other content.
     """
     if not isinstance(text, str):
         return text
 
-    # 1) Remove lines that are only an artifact token
+    # 1) Remove tool execution logs (AGNO framework logs)
+    cleaned = _TOOL_EXECUTION_LOG_REGEX.sub("", text)
+
+    # 2) Remove lines that are only an artifact token
     def _is_artifact_line(line: str) -> bool:
         return bool(_ARTIFACT_TOKEN_REGEX.fullmatch(line.strip()))
 
-    lines = [ln for ln in text.splitlines() if not _is_artifact_line(ln)]
+    lines = [ln for ln in cleaned.splitlines() if not _is_artifact_line(ln)]
     cleaned = "\n".join(lines)
 
-    # 2) Remove artifact tokens appearing inline (but preserve surrounding structure)
+    # 3) Remove artifact tokens appearing inline (but preserve surrounding structure)
     cleaned = _ARTIFACT_TOKEN_REGEX.sub("", cleaned)
 
-    # 3) Only strip trailing artifact patterns, not general characters
+    # 4) Only strip trailing artifact patterns, not general characters
     # Remove only if there's a clear partial artifact at the end
     cleaned = re.sub(r"\s*<\|[^>]*$", "", cleaned)  # Incomplete <|...|> at end
     cleaned = re.sub(r"\s*<\|im_[^>]*$", "", cleaned, flags=re.IGNORECASE)  # Partial im_start/end
     
-    # 4) Clean up excessive blank lines but preserve structure
+    # 5) Clean up excessive blank lines but preserve structure
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     
     return cleaned.strip()
 
 
-def run_agent(query, user_id, session_id, images=None, audio=None, videos=None):
+def run_agent(query, user_id, session_id, images=None, audio=None, videos=None, stream=False):
     """
     Entry point for MCP agent that works in both synchronous and asynchronous contexts.
-    Supports multimodal inputs (images, audio, videos).
+    Supports multimodal inputs (images, audio, videos) and streaming.
     """
     import asyncio
     
@@ -114,14 +127,14 @@ def run_agent(query, user_id, session_id, images=None, audio=None, videos=None):
         # We're already in an event loop, so we need to return a coroutine
         # that the caller can await
         logging.info("Running in existing event loop")
-        return run_agent_async(query, user_id, session_id, images, audio, videos)
+        return run_agent_async(query, user_id, session_id, images, audio, videos, stream)
     else:
         # No event loop running, so create a new one
         logging.info("Creating new event loop")
-        return asyncio.run(run_agent_async(query, user_id, session_id, images, audio, videos))
+        return asyncio.run(run_agent_async(query, user_id, session_id, images, audio, videos, stream))
 
 
-async def run_agent_async(query, user_id, session_id, images=None, audio=None, videos=None):
+async def run_agent_async(query, user_id, session_id, images=None, audio=None, videos=None, stream=False):
     """
     AGNO MCP agent using MCP server tools.
     Using cached knowledge base and memory DBs for better performance.
@@ -130,6 +143,7 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
         query: Text query
         user_id: User ID
         session_id: Session ID
+        stream: If True, returns an async generator yielding content chunks
     """
     logger.info(f"Starting MCP agent with Ollama at: {cfg.OLLAMA_BASE_URL}")
     logger.info(f"OpenAI-compatible base URL: {cfg.get_openai_base_url()}")
@@ -526,70 +540,92 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
     
     agent_common_kwargs['instructions'] = dynamic_instructions
     MCP_agent = Agent(tools=agent_toolkits, **agent_common_kwargs)
-    try:
-        response = await MCP_agent.arun(query)
-    finally:
-        # Clean up all toolkits - wrap each in try-except to handle cancel scope issues
+    
+    async def cleanup_toolkits():
+        """Clean up all toolkits - wrap each in try-except to handle cancel scope issues."""
         for tk in agent_toolkits:
             try:
                 await tk.close()
             except asyncio.CancelledError:
-                # Ignore asyncio cancellation during cleanup - this is normal for multi-toolkit scenarios
                 logger.debug(f"Ignoring CancelledError during toolkit cleanup")
             except RuntimeError as e:
-                # Handle "cancel scope" errors that occur with multiple async toolkits
                 if "cancel scope" in str(e).lower():
                     logger.debug(f"Ignoring cancel scope cleanup error for toolkit: {e}")
                 else:
                     logger.warning(f"Error closing toolkit: {e}")
             except BaseException as e:
-                # Catch any other exception type to prevent cleanup from failing the request
                 logger.warning(f"Error closing toolkit (ignored): {type(e).__name__}: {e}")
-
-    # --- Robust error checking for response.content ---
-    # Explicit check for boolean response
-    if isinstance(response, bool):
-        raise RuntimeError(
-            f"AGNO agent returned a boolean ({response}) instead of a response object. "
-            "This usually means the agent or routing failed. Please check the agent configuration and query."
-        )
-
-    # Check for callable (function) or string content
-    if hasattr(response, 'content'):
-        if callable(response.content):
+    
+    if stream:
+        # Streaming mode: return an async generator that yields content chunks
+        async def stream_generator():
             try:
-                content_result = response.content()
+                # AGNO v1.8: arun with stream=True returns Iterator[RunResponse]
+                # stream_intermediate_steps=False prevents tool execution logs from appearing
+                run_response = await MCP_agent.arun(query, stream=True, stream_intermediate_steps=False)
+                async for chunk in run_response:
+                    # In v1.8, just access chunk.content directly
+                    if hasattr(chunk, 'content') and chunk.content:
+                        yield chunk.content
             except Exception as e:
-                raise RuntimeError(f"Error calling response.content(): {e}")
-            if not isinstance(content_result, str):
-                raise RuntimeError(f"response.content() did not return a string: got {type(content_result)}")
-            result_content = content_result
-        elif isinstance(response.content, str):
-            result_content = response.content
+                logger.error(f"Error in MCP streaming: {type(e).__name__}: {str(e)}")
+                raise
+            finally:
+                await cleanup_toolkits()
+        
+        logger.info("INFO Starting streaming MCP agent response for query.")
+        return stream_generator()
+    else:
+        # Non-streaming mode: return complete response
+        try:
+            response = await MCP_agent.arun(query)
+        finally:
+            await cleanup_toolkits()
+
+        # --- Robust error checking for response.content ---
+        # Explicit check for boolean response
+        if isinstance(response, bool):
+            raise RuntimeError(
+                f"AGNO agent returned a boolean ({response}) instead of a response object. "
+                "This usually means the agent or routing failed. Please check the agent configuration and query."
+            )
+
+        # Check for callable (function) or string content
+        if hasattr(response, 'content'):
+            if callable(response.content):
+                try:
+                    content_result = response.content()
+                except Exception as e:
+                    raise RuntimeError(f"Error calling response.content(): {e}")
+                if not isinstance(content_result, str):
+                    raise RuntimeError(f"response.content() did not return a string: got {type(content_result)}")
+                result_content = content_result
+            elif isinstance(response.content, str):
+                result_content = response.content
+            else:
+                # If content is None or other, try to retrieve just text
+                result_content = str(response.content) if response.content is not None else ""
         else:
-            # If content is None or other, try to retrieve just text
-            result_content = str(response.content) if response.content is not None else ""
-    else:
-        raise RuntimeError(
-            f"Response object of type {type(response)} does not have a 'content' attribute. Value: {response}"
-        )
+            raise RuntimeError(
+                f"Response object of type {type(response)} does not have a 'content' attribute. Value: {response}"
+            )
 
-    # --- LOGGING RETRIEVED DOCUMENTS ---
-    docs = None
-    if hasattr(response, "documents") and response.documents:
-        docs = response.documents
-    elif hasattr(response, "retrieved_docs") and response.retrieved_docs:
-        docs = response.retrieved_docs
-    elif hasattr(response, "sources") and response.sources:
-        docs = response.sources
-    if docs is not None:
-        logging.info(f"INFO Retrieved {len(docs)} documents for query: {query}")
-        for i, doc in enumerate(docs, 1):
-            title = getattr(doc, 'title', None) or doc.get('title', 'No Title') if isinstance(doc, dict) else 'No Title'
-            source = getattr(doc, 'source', None) or doc.get('source', 'Unknown') if isinstance(doc, dict) else 'Unknown'
-            logging.info(f"INFO Document {i}: Title: {title} | Source: {source}")
-    else:
-        logging.info("INFO No document retrieval details available in response.")
+        # --- LOGGING RETRIEVED DOCUMENTS ---
+        docs = None
+        if hasattr(response, "documents") and response.documents:
+            docs = response.documents
+        elif hasattr(response, "retrieved_docs") and response.retrieved_docs:
+            docs = response.retrieved_docs
+        elif hasattr(response, "sources") and response.sources:
+            docs = response.sources
+        if docs is not None:
+            logging.info(f"INFO Retrieved {len(docs)} documents for query: {query}")
+            for i, doc in enumerate(docs, 1):
+                title = getattr(doc, 'title', None) or doc.get('title', 'No Title') if isinstance(doc, dict) else 'No Title'
+                source = getattr(doc, 'source', None) or doc.get('source', 'Unknown') if isinstance(doc, dict) else 'Unknown'
+                logging.info(f"INFO Document {i}: Title: {title} | Source: {source}")
+        else:
+            logging.info("INFO No document retrieval details available in response.")
 
-    # Sanitize artifact tokens that some models/tools may emit
-    return _clean_output_artifacts(result_content)
+        # Sanitize artifact tokens that some models/tools may emit
+        return _clean_output_artifacts(result_content)

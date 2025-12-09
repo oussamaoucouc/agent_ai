@@ -80,10 +80,10 @@ def format_rag_output(content: str) -> str:
 # Removed custom directory state sync; AGNO's knowledge base handles loading/upserts.
 
 
-def run_rag_agent(query, user_id, session_id, images=None, audio=None, videos=None):
+def run_rag_agent(query, user_id, session_id, images=None, audio=None, videos=None, stream=False):
     """
     Entry point for RAG agent that works in both synchronous and asynchronous contexts.
-    Supports multimodal inputs (images, audio, videos).
+    Supports multimodal inputs (images, audio, videos) and streaming.
     """
     import asyncio
     
@@ -98,11 +98,11 @@ def run_rag_agent(query, user_id, session_id, images=None, audio=None, videos=No
         # We're already in an event loop, so we need to return a coroutine
         # that the caller can await
         logging.info("Running in existing event loop")
-        return run_rag_agent_async(query, user_id, session_id, images, audio, videos)
+        return run_rag_agent_async(query, user_id, session_id, images, audio, videos, stream)
     else:
         # No event loop running, so create a new one
         logging.info("Creating new event loop")
-        return asyncio.run(run_rag_agent_async(query, user_id, session_id, images, audio, videos))
+        return asyncio.run(run_rag_agent_async(query, user_id, session_id, images, audio, videos, stream))
 
 async def initialize_knowledge_base(user_id: str, only_path: str | None = None, only_kind: str | None = None):
     """
@@ -237,7 +237,7 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
     return knowledge_base
 
 
-async def run_rag_agent_async(query, user_id, session_id, images=None, audio=None, videos=None):
+async def run_rag_agent_async(query, user_id, session_id, images=None, audio=None, videos=None, stream=False):
     """
     AGNO RAG agent using ChromaDB and nomic embedder.
     Initializes a fresh knowledge base sync on each query.
@@ -246,6 +246,7 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
         query: Text query
         user_id: User ID
         session_id: Session ID
+        stream: If True, returns an async generator yielding content chunks
     """
     logging.info(f"Starting RAG agent with Ollama at: {cfg.OLLAMA_BASE_URL}")
     logging.info(f"OpenAI-compatible base URL: {cfg.get_openai_base_url()}")
@@ -376,54 +377,73 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
     )
 
     try:
-        response = await rag_expert_agent.arun(query)
-        # --- Robust error checking for response.content ---
-        # Explicit check for boolean response
-        if isinstance(response, bool):
-            raise RuntimeError(
-                f"AGNO agent returned a boolean ({response}) instead of a response object. "
-                "This usually means the agent or routing failed. Please check the agent configuration and query."
-            )
-
-        # Check for callable (function) or string content
-        if hasattr(response, 'content'):
-            if callable(response.content):
+        if stream:
+            # Streaming mode: return an async generator that yields content chunks
+            async def stream_generator():
                 try:
-                    content_result = response.content()
+                    # AGNO v1.8: arun with stream=True returns Iterator[RunResponse]
+                    # stream_intermediate_steps=False prevents tool execution logs from appearing
+                    run_response = await rag_expert_agent.arun(query, stream=True, stream_intermediate_steps=False)
+                    async for chunk in run_response:
+                        # In v1.8, just access chunk.content directly
+                        if hasattr(chunk, 'content') and chunk.content:
+                            yield chunk.content
                 except Exception as e:
-                    raise RuntimeError(f"Error calling response.content(): {e}")
-                if not isinstance(content_result, str):
-                    raise RuntimeError(f"response.content() did not return a string: got {type(content_result)}")
-                result_content = content_result
-            elif isinstance(response.content, str):
-                result_content = response.content
+                    logging.error(f"Error in RAG streaming: {type(e).__name__}: {str(e)}")
+                    raise
+            
+            logging.info("INFO Starting streaming RAG agent response for query.")
+            return stream_generator()
+        else:
+            # Non-streaming mode: return complete response
+            response = await rag_expert_agent.arun(query)
+            # --- Robust error checking for response.content ---
+            # Explicit check for boolean response
+            if isinstance(response, bool):
+                raise RuntimeError(
+                    f"AGNO agent returned a boolean ({response}) instead of a response object. "
+                    "This usually means the agent or routing failed. Please check the agent configuration and query."
+                )
+
+            # Check for callable (function) or string content
+            if hasattr(response, 'content'):
+                if callable(response.content):
+                    try:
+                        content_result = response.content()
+                    except Exception as e:
+                        raise RuntimeError(f"Error calling response.content(): {e}")
+                    if not isinstance(content_result, str):
+                        raise RuntimeError(f"response.content() did not return a string: got {type(content_result)}")
+                    result_content = content_result
+                elif isinstance(response.content, str):
+                    result_content = response.content
+                else:
+                    raise RuntimeError(
+                        f"response.content is not a string or callable, got type: {type(response.content)} and value: {response.content}"
+                    )
             else:
                 raise RuntimeError(
-                    f"response.content is not a string or callable, got type: {type(response.content)} and value: {response.content}"
+                    f"Response object of type {type(response)} does not have a 'content' attribute. Value: {response}"
                 )
-        else:
-            raise RuntimeError(
-                f"Response object of type {type(response)} does not have a 'content' attribute. Value: {response}"
-            )
 
-        # --- LOGGING RETRIEVED DOCUMENTS ---
-        docs = None
-        if hasattr(response, "documents") and response.documents:
-            docs = response.documents
-        elif hasattr(response, "retrieved_docs") and response.retrieved_docs:
-            docs = response.retrieved_docs
-        elif hasattr(response, "sources") and response.sources:
-            docs = response.sources
-        if docs is not None:
-            logging.info(f"INFO Retrieved {len(docs)} documents for query: {query}")
-            for i, doc in enumerate(docs, 1):
-                title = getattr(doc, 'title', None) or doc.get('title', 'No Title') if isinstance(doc, dict) else 'No Title'
-                source = getattr(doc, 'source', None) or doc.get('source', 'Unknown') if isinstance(doc, dict) else 'Unknown'
-                logging.info(f"INFO Document {i}: Title: {title} | Source: {source}")
+            # --- LOGGING RETRIEVED DOCUMENTS ---
+            docs = None
+            if hasattr(response, "documents") and response.documents:
+                docs = response.documents
+            elif hasattr(response, "retrieved_docs") and response.retrieved_docs:
+                docs = response.retrieved_docs
+            elif hasattr(response, "sources") and response.sources:
+                docs = response.sources
+            if docs is not None:
+                logging.info(f"INFO Retrieved {len(docs)} documents for query: {query}")
+                for i, doc in enumerate(docs, 1):
+                    title = getattr(doc, 'title', None) or doc.get('title', 'No Title') if isinstance(doc, dict) else 'No Title'
+                    source = getattr(doc, 'source', None) or doc.get('source', 'Unknown') if isinstance(doc, dict) else 'Unknown'
+                    logging.info(f"INFO Document {i}: Title: {title} | Source: {source}")
 
-        # Format the output to be more user-friendly
-        formatted_content = format_rag_output(result_content)
-        return formatted_content
+            # Format the output to be more user-friendly
+            formatted_content = format_rag_output(result_content)
+            return formatted_content
 
     except Exception as e:
         logging.error(f"Error in RAG agent: {type(e).__name__}: {str(e)}")
