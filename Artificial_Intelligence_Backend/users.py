@@ -29,6 +29,8 @@ class UserDB(Base):
     __table_args__ = (
         UniqueConstraint('username', name='uq_app_users_username'),
     )
+    # Store the full table name for the user's RAG combined documents (e.g. rag.combined_documents_u_...)
+    rag_combined_table_name = Column(String(256), nullable=True)
 
 
 class RefreshTokenDB(Base):
@@ -44,6 +46,7 @@ class RefreshTokenDB(Base):
 
 class DocumentMetadata(Base):
     __tablename__ = "document_metadata"
+    __table_args__ = {"schema": "rag"}
     id = Column(String(64), primary_key=True)
     user_id = Column(String(64), nullable=False, index=True)  # Owner of the document
     filename = Column(String(256), nullable=False)
@@ -57,6 +60,32 @@ class DocumentMetadata(Base):
 engine = create_engine(DB_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base.metadata.create_all(bind=engine)
+
+# Runtime migration: Add rag_combined_table_name if missing and populate it
+try:
+    from sqlalchemy import inspect
+    insp = inspect(engine)
+    cols = [c.get('name') for c in insp.get_columns('app_users')]
+    if 'rag_combined_table_name' not in cols:
+        print("Migrating app_users: adding rag_combined_table_name column...")
+        with engine.connect() as conn:
+            conn.exec_driver_sql("ALTER TABLE app_users ADD COLUMN rag_combined_table_name VARCHAR(256)")
+            conn.commit()
+            
+            # Backfill existing users
+            print("Backfilling rag_combined_table_name for existing users...")
+            import hashlib
+            # fetch all users
+            rows = conn.exec_driver_sql("SELECT id FROM app_users").fetchall()
+            for r in rows:
+                uid = r[0]
+                dig = hashlib.sha1(str(uid).encode("utf-8")).hexdigest()[:12]
+                tbl = f"rag.combined_documents_u_{dig}"
+                conn.exec_driver_sql("UPDATE app_users SET rag_combined_table_name = %s WHERE id = %s", (tbl, uid))
+            conn.commit()
+            print("Migration complete.")
+except Exception as e:
+    print(f"User schema migration error: {e}")
 
 
 def get_db():
@@ -181,12 +210,15 @@ def ensure_admin_seed():
         if existing:
             return
         user_id = str(uuid.uuid4())
+        dig = hashlib.sha1(str(user_id).encode("utf-8")).hexdigest()[:12]
+        tbl = f"rag.combined_documents_u_{dig}"
         u = UserDB(
             id=user_id,
             username=admin_username,
             password_hash=_hash_password_secure(admin_password),
             role="admin",
             created_at=datetime.utcnow(),
+            rag_combined_table_name=tbl,
         )
         db.add(u)
         db.commit()
@@ -252,12 +284,16 @@ def create_user(request: UserCreateRequest, http_request: Request, db: SASession
         if existing:
             raise HTTPException(status_code=409, detail="Username already exists")
         user_id = str(uuid.uuid4())
+        import hashlib
+        dig = hashlib.sha1(str(user_id).encode("utf-8")).hexdigest()[:12]
+        tbl = f"rag.combined_documents_u_{dig}"
         u = UserDB(
             id=user_id,
             username=request.username,
             password_hash=_hash_password_secure(request.password),
             role=request.role if request.role in ("admin", "user") else "user",
             created_at=datetime.utcnow(),
+            rag_combined_table_name=tbl,
         )
         db.add(u)
         db.commit()
@@ -373,7 +409,9 @@ def delete_user(user_id: str, http_request: Request, db: SASession = Depends(get
                     db.commit()
             except Exception:
                 db.rollback()
+        _delete_if_table_exists("rag.document_metadata", column_expr="user_id")
         _delete_if_table_exists("agent_session", column_expr="user_id")
+        # Legacy tables in AI schema (cleanup)
         _delete_if_table_exists("ragdocs")
         _delete_if_table_exists("pdf_documents")
         _delete_if_table_exists("docx_documents")
@@ -392,7 +430,7 @@ def delete_user(user_id: str, http_request: Request, db: SASession = Depends(get
             except Exception:
                 db.rollback()
         for base in ["combined_documents", "pdf_documents", "docx_documents", "text_documents", "csv_documents"]:
-            for schema in ["ai", "public"]:
+            for schema in ["ai", "public", "rag"]:
                 _drop_table_if_exists(f"{schema}.{base}_{uid}")
 
         db.delete(u)

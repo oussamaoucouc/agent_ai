@@ -690,29 +690,36 @@ async def delete_document(user_id: Optional[str] = None, filename: str = "", kin
             params = {"uid": user_id, "sha": file_sha256, "name_full": name_full, "name_base": name_base}
             import hashlib
             uid = f"u_{hashlib.sha1(str(user_id).encode('utf-8')).hexdigest()[:12]}"
-            tables = [f"combined_documents_{uid}"]
+            tables_base = [f"combined_documents_{uid}"]
             if kind == "pdf":
-                tables.append(f"pdf_documents_{uid}")
+                tables_base.append(f"pdf_documents_{uid}")
             elif kind == "docx":
-                tables.append(f"docx_documents_{uid}")
+                tables_base.append(f"docx_documents_{uid}")
             elif kind == "text":
-                tables.append(f"text_documents_{uid}")
+                tables_base.append(f"text_documents_{uid}")
             elif kind == "csv":
-                tables.append(f"csv_documents_{uid}")
+                tables_base.append(f"csv_documents_{uid}")
+            
+            # Explicitly check schemas to ensure deletion works regardless of search_path
+            schemas = ["rag", "ai"]
+
             with SessionLocal() as db:
-                for t in tables:
-                    try:
-                        exists = db.execute(text("SELECT to_regclass(:tname)"), {"tname": t}).scalar()
-                        if exists:
-                            db.execute(
-                                text(
-                                    f"DELETE FROM {t} WHERE meta_data->>'user_id' = :uid AND ((meta_data->>'file_sha256' = :sha AND :sha <> '') OR name = :name_full OR name = :name_base)"
-                                ),
-                                params,
-                            )
-                            db.commit()
-                    except Exception:
-                        db.rollback()
+                for base in tables_base:
+                    for schema in schemas:
+                        t = f"{schema}.{base}"
+                        try:
+                            exists = db.execute(text("SELECT to_regclass(:tname)"), {"tname": t}).scalar()
+                            if exists:
+                                db.execute(
+                                    text(
+                                        f"DELETE FROM {t} WHERE meta_data->>'user_id' = :uid AND ((meta_data->>'file_sha256' = :sha AND :sha <> '') OR name = :name_full OR name = :name_base)"
+                                    ),
+                                    params,
+                                )
+                                db.commit()
+                        except Exception as e:
+                            logging.error(f"Error deleting from {t}: {e}")
+                            db.rollback()
         return {"message": "Successfully deleted", "filename": safe_name}
     except HTTPException:
         raise

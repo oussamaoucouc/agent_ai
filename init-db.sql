@@ -12,6 +12,16 @@ GRANT ALL PRIVILEGES ON SCHEMA ai TO ai;
 ALTER DEFAULT PRIVILEGES IN SCHEMA ai GRANT ALL ON TABLES TO ai;
 ALTER DEFAULT PRIVILEGES IN SCHEMA ai GRANT ALL ON SEQUENCES TO ai;
 
+-- Create the rag schema if it doesn't exist
+CREATE SCHEMA IF NOT EXISTS rag;
+
+-- Grant all privileges on the rag schema to the ai user
+GRANT ALL PRIVILEGES ON SCHEMA rag TO ai;
+
+-- Set default privileges for future tables in the rag schema
+ALTER DEFAULT PRIVILEGES IN SCHEMA rag GRANT ALL ON TABLES TO ai;
+ALTER DEFAULT PRIVILEGES IN SCHEMA rag GRANT ALL ON SEQUENCES TO ai;
+
 -- Ensure pgvector extension is enabled (ankane/pgvector should handle this, but just in case)
 CREATE EXTENSION IF NOT EXISTS vector;
 

@@ -134,31 +134,36 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
         table_name=_tbl("pdf_documents"),
         db_url=cfg.VECTOR_DB_URL,
         embedder=embedder,
-        search_type=SearchType.hybrid
+        search_type=SearchType.hybrid,
+        schema="rag"
     )
     docx_vector_db = PgVector(
         table_name=_tbl("docx_documents"),
         db_url=cfg.VECTOR_DB_URL,
         embedder=embedder,
-        search_type=SearchType.hybrid
+        search_type=SearchType.hybrid,
+        schema="rag"
     )
     text_vector_db = PgVector(
         table_name=_tbl("text_documents"),
         db_url=cfg.VECTOR_DB_URL,
         embedder=embedder,
-        search_type=SearchType.hybrid
+        search_type=SearchType.hybrid,
+        schema="rag"
     )
     csv_vector_db = PgVector(
         table_name=_tbl("csv_documents"),
         db_url=cfg.VECTOR_DB_URL,
         embedder=embedder,
-        search_type=SearchType.hybrid
+        search_type=SearchType.hybrid,
+        schema="rag"
     )
     combined_vector_db = PgVector(
         table_name=_tbl("combined_documents"),
         db_url=cfg.VECTOR_DB_URL,
         embedder=embedder,
-        search_type=SearchType.hybrid
+        search_type=SearchType.hybrid,
+        schema="rag"
     )
     logging.info("Initialized PgVector user-scoped tables for pdf, docx, text, csv, combined")
 

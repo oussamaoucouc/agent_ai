@@ -757,8 +757,8 @@ __all__ = [
 # Use DATABASE_URL from environment, default to localhost for non-Docker runs.
 # The Dockerfile sets DATABASE_URL to postgresql://ai:ai@postgres:5432/ai
 # Added search_path=ai to ensure all tables are created in the 'ai' schema by default
-DB_URL = os.getenv("DATABASE_URL", "postgresql+psycopg2://ai:ai@localhost:5532/ai?options=-csearch_path%3Dai")
-VECTOR_DB_URL = os.getenv("VECTOR_DB_URL", "postgresql+psycopg://ai:ai@localhost:5532/ai?options=-csearch_path%3Dai")
+DB_URL = os.getenv("DATABASE_URL", "postgresql+psycopg2://ai:ai@localhost:5532/ai?options=-csearch_path%3Dai,rag")
+VECTOR_DB_URL = os.getenv("VECTOR_DB_URL", "postgresql+psycopg://ai:ai@localhost:5532/ai?options=-csearch_path%3Dai,rag")
 
 # Path configurations
 # Determine Rhubarb executable path based on the operating system
