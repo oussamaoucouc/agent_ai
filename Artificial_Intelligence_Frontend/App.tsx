@@ -1114,7 +1114,11 @@ const App: React.FC = () => {
                     text: "Sorry, I encountered an error. Please try again.",
                     sender: User.ASSISTANT,
                 };
-                setMessages(prev => [...prev, errorMessage]);
+                // Remove any empty "thinking" messages before adding error
+                setMessages(prev => [
+                    ...prev.filter(m => m.text.trim() !== '' || m.attachedImages?.length || m.attachedAudio?.length || m.attachedVideos?.length),
+                    errorMessage
+                ]);
             }
         } finally {
             setIsLoading(false);
