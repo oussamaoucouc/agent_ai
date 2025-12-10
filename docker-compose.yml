@@ -24,6 +24,7 @@ services:
     volumes:
       - ./Artificial_Intelligence_Backend:/app
       - tts_cache_vol:/app/tts_cache
+      - documents_vol:/app/data # Persist uploaded documents outside container
       - /app/.venv
       - ${USERPROFILE}/.docker/mcp:/root/.docker/mcp:ro # Mount user's MCP config for agent to read
     environment:
@@ -110,6 +111,8 @@ volumes:
   pgvolume_vol:
   ollama_data_vol:
   tts_cache_vol:
+  documents_vol:
+    # Volume for uploaded documents
 
 
 networks:
