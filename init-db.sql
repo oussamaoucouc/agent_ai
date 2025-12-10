@@ -1,32 +1,67 @@
 -- PostgreSQL initialization script
 -- This runs automatically when the database is first created
--- Ensures the 'ai' schema exists for all application tables
+-- Ensures the 'ai' and 'rag' schemas exist for all application tables
 
--- Create the ai schema if it doesn't exist
+-- Create extensions
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Create ai schema (if not exists)
 CREATE SCHEMA IF NOT EXISTS ai;
 
--- Grant all privileges on the ai schema to the ai user
-GRANT ALL PRIVILEGES ON SCHEMA ai TO ai;
+-- Create rag schema for document metadata
+CREATE SCHEMA IF NOT EXISTS rag;
 
--- Set default privileges for future tables in the ai schema
+-- Grant permissions on ai schema
+GRANT ALL PRIVILEGES ON SCHEMA ai TO ai;
 ALTER DEFAULT PRIVILEGES IN SCHEMA ai GRANT ALL ON TABLES TO ai;
 ALTER DEFAULT PRIVILEGES IN SCHEMA ai GRANT ALL ON SEQUENCES TO ai;
 
--- Create the rag schema if it doesn't exist
-CREATE SCHEMA IF NOT EXISTS rag;
-
--- Grant all privileges on the rag schema to the ai user
+-- Grant permissions on rag schema
 GRANT ALL PRIVILEGES ON SCHEMA rag TO ai;
-
--- Set default privileges for future tables in the rag schema
 ALTER DEFAULT PRIVILEGES IN SCHEMA rag GRANT ALL ON TABLES TO ai;
 ALTER DEFAULT PRIVILEGES IN SCHEMA rag GRANT ALL ON SEQUENCES TO ai;
 
--- Ensure pgvector extension is enabled (ankane/pgvector should handle this, but just in case)
-CREATE EXTENSION IF NOT EXISTS vector;
+-- MinIO columns migration for document_metadata table
+-- These columns are added to support MinIO object storage
+DO $$
+BEGIN
+    -- Add minio_bucket_name column if it doesn't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'rag' 
+        AND table_name = 'document_metadata' 
+        AND column_name = 'minio_bucket_name'
+    ) THEN
+        ALTER TABLE rag.document_metadata 
+        ADD COLUMN minio_bucket_name VARCHAR(128);
+    END IF;
+
+    -- Add minio_object_key column if it doesn't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'rag' 
+        AND table_name = 'document_metadata' 
+        AND column_name = 'minio_object_key'
+    ) THEN
+        ALTER TABLE rag.document_metadata 
+        ADD COLUMN minio_object_key VARCHAR(512);
+    END IF;
+
+    -- Add etag column if it doesn't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'rag' 
+        AND table_name = 'document_metadata' 
+        AND column_name = 'etag'
+    ) THEN
+        ALTER TABLE rag.document_metadata 
+        ADD COLUMN etag VARCHAR(128);
+    END IF;
+END $$;
 
 -- Log completion
 DO $$
 BEGIN
-    RAISE NOTICE 'Schema ai initialized successfully';
+    RAISE NOTICE 'Schemas ai and rag initialized successfully';
 END $$;
