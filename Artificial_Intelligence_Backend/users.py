@@ -10,6 +10,7 @@ import hmac
 import binascii
 import secrets
 import os
+import logging
 
 from AI_Agents_Workflows.config import DB_URL, get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir
 import sessions as session_mod
@@ -50,11 +51,15 @@ class DocumentMetadata(Base):
     id = Column(String(64), primary_key=True)
     user_id = Column(String(64), nullable=False, index=True)  # Owner of the document
     filename = Column(String(256), nullable=False)
-    file_path = Column(String(512), nullable=False)
+    file_path = Column(String(512), nullable=True)  # Keep for backward compatibility
     file_type = Column(String(32), nullable=False)  # pdf, docx, etc.
     uploaded_by = Column(String(64), nullable=False)  # User ID of uploader (admin or user)
     is_admin_uploaded = Column(Integer, default=0)  # 0=False, 1=True
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    # MinIO storage columns
+    minio_bucket_name = Column(String(128), nullable=True)
+    minio_object_key = Column(String(512), nullable=True)
+    etag = Column(String(128), nullable=True)
 
 
 engine = create_engine(DB_URL)
@@ -435,6 +440,15 @@ def delete_user(user_id: str, http_request: Request, db: SASession = Depends(get
 
         db.delete(u)
         db.commit()
+        
+        # Delete MinIO bucket for user
+        try:
+            import minio_storage
+            minio_storage.delete_user_bucket(user_id)
+            logging.info(f"Deleted MinIO bucket for user {user_id}")
+        except Exception as e:
+            logging.error(f"Failed to delete MinIO bucket for user {user_id}: {e}")
+        
         # Optionally remove user document directory and per-user agent memory DB files
         try:
             import shutil
@@ -570,14 +584,10 @@ def user_stats(request: Request, db: SASession = Depends(get_db)):
         # Build a per-user sessions count
         for u in users:
             sess_count = db.query(session_mod.SessionDB).filter(session_mod.SessionDB.user_id == u.id).count()
-            docs_count = 0
-            try:
-                for f in (get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir):
-                    d = f(u.id)
-                    if os.path.isdir(d):
-                        docs_count += len([fpath for fpath in os.listdir(d) if os.path.isfile(os.path.join(d, fpath))])
-            except Exception:
-                pass
+            
+            # Count documents from database instead of filesystem
+            docs_count = db.query(DocumentMetadata).filter(DocumentMetadata.user_id == u.id).count()
+            
             # Count selected MCP tools from session settings
             tools_count = 0
             web_tools_count = 0

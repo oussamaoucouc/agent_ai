@@ -381,6 +381,9 @@ async def upload_document_endpoint(
     session_id: str = Form(...),
     target_user_id: Optional[str] = Form(None)
 ):
+    """Upload document to MinIO object storage."""
+    import minio_storage
+    
     try:
         # Auth check
         token_payload = get_user_from_auth_header(request.headers.get("Authorization"))
@@ -396,27 +399,165 @@ async def upload_document_endpoint(
             effective_user_id = target_user_id
             is_admin_upload = True
 
+        # Validate file type
         file_extension = os.path.splitext(file.filename)[1].lower()
         allowed = {".pdf", ".docx", ".doc", ".txt", ".md", ".csv"}
         if file_extension not in allowed:
             raise HTTPException(status_code=400, detail="Only pdf, docx, doc, txt, md, csv files are allowed")
 
-        # Save the uploaded file to the per-user PDFs directory (using effective_user_id)
+        # Determine file type for storage
         if file_extension == ".pdf":
-            target_dir = str(get_user_pdf_dir(effective_user_id))
             kind = "pdf"
         elif file_extension in {".doc", ".docx"}:
-            target_dir = str(get_user_docx_dir(effective_user_id))
             kind = "docx"
         elif file_extension in {".txt", ".md"}:
-            target_dir = str(get_user_text_dir(effective_user_id))
             kind = "text"
         else:
-            target_dir = str(get_user_csv_dir(effective_user_id))
             kind = "csv"
-        os.makedirs(target_dir, exist_ok=True)
+
         safe_name = os.path.basename(file.filename)
-        file_path = os.path.join(target_dir, safe_name)
+
+        # Save uploaded file to temporary location
+        tmp_name = f".tmp_{uuid.uuid4().hex}{file_extension}"
+        tmp_path = os.path.join(tempfile.gettempdir(), tmp_name)
+        
+        try:
+            with open(tmp_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+
+            # Calculate SHA256 hash for duplicate detection
+            def _sha256(path: str) -> str:
+                import hashlib
+                h = hashlib.sha256()
+                with open(path, "rb") as f:
+                    for chunk in iter(lambda: f.read(8192), b""):
+                        h.update(chunk)
+                return h.hexdigest()
+
+            file_hash = _sha256(tmp_path)
+
+            # Check for duplicates in database
+            with _UserSessionLocal() as db:
+                existing = db.query(DocumentMetadata).filter(
+                    DocumentMetadata.user_id == effective_user_id,
+                    DocumentMetadata.filename == safe_name
+                ).first()
+
+                if existing:
+                    # File with same name exists - check if content is identical
+                    try:
+                        # Download existing file from MinIO to compare
+                        if existing.minio_object_key and existing.minio_bucket_name:
+                            temp_existing = minio_storage.download_to_temp(
+                                effective_user_id, safe_name, kind
+                            )
+                            existing_hash = _sha256(temp_existing)
+                            os.remove(temp_existing)
+
+                            if existing_hash == file_hash:
+                                # Exact duplicate - skip upload
+                                os.remove(tmp_path)
+                                
+                                # Generate presigned URL for response
+                                try:
+                                    download_url = minio_storage.get_presigned_download_url(
+                                        effective_user_id, safe_name, kind
+                                    )
+                                except:
+                                    download_url = None
+
+                                return {
+                                    "message": "Already uploaded (duplicate detected)",
+                                    "filename": safe_name,
+                                    "duplicate": True,
+                                    "download_url": download_url
+                                }
+                    except Exception as e:
+                        logging.error(f"Error checking for duplicate: {e}")
+
+                    # Same name but different content - generate unique filename
+                    base, ext = os.path.splitext(safe_name)
+                    counter = 2
+                    new_name = f"{base} ({counter}){ext}"
+                    while db.query(DocumentMetadata).filter(
+                        DocumentMetadata.user_id == effective_user_id,
+                        DocumentMetadata.filename == new_name
+                    ).first():
+                        counter += 1
+                        new_name = f"{base} ({counter}){ext}"
+                    safe_name = new_name
+
+                # Upload to MinIO
+                bucket_name, object_key, etag = minio_storage.upload_document(
+                    user_id=effective_user_id,
+                    file_path=tmp_path,
+                    filename=safe_name,
+                    file_type=kind,
+                    metadata={"sha256": file_hash}
+                )
+
+                # Save metadata to database
+                doc_meta = DocumentMetadata(
+                    id=str(uuid.uuid4()),
+                    user_id=effective_user_id,
+                    filename=safe_name,
+                    file_path=None,  # No longer using filesystem paths
+                    file_type=kind,
+                    minio_bucket_name=bucket_name,
+                    minio_object_key=object_key,
+                    etag=etag,
+                    uploaded_by=auth_user_id or user_id,
+                    is_admin_uploaded=1 if is_admin_upload else 0
+                )
+                db.add(doc_meta)
+                db.commit()
+
+                # Generate presigned URL for immediate download
+                try:
+                    download_url = minio_storage.get_presigned_download_url(
+                        effective_user_id, safe_name, kind, expiry=3600
+                    )
+                except Exception as e:
+                    logging.error(f"Failed to generate presigned URL: {e}")
+                    download_url = None
+
+                # Initialize knowledge base in background (async-safe)
+                try:
+                    async def init_kb_background():
+                        try:
+                            await initialize_knowledge_base(effective_user_id)
+                        except Exception as e:
+                            logging.error(f"Background KB init failed: {e}")
+                    
+                    asyncio.create_task(init_kb_background())
+                except Exception as e:
+                    logging.error(f"Failed to schedule KB init: {e}")
+
+                return {
+                    "message": "Upload successful",
+                    "filename": safe_name,
+                    "file_type": kind,
+                    "bucket": bucket_name,
+                    "object_key": object_key,
+                    "download_url": download_url,
+                    "duplicate": False
+                }
+
+        finally:
+            # Clean up temp file
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except:
+                    pass
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Upload error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
         # Write upload to a temporary file first
         tmp_name = f".tmp_{uuid.uuid4().hex}{file_extension}"
@@ -534,11 +675,15 @@ async def upload_document_endpoint(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error uploading document: {str(e)}")
 
-# List documents for a user (persisted on disk)
+# List documents for a user (from MinIO)
 @app.get("/list_documents", response_model=Dict[str, Any])
 async def list_documents(user_id: Optional[str] = None, request: Request = None, target_user_id: Optional[str] = None):
+    """List user documents from MinIO with presigned download URLs."""
+    import minio_storage
+    from users import DocumentMetadata, SessionLocal as _UserSessionLocal
+    
     try:
-        # Prefer token user_id if Authorization present
+        # Auth check
         token_payload = get_user_from_auth_header(request.headers.get("Authorization")) if request else None
         auth_user_id = token_payload.get("uid") if token_payload else None
         auth_role = token_payload.get("role") if token_payload else None
@@ -554,47 +699,60 @@ async def list_documents(user_id: Optional[str] = None, request: Request = None,
 
         if not effective_user_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
-            
-        dirs = [
-            (str(get_user_pdf_dir(effective_user_id)), "pdf", {".pdf"}),
-            (str(get_user_docx_dir(effective_user_id)), "docx", {".doc", ".docx"}),
-            (str(get_user_text_dir(effective_user_id)), "text", {".txt", ".md"}),
-            (str(get_user_csv_dir(effective_user_id)), "csv", {".csv"}),
-        ]
-        docs = []
-        for d, kind, exts in dirs:
-            os.makedirs(d, exist_ok=True)
-            for name in os.listdir(d):
-                if any(name.lower().endswith(ext) for ext in exts):
-                    docs.append({"filename": name, "path": os.path.join(d, name), "kind": kind})
-        
-        # Merge with metadata
-        try:
-            with _UserSessionLocal() as db:
-                metas = db.query(DocumentMetadata).filter(DocumentMetadata.user_id == effective_user_id).all()
-                meta_map = {m.filename: m for m in metas}
-                
-                for doc in docs:
-                    fname = doc["filename"]
-                    if fname in meta_map:
-                        doc["is_admin_uploaded"] = bool(meta_map[fname].is_admin_uploaded)
-                        doc["uploaded_by"] = meta_map[fname].uploaded_by
-                    else:
-                        doc["is_admin_uploaded"] = False
-        except Exception as e:
-            logging.error(f"Error fetching document metadata: {e}")
-            # Fallback to defaults
-            for doc in docs:
-                if "is_admin_uploaded" not in doc:
-                    doc["is_admin_uploaded"] = False
 
-        return {"documents": docs}
+        # Query documents from database
+        with _UserSessionLocal() as db:
+            docs = db.query(DocumentMetadata).filter(
+                DocumentMetadata.user_id == effective_user_id
+            ).order_by(DocumentMetadata.created_at.desc()).all()
+
+        # Build response with presigned URLs
+        documents = []
+        for doc in docs:
+            try:
+                # Generate presigned URL for download (1 hour expiry)
+                download_url = None
+                if doc.minio_object_key and doc.minio_bucket_name:
+                    try:
+                        download_url = minio_storage.get_presigned_download_url(
+                            effective_user_id,
+                            doc.filename,
+                            doc.file_type,
+                            expiry=3600
+                        )
+                    except Exception as e:
+                        logging.error(f"Failed to generate presigned URL for {doc.filename}: {e}")
+
+                documents.append({
+                    "id": doc.id,
+                    "filename": doc.filename,
+                    "kind": doc.file_type,
+                    "file_type": doc.file_type,
+                    "uploaded_by": doc.uploaded_by,
+                    "is_admin_uploaded": bool(doc.is_admin_uploaded),
+                    "created_at": doc.created_at.isoformat(),
+                    "download_url": download_url,
+                    "url_expires_in": 3600 if download_url else None
+                })
+            except Exception as e:
+                logging.error(f"Error processing document {doc.filename}: {e}")
+                continue
+
+        return {"documents": documents}
+
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error listing documents: {str(e)}")
+        logging.error(f"Error listing documents: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list documents: {str(e)}")
 
-# Delete a document for a user and sync KB
+# Delete a document for a user from MinIO and sync KB
 @app.delete("/delete_document", response_model=Dict[str, str])
 async def delete_document(user_id: Optional[str] = None, filename: str = "", kind: Optional[str] = None, request: Request = None):
+    """Delete document from MinIO and database."""
+    import minio_storage
+    from users import DocumentMetadata, SessionLocal as _UserSessionLocal
+    
     try:
         token_payload = get_user_from_auth_header(request.headers.get("Authorization")) if request else None
         auth_user_id = token_payload.get("uid") if token_payload else None
@@ -607,124 +765,53 @@ async def delete_document(user_id: Optional[str] = None, filename: str = "", kin
         
         safe_name = os.path.basename(filename)
 
-        # Permission check: prevent users from deleting admin-uploaded files
-        try:
-            with _UserSessionLocal() as db:
-                meta = db.query(DocumentMetadata).filter(
-                    DocumentMetadata.user_id == user_id,
-                    DocumentMetadata.filename == safe_name
-                ).first()
-                if meta and meta.is_admin_uploaded and auth_role != "admin":
-                    raise HTTPException(status_code=403, detail="Cannot delete admin-uploaded document")
-        except HTTPException:
-            raise
-        except Exception as e:
-            logging.error(f"Error checking document permission: {e}")
-
-        candidates = []
-        if kind == "pdf":
-            d = str(get_user_pdf_dir(user_id))
-            candidates.append(os.path.join(d, safe_name))
-        elif kind == "docx":
-            d = str(get_user_docx_dir(user_id))
-            candidates.append(os.path.join(d, safe_name))
-        elif kind == "text":
-            d = str(get_user_text_dir(user_id))
-            candidates.append(os.path.join(d, safe_name))
-        elif kind == "csv":
-            d = str(get_user_csv_dir(user_id))
-            candidates.append(os.path.join(d, safe_name))
-        else:
-            for d in [str(get_user_pdf_dir(user_id)), str(get_user_docx_dir(user_id)), str(get_user_text_dir(user_id)), str(get_user_csv_dir(user_id))]:
-                candidates.append(os.path.join(d, safe_name))
-        file_path = next((p for p in candidates if os.path.isfile(p)), None)
-        if not file_path:
-            raise HTTPException(status_code=404, detail="File not found")
-        def _sha256(path: str) -> str:
-            import hashlib
-            h = hashlib.sha256()
-            with open(path, "rb") as f:
-                for chunk in iter(lambda: f.read(8192), b""):
-                    h.update(chunk)
-            return h.hexdigest()
-        try:
-            file_sha256 = _sha256(file_path)
-        except Exception:
-            file_sha256 = ""
-        # Robust deletion: retry a few times in case the file is briefly locked (Windows)
-        last_err = None
-        for attempt in range(5):
-            try:
-                os.remove(file_path)
-                last_err = None
-                break
-            except PermissionError as e:
-                last_err = e
-                time.sleep(0.25)
-            except Exception as e:
-                last_err = e
-                break
-        if last_err is not None:
-            raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(last_err)}")
-        
-        # Delete metadata record
-        try:
-            with _UserSessionLocal() as db:
-                db.query(DocumentMetadata).filter(
-                    DocumentMetadata.user_id == user_id,
-                    DocumentMetadata.filename == safe_name
-                ).delete()
-                db.commit()
-        except Exception as e:
-            logging.error(f"Error deleting document metadata: {e}")
-
-        lock = get_user_kb_lock(user_id)
-        logging.info(f"Waiting for KB lock for user {user_id} (delete)")
-        async with lock:
-            logging.info(f"Entered KB lock for user {user_id} (delete)")
-            from sqlalchemy import text
-            from sessions import SessionLocal
-            base_name = os.path.splitext(safe_name)[0]
-            name_full = safe_name
-            name_base = base_name
-            params = {"uid": user_id, "sha": file_sha256, "name_full": name_full, "name_base": name_base}
-            import hashlib
-            uid = f"u_{hashlib.sha1(str(user_id).encode('utf-8')).hexdigest()[:12]}"
-            tables_base = [f"combined_documents_{uid}"]
-            if kind == "pdf":
-                tables_base.append(f"pdf_documents_{uid}")
-            elif kind == "docx":
-                tables_base.append(f"docx_documents_{uid}")
-            elif kind == "text":
-                tables_base.append(f"text_documents_{uid}")
-            elif kind == "csv":
-                tables_base.append(f"csv_documents_{uid}")
+        # Get document metadata and check permissions
+        with _UserSessionLocal() as db:
+            meta = db.query(DocumentMetadata).filter(
+                DocumentMetadata.user_id == user_id,
+                DocumentMetadata.filename == safe_name
+            ).first()
             
-            # Explicitly check schemas to ensure deletion works regardless of search_path
-            schemas = ["rag", "ai"]
+            if not meta:
+                raise HTTPException(status_code=404, detail="Document not found")
+            
+            # Permission check: prevent users from deleting admin-uploaded files
+            if meta.is_admin_uploaded and auth_role != "admin":
+                raise HTTPException(status_code=403, detail="Cannot delete admin-uploaded document")
 
-            with SessionLocal() as db:
-                for base in tables_base:
-                    for schema in schemas:
-                        t = f"{schema}.{base}"
-                        try:
-                            exists = db.execute(text("SELECT to_regclass(:tname)"), {"tname": t}).scalar()
-                            if exists:
-                                db.execute(
-                                    text(
-                                        f"DELETE FROM {t} WHERE meta_data->>'user_id' = :uid AND ((meta_data->>'file_sha256' = :sha AND :sha <> '') OR name = :name_full OR name = :name_base)"
-                                    ),
-                                    params,
-                                )
-                                db.commit()
-                        except Exception as e:
-                            logging.error(f"Error deleting from {t}: {e}")
-                            db.rollback()
-        return {"message": "Successfully deleted", "filename": safe_name}
+            # Delete from MinIO
+            if meta.minio_object_key and meta.minio_bucket_name:
+                try:
+                    minio_storage.delete_document(user_id, safe_name, meta.file_type)
+                    logging.info(f"Deleted {safe_name} from MinIO for user {user_id}")
+                except Exception as e:
+                    logging.error(f"Error deleting from MinIO: {e}")
+                    # Continue with database deletion even if MinIO fails
+
+            # Delete metadata from database
+            db.delete(meta)
+            db.commit()
+
+        # Trigger KB reindex in background (async-safe)
+        # Use force_recreate=True to rebuild vector DB from scratch (removes deleted doc embeddings)
+        try:
+            async def reindex_kb_background():
+                try:
+                    await initialize_knowledge_base(user_id, force_recreate=True)
+                except Exception as e:
+                    logging.error(f"Background KB reindex failed: {e}")
+            
+            asyncio.create_task(reindex_kb_background())
+        except Exception as e:
+            logging.error(f"Failed to schedule KB reindex: {e}")
+
+        return {"message": f"Successfully deleted {safe_name}"}
+
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting document: {str(e)}")
+        logging.error(f"Error deleting document: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete document: {str(e)}")
 
 #LLM QUERY (with SSE Streaming)
 @app.post("/query")

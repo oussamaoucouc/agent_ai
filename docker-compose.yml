@@ -93,6 +93,26 @@ services:
     networks:
       - ai-network
 
+  # MinIO Object Storage - S3-compatible storage for RAG documents
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000" # MinIO API
+      - "9001:9001" # MinIO Console UI
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data_vol:/data
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ai-network
+
   # MCP Gateway - Docker AI Model Context Protocol Gateway
   # Provides MCP tools for AI agents (no authentication in container mode)
   # Mounts user's local MCP registry so selected servers are available
@@ -110,6 +130,7 @@ volumes:
   pgvolume_vol:
   ollama_data_vol:
   tts_cache_vol:
+  minio_data_vol:
 
 
 networks:

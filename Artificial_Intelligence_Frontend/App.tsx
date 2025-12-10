@@ -1109,12 +1109,16 @@ const App: React.FC = () => {
                 console.log("Generation cancelled by user.");
             } else {
                 console.error("Error sending message:", error);
-                const errorMessage: Message = {
-                    id: crypto.randomUUID(),
-                    text: "Sorry, I encountered an error. Please try again.",
-                    sender: User.ASSISTANT,
-                };
-                setMessages(prev => [...prev, errorMessage]);
+                // Remove any empty thinking messages before adding error
+                setMessages(prev => {
+                    const filtered = prev.filter(m => m.text.trim() !== '' || (m.attachedImages?.length ?? 0) > 0 || (m.attachedAudio?.length ?? 0) > 0 || (m.attachedVideos?.length ?? 0) > 0);
+                    const errorMessage: Message = {
+                        id: crypto.randomUUID(),
+                        text: "Sorry, I encountered an error. Please try again.",
+                        sender: User.ASSISTANT,
+                    };
+                    return [...filtered, errorMessage];
+                });
             }
         } finally {
             setIsLoading(false);

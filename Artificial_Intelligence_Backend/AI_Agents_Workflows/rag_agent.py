@@ -104,32 +104,48 @@ def run_rag_agent(query, user_id, session_id, images=None, audio=None, videos=No
         logging.info("Creating new event loop")
         return asyncio.run(run_rag_agent_async(query, user_id, session_id, images, audio, videos, stream))
 
-async def initialize_knowledge_base(user_id: str, only_path: str | None = None, only_kind: str | None = None):
+async def initialize_knowledge_base(user_id: str, force_recreate: bool = False):
     """
-    Initialize the per-user knowledge base and let AGNO/Chroma manage persistence.
+    Initialize the per-user knowledge base using MinIO-stored documents.
+    Downloads documents from MinIO to temp files, embeds them, and stores in PgVector.
+    
+    This is called:
+    - In background after document upload (force_recreate=False) - upserts new docs
+    - In background after document delete (force_recreate=True) - rebuilds from scratch
+    - As fallback if vector table doesn't exist during query (force_recreate=True)
+    
+    Args:
+        user_id: User ID to initialize knowledge base for
+        force_recreate: If True, recreates vector DB from scratch (for delete operations)
+        
+    Returns:
+        CombinedKnowledgeBase: Knowledge base with embeddings loaded
     """
-    user_pdf_dir = cfg.get_user_pdf_dir(user_id)
-    user_docx_dir = cfg.get_user_docx_dir(user_id)
-    user_text_dir = cfg.get_user_text_dir(user_id)
-    user_csv_dir = cfg.get_user_csv_dir(user_id)
-
-    logging.info("Initializing knowledge base")
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    
+    from users import DocumentMetadata, SessionLocal as UserSessionLocal
+    import minio_storage
+    
+    action = "Recreating" if force_recreate else "Initializing"
+    logging.info(f"{action} knowledge base from MinIO for user {user_id}")
     logging.info(f"Using Ollama URL for embedder: {cfg.OLLAMA_BASE_URL}")
-    logging.info(f"OpenAI-compatible base URL (embeddings): {cfg.get_openai_base_url()}")
-
 
     embedder = OllamaEmbedder(
-            id="nomic-embed-text",
-            dimensions=768,
-            host=cfg.OLLAMA_BASE_URL
-        )
+        id="nomic-embed-text",
+        dimensions=768,
+        host=cfg.OLLAMA_BASE_URL
+    )
+    
     def _uid_suffix(uid: str) -> str:
         import hashlib
         dig = hashlib.sha1(str(uid).encode("utf-8")).hexdigest()[:12]
         return f"u_{dig}"
+    
     def _tbl(base: str) -> str:
         return f"{base}_{_uid_suffix(user_id)}"
 
+    # Initialize vector databases
     pdf_vector_db = PgVector(
         table_name=_tbl("pdf_documents"),
         db_url=cfg.VECTOR_DB_URL,
@@ -165,62 +181,83 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
         search_type=SearchType.hybrid,
         schema="rag"
     )
-    logging.info("Initialized PgVector user-scoped tables for pdf, docx, text, csv, combined")
+    logging.info("Initialized PgVector user-scoped tables")
 
-    logging.info(f"Using user-specific directories: pdf={user_pdf_dir}, docx={user_docx_dir}, text={user_text_dir}, csv={user_csv_dir}")
-    try:
-        pdf_files_for_kb = list(Path(user_pdf_dir).glob("*.pdf"))
-    except Exception:
-        pdf_files_for_kb = []
-    try:
-        docx_files_for_kb = list(Path(user_docx_dir).glob("*.docx")) + list(Path(user_docx_dir).glob("*.doc"))
-    except Exception:
-        docx_files_for_kb = []
-    try:
-        text_files_for_kb = list(Path(user_text_dir).glob("*.txt")) + list(Path(user_text_dir).glob("*.md"))
-    except Exception:
-        text_files_for_kb = []
-    try:
-        csv_files_for_kb = list(Path(user_csv_dir).glob("*.csv"))
-    except Exception:
-        csv_files_for_kb = []
+    # Query ALL documents for this user from database
+    with UserSessionLocal() as db:
+        docs = db.query(DocumentMetadata).filter(
+            DocumentMetadata.user_id == user_id
+        ).all()
+        logging.info(f"Found {len(docs)} documents for user {user_id}")
 
-    if only_path and only_kind:
-        p = Path(only_path)
-        kind = only_kind.lower()
-        pdf_files_for_kb = [p] if kind == "pdf" and p.suffix.lower() == ".pdf" else []
-        docx_files_for_kb = [p] if kind == "docx" and p.suffix.lower() in {".doc", ".docx"} else []
-        text_files_for_kb = [p] if kind == "text" and p.suffix.lower() in {".txt", ".md"} else []
-        csv_files_for_kb = [p] if kind == "csv" and p.suffix.lower() == ".csv" else []
+    # Download documents from MinIO to temp files
+    pdf_files = []
+    docx_files = []
+    text_files = []
+    csv_files = []
 
-    def _sha256(path: Path) -> str:
+    def _sha256_bytes(data: bytes) -> str:
         import hashlib
-        h = hashlib.sha256()
-        with open(path, "rb") as f:
-            for chunk in iter(lambda: f.read(8192), b""):
-                h.update(chunk)
-        return h.hexdigest()
+        return hashlib.sha256(data).hexdigest()
 
+    for doc in docs:
+        if not doc.minio_object_key or not doc.minio_bucket_name:
+            logging.warning(f"Skipping {doc.filename}: no MinIO metadata")
+            continue
+
+        try:
+            # Download from MinIO to temp
+            temp_path = minio_storage.download_to_temp(
+                user_id, doc.filename, doc.file_type
+            )
+            
+            # Calculate hash for metadata
+            with open(temp_path, "rb") as f:
+                file_data = f.read()
+            file_hash = _sha256_bytes(file_data)
+            
+            path_obj = Path(temp_path)
+            metadata = {
+                "user_id": str(user_id),
+                "type": doc.file_type,
+                "file_sha256": file_hash
+            }
+            
+            # Categorize by type
+            if doc.file_type == "pdf":
+                pdf_files.append({"path": str(path_obj), "metadata": metadata})
+            elif doc.file_type == "docx":
+                docx_files.append({"path": str(path_obj), "metadata": metadata})
+            elif doc.file_type == "text":
+                text_files.append({"path": str(path_obj), "metadata": metadata})
+            elif doc.file_type == "csv":
+                csv_files.append({"path": str(path_obj), "metadata": metadata})
+                
+        except Exception as e:
+            logging.error(f"Error downloading {doc.filename} from MinIO: {e}")
+            continue
+
+    # Create knowledge bases
     pdf_kb = PDFKnowledgeBase(
-        path=[{"path": str(p), "metadata": {"user_id": str(user_id), "type": "pdf", "file_sha256": _sha256(p)}} for p in pdf_files_for_kb],
+        path=pdf_files,
         vector_db=pdf_vector_db,
         chunking_strategy=AgenticChunking(),
         num_documents=5
     )
     docx_kb = DocxKnowledgeBase(
-        path=[{"path": str(p), "metadata": {"user_id": str(user_id), "type": "docx", "file_sha256": _sha256(p)}} for p in docx_files_for_kb],
+        path=docx_files,
         vector_db=docx_vector_db,
         formats=[".doc", ".docx"],
         num_documents=5
     )
     text_kb = TextKnowledgeBase(
-        path=[{"path": str(p), "metadata": {"user_id": str(user_id), "type": "text", "file_sha256": _sha256(p)}} for p in text_files_for_kb],
+        path=text_files,
         vector_db=text_vector_db,
         formats=[".txt", ".md"],
         num_documents=5
     )
     csv_kb = CSVKnowledgeBase(
-        path=[{"path": str(p), "metadata": {"user_id": str(user_id), "type": "csv", "file_sha256": _sha256(p)}} for p in csv_files_for_kb],
+        path=csv_files,
         vector_db=csv_vector_db,
         num_documents=5
     )
@@ -231,21 +268,43 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
         num_documents=6
     )
 
-    # Log basic ingestion diagnostics
+    logging.info(f"Knowledge ingestion: pdf={len(pdf_files)} docx={len(docx_files)} text={len(text_files)} csv={len(csv_files)} for user {user_id}")
+    logging.info("Knowledge base created from MinIO documents")
+    
+    # Load knowledge base
+    # - Upload: upsert new documents (force_recreate=False)
+    # - Delete: recreate from scratch to remove old embeddings (force_recreate=True)
     try:
-        logging.info(f"Knowledge ingestion: pdf={len(pdf_files_for_kb)} docx={len(docx_files_for_kb)} text={len(text_files_for_kb)} csv={len(csv_files_for_kb)} for user {user_id}")
+        if force_recreate:
+            logging.info("Recreating knowledge base from scratch...")
+            knowledge_base.load(recreate=True, upsert=False)
+            logging.info("Knowledge base recreated successfully")
+        else:
+            logging.info("Loading knowledge base and upserting documents...")
+            knowledge_base.load(recreate=False, upsert=True)  # Upsert = add new, skip existing
+            logging.info("Knowledge base loaded and embeddings created successfully")
     except Exception as e:
-        logging.warning(f"Unable to list PDFs in {user_pdf_dir}: {e}")
-
-    # Do not load here; callers will decide recreate/upsert based on context
-    logging.info("Knowledge base object created; loading deferred to caller")
+        error_msg = str(e).lower()
+        # If table doesn't exist at all, create it
+        if "does not exist" in error_msg or "relation" in error_msg:
+            logging.warning("Vector table doesn't exist, creating fresh...")
+            knowledge_base.load(recreate=True, upsert=False)
+            logging.info("Knowledge base created successfully")
+        else:
+            logging.error(f"Failed to load knowledge base: {e}")
+            # Don't fail the upload, KB will lazy-load on first query
+    
+    # Note: Temp files will be cleaned up by OS temp directory cleanup
+    # We cannot delete them immediately as the KB needs them for processing
+    
     return knowledge_base
 
 
 async def run_rag_agent_async(query, user_id, session_id, images=None, audio=None, videos=None, stream=False):
     """
-    AGNO RAG agent using ChromaDB and nomic embedder.
-    Initializes a fresh knowledge base sync on each query.
+    AGNO RAG agent using PgVector and nomic embedder.
+    Uses existing vector DB embeddings (created during upload).
+    Properly handles first-time KB creation and subsequent queries.
     
     Args:
         query: Text query
@@ -256,15 +315,57 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
     logging.info(f"Starting RAG agent with Ollama at: {cfg.OLLAMA_BASE_URL}")
     logging.info(f"OpenAI-compatible base URL: {cfg.get_openai_base_url()}")
     
-    knowledge_base = await initialize_knowledge_base(user_id)
+    # Create KB structure that connects to existing vector DB
+    # No file downloading during queries - embeddings created during upload
+    embedder = OllamaEmbedder(
+        id="nomic-embed-text",
+        dimensions=768,
+        host=cfg.OLLAMA_BASE_URL
+    )
+    
+    def _uid_suffix(uid: str) -> str:
+        import hashlib
+        dig = hashlib.sha1(str(uid).encode("utf-8")).hexdigest()[:12]
+        return f"u_{dig}"
+    def _tbl(base: str) -> str:
+        return f"{base}_{_uid_suffix(user_id)}"
+
+    # Create empty KB structures that point to existing vector DBs
+    combined_vector_db = PgVector(
+        table_name=_tbl("combined_documents"),
+        db_url=cfg.VECTOR_DB_URL,
+        embedder=embedder,
+        search_type=SearchType.hybrid,
+        schema="rag"
+    )
+    
+    # Create knowledge base with empty sources - we only need the vector DB for search
+    knowledge_base = CombinedKnowledgeBase(
+        sources=[],  # Empty - files are in MinIO, embeddings in vector DB
+        vector_db=combined_vector_db,
+        num_documents=6
+    )
+    
+    # Use lock to prevent concurrent KB operations for same user
     lock = get_user_kb_lock(user_id)
     async with lock:
         try:
+            # Try to load existing embeddings (don't recreate, don't upsert)
             await knowledge_base.aload(recreate=False, upsert=False)
+            logging.info(f"KB loaded for user {user_id} - using existing embeddings")
         except Exception as e:
+            # If vector table doesn't exist yet, initialize it from MinIO
             m = str(e).lower()
             if "does not exist" in m or "relation" in m or "not found" in m:
-                await knowledge_base.aload(recreate=True, upsert=False)
+                logging.warning(f"Vector table doesn't exist for user {user_id}, initializing from MinIO...")
+                # This happens on first query if upload background task hasn't completed
+                kb_with_files = await initialize_knowledge_base(user_id)
+                knowledge_base = kb_with_files
+                logging.info(f"KB initialized from MinIO for user {user_id}")
+            else:
+                # Other error - log and re-raise
+                logging.error(f"Error loading KB: {e}")
+                raise
     #memory_rag = await initialize_memory_dbs(user_id, session_id)
     storage_session_id = f"{user_id}_{session_id}"  # For PostgresStorage isolation
 
