@@ -198,6 +198,20 @@ const App: React.FC = () => {
         }
     }, [isAdmin]);
 
+    // Handle session expiration events from apiService
+    useEffect(() => {
+        const handleSessionExpired = () => {
+            // Verify we actually have a user logged in before alerting, to avoid spurious alerts on login page etc (though unlikely if 401 comes from authedFetch)
+            if (storage.getCurrentUser()) {
+                handleLogout();
+                showAlert("Session Expired", "Your session has expired. Please log in again.");
+            }
+        };
+
+        window.addEventListener('auth:session_expired', handleSessionExpired);
+        return () => window.removeEventListener('auth:session_expired', handleSessionExpired);
+    }, []);
+
     // ** Consolidated Configuration Loading **
     // Fetches all configuration catalogs (models, voices, tools) in a single, atomic API call
     // to prevent race conditions and ensure UI consistency.

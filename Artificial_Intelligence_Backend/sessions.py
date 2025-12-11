@@ -335,6 +335,8 @@ async def list_sessions(user_id: str = Query(None), request: Request = None, db:
             raise HTTPException(status_code=401, detail="Unauthorized")
         sessions = db.query(SessionDB).filter(SessionDB.user_id == uid).order_by(SessionDB.created_at.desc()).all()
         return [_db_to_session_model(s) for s in sessions]
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching sessions: {str(e)}")
 
@@ -375,6 +377,8 @@ async def create_session(request: CreateSessionRequest, http_request: Request = 
         except Exception:
             pass
         return _db_to_session_model(s)
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error creating session: {str(e)}")
@@ -477,6 +481,8 @@ async def get_session_settings(session_id: str, user_id: str = Query(None), requ
         )
 
         return SessionSettingsResponse(model_id=resolved_model, voice=resolved_voice, mcp_tools_urls=resolved_tools, mcp_stdio_commands=resolved_stdio)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching session settings: {str(e)}")
 

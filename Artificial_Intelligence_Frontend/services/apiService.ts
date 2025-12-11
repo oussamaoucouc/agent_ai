@@ -39,14 +39,29 @@ const authedFetch = async (url: string, init: RequestInit = {}): Promise<Respons
     if (res.status !== 401) return res;
     try {
         const refreshRes = await fetch(`${API_BASE_URL}/auth/refresh`, { method: 'POST', credentials: 'include' });
-        if (!refreshRes.ok) return res;
+        if (!refreshRes.ok) {
+            // Refresh failed, preventing infinite loop or dead end.
+            // Dispatch event so App.tsx can handle logout/UI.
+            window.dispatchEvent(new CustomEvent("auth:session_expired"));
+            return res;
+        }
         const data = await refreshRes.json().catch(() => null) as any;
         const newToken = data?.access_token;
-        if (!newToken) return res;
+        if (!newToken) {
+            window.dispatchEvent(new CustomEvent("auth:session_expired"));
+            return res;
+        }
         setAuthToken(newToken);
         const newInit: RequestInit = { ...init, headers: { ...(init.headers as any || {}), ...authHeaders() } };
-        return fetch(url, newInit);
+        // Retry original request with new token
+        const retryRes = await fetch(url, newInit);
+        // If retry still fails with 401, then we really are out of luck
+        if (retryRes.status === 401) {
+            window.dispatchEvent(new CustomEvent("auth:session_expired"));
+        }
+        return retryRes;
     } catch {
+        window.dispatchEvent(new CustomEvent("auth:session_expired"));
         return res;
     }
 };

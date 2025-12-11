@@ -360,6 +360,8 @@ async def query_assistant_multimodal(
         }
     except asyncio.CancelledError:
         raise HTTPException(status_code=499, detail="Request cancelled")
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Error in multimodal assistant query: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -532,6 +534,8 @@ async def upload_document_endpoint(
             logging.error(f"Failed to save document metadata: {e}")
 
         return {"message": f"Successfully uploaded {safe_name}", "filename": safe_name, "path": file_path, "kind": kind}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error uploading document: {str(e)}")
 
@@ -590,6 +594,8 @@ async def list_documents(user_id: Optional[str] = None, request: Request = None,
                     doc["is_admin_uploaded"] = False
 
         return {"documents": docs}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error listing documents: {str(e)}")
 
