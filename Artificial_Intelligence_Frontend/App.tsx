@@ -559,7 +559,18 @@ const App: React.FC = () => {
     };
 
     const playAudioWithVisemes = useCallback((audioUrl: string, visemeData: VisemeData, messageId: string) => {
-        handleStopAudio(); // Stop any currently playing audio and animation.
+        // Stop current audio playback but DON'T clear the streaming queue
+        // This function is for REPLAYING old audio, not stopping ongoing streams
+        if (animationFrameIdRef.current) {
+            cancelAnimationFrame(animationFrameIdRef.current);
+            animationFrameIdRef.current = null;
+        }
+        if (activeAudioRef.current) {
+            activeAudioRef.current.pause();
+            activeAudioRef.current.onplay = null;
+            activeAudioRef.current.onended = null;
+            activeAudioRef.current.onerror = null;
+        }
 
         const audio = new Audio(audioUrl);
         audioRef.current = audio;
@@ -597,15 +608,38 @@ const App: React.FC = () => {
             animationFrameIdRef.current = requestAnimationFrame(animate);
         };
 
-        audio.onended = handleStopAudio;
+        audio.onended = () => {
+            if (animationFrameIdRef.current) {
+                cancelAnimationFrame(animationFrameIdRef.current);
+                animationFrameIdRef.current = null;
+            }
+            setCurrentViseme('X');
+            setActiveAudio(null);
+            setPlayingAudioId(null);
+            activeAudioRef.current = null;
+        };
         audio.onerror = () => {
             console.error("Audio playback error.");
-            handleStopAudio();
+            if (animationFrameIdRef.current) {
+                cancelAnimationFrame(animationFrameIdRef.current);
+                animationFrameIdRef.current = null;
+            }
+            setCurrentViseme('X');
+            setActiveAudio(null);
+            setPlayingAudioId(null);
+            activeAudioRef.current = null;
         };
 
         audio.play().catch(e => {
             console.error("Audio playback failed:", e);
-            handleStopAudio();
+            if (animationFrameIdRef.current) {
+                cancelAnimationFrame(animationFrameIdRef.current);
+                animationFrameIdRef.current = null;
+            }
+            setCurrentViseme('X');
+            setActiveAudio(null);
+            setPlayingAudioId(null);
+            activeAudioRef.current = null;
         });
 
         // Hide play button after configured TTL by clearing audioUrl from the message
@@ -628,12 +662,16 @@ const App: React.FC = () => {
 
         setIsPlayingQueue(true);
 
+        let preloadedAudio: HTMLAudioElement | null = null; // Preload next audio for gapless playback
+
         const playNext = () => {
             // Get next audio segment from queue
             const nextSegment = audioQueueRef.current.shift();
+            console.log(`[AUDIO QUEUE] playNext called. Remaining queue: ${audioQueueRef.current.length}`);
 
             if (!nextSegment) {
                 // Queue is empty, stop playback
+                console.log('[AUDIO QUEUE] Queue empty, stopping playback');
                 isPlayingQueueRef.current = false;
                 setIsPlayingQueue(false);
                 setCurrentViseme('X');
@@ -646,13 +684,27 @@ const App: React.FC = () => {
             }
 
             const { url, visemes: visemeData, messageId } = nextSegment;
+            console.log(`[AUDIO QUEUE] Playing chunk: ${url.substring(url.lastIndexOf('/') + 1)}`);
 
-            // Create and play audio
-            const audio = new Audio(url);
+            // Use preloaded audio if available, otherwise create new
+            const audio = preloadedAudio && preloadedAudio.src.includes(url)
+                ? preloadedAudio
+                : new Audio(url);
+
+            preloadedAudio = null; // Clear preloaded reference
+
             audioRef.current = audio;
             activeAudioRef.current = audio;
             setActiveAudio(audio);
             setPlayingAudioId(messageId);
+
+            // Preload next audio chunk while current is playing (for gapless playback)
+            if (audioQueueRef.current.length > 0) {
+                const nextUrl = audioQueueRef.current[0].url;
+                preloadedAudio = new Audio(nextUrl);
+                preloadedAudio.preload = 'auto';
+                preloadedAudio.load(); // Start loading immediately
+            }
 
             // Ensure mouth cues are sorted by start time
             const sortedMouthCues = [...visemeData.mouthCues].sort((a, b) => a.start - b.start);
@@ -710,12 +762,17 @@ const App: React.FC = () => {
 
     // Add audio segment to queue and start playback if not already playing
     const enqueueAudio = useCallback((url: string, visemes: VisemeData, messageId: string) => {
+        console.log(`[AUDIO QUEUE] Enqueuing chunk. Queue length before: ${audioQueueRef.current.length}`);
         audioQueueRef.current.push({ url, visemes, messageId });
         setAudioQueue(prev => [...prev, { url, visemes, messageId }]);
+        console.log(`[AUDIO QUEUE] Enqueued chunk. Queue length after: ${audioQueueRef.current.length}`);
 
         // Start playback if not already playing (use ref to avoid race conditions)
         if (!isPlayingQueueRef.current) {
+            console.log('[AUDIO QUEUE] Starting playback');
             playAudioQueue();
+        } else {
+            console.log('[AUDIO QUEUE] Already playing, chunk will play when current finishes');
         }
     }, [playAudioQueue]);
 
@@ -942,7 +999,7 @@ const App: React.FC = () => {
                             }));
                         }, (audioFilename, visemes, sentenceIndex) => {
                             // NEW: Audio chunk callback - enqueue immediately for continuous playback!
-                            const audioUrl = `${API_BASE_URL}/querytts_audio/${audioFilename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}`;
+                            const audioUrl = `${API_BASE_URL}/querytts_audio/${audioFilename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}&t=${Date.now()}`;
                             enqueueAudio(audioUrl, visemes, streamingMessageId);
 
                             // Stop "thinking" animation when first audio starts
@@ -1255,13 +1312,22 @@ const App: React.FC = () => {
 
             const onTranscription = (text: string) => {
                 if (assistantMessageAdded) return;
-                const userMessage: Message = { id: crypto.randomUUID(), text: `🎤: "${text}"`, sender: User.USER };
+                const userMessageId = crypto.randomUUID();
+                const userMessage: Message = { id: userMessageId, text: `🎤: "${text}"`, sender: User.USER };
                 const assistantMessage: Message = {
                     id: streamingMessageId,
                     text: '',
                     sender: User.ASSISTANT,
                 };
-                setMessages(prev => [...prev, userMessage, assistantMessage]);
+
+                // Atomic update to ensure correct order
+                setMessages(prev => {
+                    // Check if we already added this specific interaction to avoid racing
+                    if (prev.some(m => m.id === userMessageId || m.id === streamingMessageId)) {
+                        return prev;
+                    }
+                    return [...prev, userMessage, assistantMessage];
+                });
                 assistantMessageAdded = true;
             };
 
@@ -1294,23 +1360,34 @@ const App: React.FC = () => {
             const audioUrl = data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}` : undefined;
 
             setMessages(prev => {
-                if (!assistantMessageAdded) {
-                    const userMessage: Message = { id: crypto.randomUUID(), text: `🎤: "${data.text}"`, sender: User.USER };
-                    const assistantMessage: Message = {
-                        id: streamingMessageId,
-                        text: formatAssistantText(data.response),
-                        sender: User.ASSISTANT,
-                        audioUrl,
-                        visemes: data.visemes,
-                    };
-                    return [...prev, userMessage, assistantMessage];
+                // If we already added the assistant message (via transcription), just update it
+                if (assistantMessageAdded) {
+                    return prev.map(m =>
+                        m.id === streamingMessageId
+                            ? { ...m, text: formatAssistantText(data.response), audioUrl, visemes: data.visemes }
+                            : m
+                    );
                 }
 
-                return prev.map(m =>
-                    m.id === streamingMessageId
-                        ? { ...m, text: formatAssistantText(data.response) || ' ', audioUrl, visemes: data.visemes }
-                        : m
-                );
+                // If no transcription event happened (e.g. text input or direct file), append both
+                // But safeguard against duplicates
+                if (prev.some(m => m.id === streamingMessageId)) {
+                    return prev.map(m =>
+                        m.id === streamingMessageId
+                            ? { ...m, text: formatAssistantText(data.response), audioUrl, visemes: data.visemes }
+                            : m
+                    );
+                }
+
+                const userMessage: Message = { id: crypto.randomUUID(), text: `🎤: "${data.text}"`, sender: User.USER };
+                const assistantMessage: Message = {
+                    id: streamingMessageId,
+                    text: formatAssistantText(data.response),
+                    sender: User.ASSISTANT,
+                    audioUrl,
+                    visemes: data.visemes,
+                };
+                return [...prev, userMessage, assistantMessage];
             });
 
             if (audioUrl && data.visemes) {

@@ -1705,6 +1705,10 @@ async def query_assistant_tts_direct(request: QueryRequest, http_request: Reques
                     audio_path, viseme_data = await run_in_threadpool(text_to_speech, sentence)
                     audio_filename = None
                     if audio_path:
+                        size_bytes = os.path.getsize(audio_path)
+                        logging.info(f"Generated TTS audio: {audio_path} ({size_bytes} bytes)")
+                        if size_bytes < 1000:
+                            logging.warning(f"Audio file seems too small ({size_bytes} bytes) for sentence: {sentence[:50]}...")
                         audio_filename = os.path.basename(audio_path)
                     return {'type': 'audio_chunk', 'sentence_index': idx, 'audio_filename': audio_filename, 'visemes': viseme_data, 'sentence_text': sentence}
                 except Exception as e:
@@ -1742,39 +1746,69 @@ async def query_assistant_tts_direct(request: QueryRequest, http_request: Reques
                         
                         # Launch TTS generation in PARALLEL for each sentence
                         for sentence in complete_sentences:
-                            if sentence.strip():
+                             if sentence.strip():
                                 idx = len(collected_sentences)
+                                collected_sentences.append(sentence)
                                 task = asyncio.create_task(generate_tts_task(sentence, idx))
                                 tts_tasks.append(task)
                 
                 # After text streaming, send audio as tasks complete (in order by sentence_index)
-                completed_audio = {}
-                next_index_to_send = 0
-                total_tasks = len(tts_tasks)
-                tasks_completed = 0
+                logging.info(f"ASSISTANT TTS: Text streaming done. Processing {len(tts_tasks)} audio tasks")
                 
-                for task in asyncio.as_completed(tts_tasks):
-                    result = await task
-                    tasks_completed += 1
+                if len(tts_tasks) == 0:
+                    logging.warning("ASSISTANT TTS: No audio tasks to process, skipping")
+                    sentence_index = 0
+                else:
+                    completed_audio = {}
+                    next_index_to_send = 0
+                    total_tasks = len(tts_tasks)
+                    tasks_completed = 0
                     
-                    if result:
-                        completed_audio[result['sentence_index']] = result
-                        
-                    # Send buffered audio in order
-                    while next_index_to_send in completed_audio:
-                        yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
-                        del completed_audio[next_index_to_send]
-                        next_index_to_send += 1
-                    
-                    # If all tasks done, send any remaining (skip failed gaps)
-                    if tasks_completed == total_tasks:
-                        while next_index_to_send < total_tasks:
-                            if next_index_to_send in completed_audio:
+                    try:
+                        logging.info(f"ASSISTANT TTS: Starting as_completed loop with {len(tts_tasks)} tasks")
+                        for task in asyncio.as_completed(tts_tasks):
+                            result = await task
+                            tasks_completed += 1
+                            logging.info(f"ASSISTANT TTS: Task {tasks_completed}/{total_tasks} done. Has result: {result is not None}")
+                            
+                            if result:
+                                completed_audio[result['sentence_index']] = result
+                                logging.info(f"ASSISTANT TTS: Buffered sentence {result['sentence_index']}")
+                                
+                            # Send buffered audio in order
+                            while next_index_to_send in completed_audio:
+                                logging.info(f"ASSISTANT TTS: Yielding chunk {next_index_to_send}")
                                 yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
+                                await asyncio.sleep(0.05)  # Small delay to ensure SSE event is processed
                                 del completed_audio[next_index_to_send]
-                            next_index_to_send += 1
-                
-                sentence_index = len(collected_sentences)
+                                next_index_to_send += 1
+                            
+                            # If all tasks done, send any remaining (skip failed gaps)
+                            if tasks_completed == total_tasks:
+                                logging.info(f"ASSISTANT TTS: Flushing remaining from index {next_index_to_send}")
+                                while next_index_to_send < total_tasks:
+                                    if next_index_to_send in completed_audio:
+                                        logging.info(f"ASSISTANT TTS: Flushing chunk {next_index_to_send}")
+                                        yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
+                                        del completed_audio[next_index_to_send]
+                                    else:
+                                        logging.warning(f"ASSISTANT TTS: Skipping missing index {next_index_to_send}")
+                                    next_index_to_send += 1
+                        
+                        logging.info(f"ASSISTANT TTS: as_completed loop finished. Tasks completed: {tasks_completed}/{total_tasks}")
+                        logging.info(f"ASSISTANT TTS: Done processing all {total_tasks} tasks")
+                    except GeneratorExit:
+                        logging.error(f"ASSISTANT TTS: GeneratorExit!!! Client closed stream. Tasks completed: {tasks_completed}/{total_tasks}")
+                        raise
+                    except asyncio.CancelledError:
+                        logging.error(f"ASSISTANT TTS: CancelledError!!! Tasks completed: {tasks_completed}/{total_tasks}")
+                        raise
+                    except Exception as e:
+                        logging.error(f"ASSISTANT TTS: Error in audio processing loop: {str(e)}", exc_info=True)
+                    
+                    sentence_index = len(collected_sentences)
+
+
 
 
                 # 2. Handle any remaining incomplete sentence
@@ -1888,33 +1922,50 @@ async def query_mcp_tts_direct(request: QueryRequest, http_request: Request):
                                 tts_tasks.append(task)
                 
                 # After text streaming, send audio as tasks complete (in order by sentence_index)
-                completed_audio = {}
-                next_index_to_send = 0
-                total_tasks = len(tts_tasks)
-                tasks_completed = 0
+                logging.info(f"MCP TTS: Text streaming done. Processing {len(tts_tasks)} audio tasks")
                 
-                for task in asyncio.as_completed(tts_tasks):
-                    result = await task
-                    tasks_completed += 1
+                if len(tts_tasks) == 0:
+                    logging.warning("MCP TTS: No audio tasks to process, skipping")
+                    sentence_index = 0
+                else:
+                    completed_audio = {}
+                    next_index_to_send = 0
+                    total_tasks = len(tts_tasks)
+                    tasks_completed = 0
                     
-                    if result:
-                        completed_audio[result['sentence_index']] = result
-                        
-                    # Send buffered audio in order
-                    while next_index_to_send in completed_audio:
-                        yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
-                        del completed_audio[next_index_to_send]
-                        next_index_to_send += 1
-                    
-                    # If all tasks done, send any remaining (skip failed gaps)
-                    if tasks_completed == total_tasks:
-                        while next_index_to_send < total_tasks:
-                            if next_index_to_send in completed_audio:
+                    try:
+                        for task in asyncio.as_completed(tts_tasks):
+                            result = await task
+                            tasks_completed += 1
+                            logging.info(f"MCP TTS: Task {tasks_completed}/{total_tasks} done. Has result: {result is not None}")
+                            
+                            if result:
+                                completed_audio[result['sentence_index']] = result
+                                logging.info(f"MCP TTS: Buffered sentence {result['sentence_index']}")
+                                
+                            # Send buffered audio in order
+                            while next_index_to_send in completed_audio:
+                                logging.info(f"MCP TTS: Yielding chunk {next_index_to_send}")
                                 yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
                                 del completed_audio[next_index_to_send]
-                            next_index_to_send += 1
-                
-                sentence_index = len(collected_sentences)
+                                next_index_to_send += 1
+                            
+                            # If all tasks done, send any remaining (skip failed gaps)
+                            if tasks_completed == total_tasks:
+                                logging.info(f"MCP TTS: Flushing remaining from index {next_index_to_send}")
+                                while next_index_to_send < total_tasks:
+                                    if next_index_to_send in completed_audio:
+                                        logging.info(f"MCP TTS: Flushing chunk {next_index_to_send}")
+                                        yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
+                                        del completed_audio[next_index_to_send]
+                                    next_index_to_send += 1
+                        
+                        logging.info(f"MCP TTS: Done processing all {total_tasks} tasks")
+                    except Exception as e:
+                        logging.error(f"MCP TTS: Error in audio processing loop: {str(e)}", exc_info=True)
+                    
+                    sentence_index = len(collected_sentences)
+
 
 
 
@@ -2691,39 +2742,57 @@ async def query_tts_direct(request: QueryRequest, http_request: Request):
                         
                         # Launch TTS generation in PARALLEL for each sentence
                         for sentence in complete_sentences:
-                            if sentence.strip():
+                             if sentence.strip():
                                 idx = len(collected_sentences)
+                                collected_sentences.append(sentence)
                                 task = asyncio.create_task(generate_tts_task(sentence, idx))
                                 tts_tasks.append(task)
                         
                 # After text streaming, send audio as tasks complete (in order by sentence_index)
-                completed_audio = {}
-                next_index_to_send = 0
-                total_tasks = len(tts_tasks)
-                tasks_completed = 0
+                logging.info(f"RAG TTS: Text streaming done. Processing {len(tts_tasks)} audio tasks")
                 
-                for task in asyncio.as_completed(tts_tasks):
-                    result = await task
-                    tasks_completed += 1
+                if len(tts_tasks) == 0:
+                    logging.warning("RAG TTS: No audio tasks to process, skipping")
+                    sentence_index = 0
+                else:
+                    completed_audio = {}
+                    next_index_to_send = 0
+                    total_tasks = len(tts_tasks)
+                    tasks_completed = 0
                     
-                    if result:
-                        completed_audio[result['sentence_index']] = result
-                        
-                    # Send buffered audio in order
-                    while next_index_to_send in completed_audio:
-                        yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
-                        del completed_audio[next_index_to_send]
-                        next_index_to_send += 1
-                    
-                    # If all tasks done, send any remaining (skip failed gaps)
-                    if tasks_completed == total_tasks:
-                        while next_index_to_send < total_tasks:
-                            if next_index_to_send in completed_audio:
+                    try:
+                        for task in asyncio.as_completed(tts_tasks):
+                            result = await task
+                            tasks_completed += 1
+                            logging.info(f"RAG TTS: Task {tasks_completed}/{total_tasks} done. Has result: {result is not None}")
+                            
+                            if result:
+                                completed_audio[result['sentence_index']] = result
+                                logging.info(f"RAG TTS: Buffered sentence {result['sentence_index']}")
+                                
+                            # Send buffered audio in order
+                            while next_index_to_send in completed_audio:
+                                logging.info(f"RAG TTS: Yielding chunk {next_index_to_send}")
                                 yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
                                 del completed_audio[next_index_to_send]
-                            next_index_to_send += 1
-                
-                sentence_index = len(collected_sentences)
+                                next_index_to_send += 1
+                            
+                            # If all tasks done, send any remaining (skip failed gaps)
+                            if tasks_completed == total_tasks:
+                                logging.info(f"RAG TTS: Flushing remaining from index {next_index_to_send}")
+                                while next_index_to_send < total_tasks:
+                                    if next_index_to_send in completed_audio:
+                                        logging.info(f"RAG TTS: Flushing chunk {next_index_to_send}")
+                                        yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
+                                        del completed_audio[next_index_to_send]
+                                    next_index_to_send += 1
+                        
+                        logging.info(f"RAG TTS: Done processing all {total_tasks} tasks")
+                    except Exception as e:
+                        logging.error(f"RAG TTS: Error in audio processing loop: {str(e)}", exc_info=True)
+                    
+                    sentence_index = len(collected_sentences)
+
 
                 
                 # 2. Handle any remaining incomplete sentence

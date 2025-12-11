@@ -195,10 +195,20 @@ def text_to_speech(text):
     
     # Check cache for both audio and visemes
     if os.path.exists(cache_audio_path) and os.path.exists(cache_viseme_path):
-        print(f"Using cached TTS audio and visemes for text: {cleaned_text[:50]}...", file=sys.stderr)
-        with open(cache_viseme_path, 'r') as f:
-            viseme_data = json.load(f)
-        return cache_audio_path, viseme_data
+        # Validate cache file size
+        try:
+            cache_size = os.path.getsize(cache_audio_path)
+            if cache_size < 1000:
+                print(f"Cached audio file is too small ({cache_size} bytes), purging cache and regenerating: {cleaned_text[:50]}...", file=sys.stderr)
+                os.remove(cache_audio_path)
+                os.remove(cache_viseme_path)
+            else:
+                print(f"Using cached TTS audio and visemes for text: {cleaned_text[:50]}...", file=sys.stderr)
+                with open(cache_viseme_path, 'r') as f:
+                    viseme_data = json.load(f)
+                return cache_audio_path, viseme_data
+        except Exception as e:
+            print(f"Error reading cache, regenerating: {e}", file=sys.stderr)
     
     # If not in cache, generate audio and visemes
     print(f"Generating new TTS audio and visemes for text: {cleaned_text[:50]}...", file=sys.stderr)
@@ -207,6 +217,19 @@ def text_to_speech(text):
     if not temp_audio_path:
         return None, None
         
+    # Validate generated file size
+    try:
+        gen_size = os.path.getsize(temp_audio_path)
+        if gen_size < 1000:
+            print(f"Generated audio file is too small ({gen_size} bytes), validation failed: {cleaned_text[:50]}...", file=sys.stderr)
+            os.remove(temp_audio_path)
+            if temp_viseme_path and os.path.exists(temp_viseme_path):
+                os.remove(temp_viseme_path)
+            return None, None
+    except Exception as e:
+        print(f"Error checking generated file size: {e}", file=sys.stderr)
+        return None, None
+
     # Move generated audio to cache and clean up temp file
     shutil.copy2(temp_audio_path, cache_audio_path)
     print(f"Cached TTS audio at {cache_audio_path}", file=sys.stderr)
