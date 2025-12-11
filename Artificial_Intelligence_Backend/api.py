@@ -1744,15 +1744,36 @@ async def query_assistant_tts_direct(request: QueryRequest, http_request: Reques
                         for sentence in complete_sentences:
                             if sentence.strip():
                                 idx = len(collected_sentences)
-                                collected_sentences.append(sentence)
                                 task = asyncio.create_task(generate_tts_task(sentence, idx))
                                 tts_tasks.append(task)
                 
-                # 2. Wait for all TTS tasks and send audio chunks in order
-                for task in tts_tasks:
+                # After text streaming, send audio as tasks complete (in order by sentence_index)
+                completed_audio = {}
+                next_index_to_send = 0
+                total_tasks = len(tts_tasks)
+                tasks_completed = 0
+                
+                for task in asyncio.as_completed(tts_tasks):
                     result = await task
+                    tasks_completed += 1
+                    
                     if result:
-                        yield f"data: {json.dumps(result)}\n\n"
+                        completed_audio[result['sentence_index']] = result
+                        
+                    # Send buffered audio in order
+                    while next_index_to_send in completed_audio:
+                        yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
+                        del completed_audio[next_index_to_send]
+                        next_index_to_send += 1
+                    
+                    # If all tasks done, send any remaining (skip failed gaps)
+                    if tasks_completed == total_tasks:
+                        while next_index_to_send < total_tasks:
+                            if next_index_to_send in completed_audio:
+                                yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
+                                del completed_audio[next_index_to_send]
+                            next_index_to_send += 1
+                
                 sentence_index = len(collected_sentences)
 
 
@@ -1863,15 +1884,36 @@ async def query_mcp_tts_direct(request: QueryRequest, http_request: Request):
                             if sentence.strip():
                                 idx = len(collected_sentences)
                                 collected_sentences.append(sentence)
-                                # Create background task - doesn't block streaming!
                                 task = asyncio.create_task(generate_tts_task(sentence, idx))
                                 tts_tasks.append(task)
                 
-                # 2. Wait for all TTS tasks and send audio chunks in order
-                for task in tts_tasks:
+                # After text streaming, send audio as tasks complete (in order by sentence_index)
+                completed_audio = {}
+                next_index_to_send = 0
+                total_tasks = len(tts_tasks)
+                tasks_completed = 0
+                
+                for task in asyncio.as_completed(tts_tasks):
                     result = await task
+                    tasks_completed += 1
+                    
                     if result:
-                        yield f"data: {json.dumps(result)}\n\n"
+                        completed_audio[result['sentence_index']] = result
+                        
+                    # Send buffered audio in order
+                    while next_index_to_send in completed_audio:
+                        yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
+                        del completed_audio[next_index_to_send]
+                        next_index_to_send += 1
+                    
+                    # If all tasks done, send any remaining (skip failed gaps)
+                    if tasks_completed == total_tasks:
+                        while next_index_to_send < total_tasks:
+                            if next_index_to_send in completed_audio:
+                                yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
+                                del completed_audio[next_index_to_send]
+                            next_index_to_send += 1
+                
                 sentence_index = len(collected_sentences)
 
 
@@ -2651,15 +2693,36 @@ async def query_tts_direct(request: QueryRequest, http_request: Request):
                         for sentence in complete_sentences:
                             if sentence.strip():
                                 idx = len(collected_sentences)
-                                collected_sentences.append(sentence)
                                 task = asyncio.create_task(generate_tts_task(sentence, idx))
                                 tts_tasks.append(task)
+                        
+                # After text streaming, send audio as tasks complete (in order by sentence_index)
+                completed_audio = {}
+                next_index_to_send = 0
+                total_tasks = len(tts_tasks)
+                tasks_completed = 0
                 
-                # 2. Wait for all TTS tasks and send audio chunks in order
-                for task in tts_tasks:
+                for task in asyncio.as_completed(tts_tasks):
                     result = await task
+                    tasks_completed += 1
+                    
                     if result:
-                        yield f"data: {json.dumps(result)}\n\n"
+                        completed_audio[result['sentence_index']] = result
+                        
+                    # Send buffered audio in order
+                    while next_index_to_send in completed_audio:
+                        yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
+                        del completed_audio[next_index_to_send]
+                        next_index_to_send += 1
+                    
+                    # If all tasks done, send any remaining (skip failed gaps)
+                    if tasks_completed == total_tasks:
+                        while next_index_to_send < total_tasks:
+                            if next_index_to_send in completed_audio:
+                                yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
+                                del completed_audio[next_index_to_send]
+                            next_index_to_send += 1
+                
                 sentence_index = len(collected_sentences)
 
                 

@@ -312,7 +312,8 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, onPl
                     {!isUser && (
                         <div className={`absolute bottom-2 right-2 z-10 flex items-center gap-1.5 bg-slate-900/40 backdrop-blur-sm p-1 rounded-lg transition-opacity duration-200 border border-slate-600/50 ${isPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'
                             }`}>
-                            {message.audioUrl && (
+                            {/* Show stop button during live playback OR if saved audio exists */}
+                            {(isPlaying || message.audioUrl) && (
                                 <>
                                     {isPlaying ? (
                                         <button

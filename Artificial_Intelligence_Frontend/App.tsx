@@ -91,6 +91,7 @@ const App: React.FC = () => {
     const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
     const [currentViseme, setCurrentViseme] = useState<string>('X');
     const [activeAudio, setActiveAudio] = useState<HTMLAudioElement | null>(null);
+    const activeAudioRef = useRef<HTMLAudioElement | null>(null);
     const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
     const [spokenResponses, setSpokenResponses] = useState<boolean>(true);
     const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(storage.getSidebarOpen());
@@ -523,16 +524,23 @@ const App: React.FC = () => {
             cancelAnimationFrame(animationFrameIdRef.current);
             animationFrameIdRef.current = null;
         }
-        if (activeAudio) {
-            activeAudio.pause();
-            activeAudio.onplay = null;
-            activeAudio.onended = null;
-            activeAudio.onerror = null;
+        if (activeAudioRef.current) {
+            activeAudioRef.current.pause();
+            activeAudioRef.current.onplay = null;
+            activeAudioRef.current.onended = null;
+            activeAudioRef.current.onerror = null;
+            activeAudioRef.current = null;
         }
+
+        // Clear audio queue
+        audioQueueRef.current = [];
+        isPlayingQueueRef.current = false;
+        setIsPlayingQueue(false);
+
         setCurrentViseme('X');
         setActiveAudio(null);
         setPlayingAudioId(null);
-    }, [activeAudio]);
+    }, []);
 
     const handleLogout = () => {
         handleStopAudio();
@@ -555,6 +563,7 @@ const App: React.FC = () => {
 
         const audio = new Audio(audioUrl);
         audioRef.current = audio;
+        activeAudioRef.current = audio;
         setActiveAudio(audio);
         setPlayingAudioId(messageId);
 
@@ -628,6 +637,11 @@ const App: React.FC = () => {
                 isPlayingQueueRef.current = false;
                 setIsPlayingQueue(false);
                 setCurrentViseme('X');
+
+                // Clear active audio state
+                activeAudioRef.current = null;
+                setActiveAudio(null);
+                setPlayingAudioId(null);
                 return;
             }
 
@@ -636,6 +650,7 @@ const App: React.FC = () => {
             // Create and play audio
             const audio = new Audio(url);
             audioRef.current = audio;
+            activeAudioRef.current = audio;
             setActiveAudio(audio);
             setPlayingAudioId(messageId);
 
@@ -1586,8 +1601,6 @@ const App: React.FC = () => {
                                     storage.setQueryMode(m);
                                 }}
                                 onCancel={handleCancelGeneration}
-                                onStopAudio={handleStopAudio}
-                                isPlayingAudio={!!activeAudio}
                                 supportsImages={availableModelsLabeled.find(m => m.id === currentModel)?.supports_images}
                                 supportsAudio={availableModelsLabeled.find(m => m.id === currentModel)?.supports_audio}
                                 supportsVideos={availableModelsLabeled.find(m => m.id === currentModel)?.supports_videos}
