@@ -272,17 +272,17 @@ export const queryAgent = async (
 const handleTTSStream = async (
     response: Response,
     request: QueryRequest,
-    onChunk?: (text: string) => void
+    onChunk?: (text: string) => void,
+    onAudioChunk?: (audioFilename: string, visemes: VisemeData, sentenceIndex: number) => void
 ): Promise<QueryTTSResponse> => {
     // Check if it's a streaming response
     const contentType = response.headers.get('content-type');
-    if (contentType?.includes('text/event-stream') && onChunk) {
+    if (contentType?.includes('text/event-stream') && (onChunk || onAudioChunk)) {
         // Handle SSE streaming
         const reader = response.body!.getReader();
         const decoder = new TextDecoder();
         let fullResponse = '';
-        let audioFilename: string | undefined;
-        let visemes: VisemeData | undefined;
+        let audioChunks: Array<{ filename: string, visemes: VisemeData, index: number }> = [];
         let buffer = '';
 
         while (true) {
@@ -297,15 +297,29 @@ const handleTTSStream = async (
                 if (line.startsWith('data: ')) {
                     try {
                         const data = JSON.parse(line.slice(6));
+
+                        // Handle text content chunks
                         if (data.content) {
-                            onChunk(data.content);
+                            onChunk && onChunk(data.content);
                             fullResponse += data.content;
                         }
+
+                        // Handle incremental audio chunks (NEW!)
+                        if (data.type === 'audio_chunk' && data.audio_filename && data.visemes) {
+                            audioChunks.push({
+                                filename: data.audio_filename,
+                                visemes: data.visemes,
+                                index: data.sentence_index
+                            });
+                            // Notify about new audio chunk immediately
+                            onAudioChunk && onAudioChunk(data.audio_filename, data.visemes, data.sentence_index);
+                        }
+
+                        // Handle done event
                         if (data.done) {
                             if (data.full_response) fullResponse = data.full_response;
-                            if (data.audio_filename) audioFilename = data.audio_filename;
-                            if (data.visemes) visemes = data.visemes;
                         }
+
                         if (data.error) {
                             throw new Error(data.error);
                         }
@@ -318,12 +332,16 @@ const handleTTSStream = async (
             }
         }
 
+        // Return with all collected audio chunks
+        // For compatibility, if we have chunks, use the first one's data in the response
+        const firstChunk = audioChunks[0];
         return {
             user_id: request.user_id,
             session_id: request.session_id,
             response: fullResponse,
-            audio_filename: audioFilename,
-            visemes: visemes,
+            audio_filename: firstChunk?.filename,
+            visemes: firstChunk?.visemes,
+            audio_chunks: audioChunks, // NEW: array of all audio segments
             status: 'success'
         };
     } else {
@@ -335,7 +353,8 @@ const handleTTSStream = async (
 export const queryTTS = async (
     request: QueryRequest,
     signal?: AbortSignal,
-    onChunk?: (text: string) => void
+    onChunk?: (text: string) => void,
+    onAudioChunk?: (audioFilename: string, visemes: VisemeData, sentenceIndex: number) => void
 ): Promise<QueryTTSResponse> => {
     const response = await authedFetch(`${API_BASE_URL}/query_tts_direct`, {
         method: 'POST',
@@ -343,13 +362,14 @@ export const queryTTS = async (
         body: JSON.stringify(request),
         signal,
     });
-    return handleTTSStream(response, request, onChunk);
+    return handleTTSStream(response, request, onChunk, onAudioChunk);
 };
 
 export const queryMcpTTS = async (
     request: QueryRequest,
     signal?: AbortSignal,
-    onChunk?: (text: string) => void
+    onChunk?: (text: string) => void,
+    onAudioChunk?: (audioFilename: string, visemes: VisemeData, sentenceIndex: number) => void
 ): Promise<QueryTTSResponse> => {
     const response = await authedFetch(`${API_BASE_URL}/query_mcp_tts_direct`, {
         method: 'POST',
@@ -357,13 +377,14 @@ export const queryMcpTTS = async (
         body: JSON.stringify(request),
         signal,
     });
-    return handleTTSStream(response, request, onChunk);
+    return handleTTSStream(response, request, onChunk, onAudioChunk);
 };
 
 export const queryAgentTTS = async (
     request: QueryRequest,
     signal?: AbortSignal,
-    onChunk?: (text: string) => void
+    onChunk?: (text: string) => void,
+    onAudioChunk?: (audioFilename: string, visemes: VisemeData, sentenceIndex: number) => void
 ): Promise<QueryTTSResponse> => {
     const response = await authedFetch(`${API_BASE_URL}/query_assistant_tts_direct`, {
         method: 'POST',
@@ -371,7 +392,7 @@ export const queryAgentTTS = async (
         body: JSON.stringify(request),
         signal,
     });
-    return handleTTSStream(response, request, onChunk);
+    return handleTTSStream(response, request, onChunk, onAudioChunk);
 };
 
 

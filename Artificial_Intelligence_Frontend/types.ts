@@ -109,6 +109,7 @@ export interface QueryTTSResponse {
     response: string;
     audio_filename: string | null;
     visemes: VisemeData;
+    audio_chunks?: Array<{ filename: string, visemes: VisemeData, index: number }>; // NEW: Incremental audio segments
     status: string;
 }
 

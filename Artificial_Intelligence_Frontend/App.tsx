@@ -96,6 +96,12 @@ const App: React.FC = () => {
     const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(storage.getSidebarOpen());
     const [queryMode, setQueryMode] = useState<QueryMode>('agent');
 
+    // Audio queue for incremental sentence-based TTS
+    const [audioQueue, setAudioQueue] = useState<Array<{ url: string, visemes: VisemeData, messageId: string }>>([]);
+    const [isPlayingQueue, setIsPlayingQueue] = useState<boolean>(false);
+    const audioQueueRef = useRef<Array<{ url: string, visemes: VisemeData, messageId: string }>>([]);
+    const isPlayingQueueRef = useRef<boolean>(false); // Use ref to avoid race conditions
+
     // New states for model and voice selection
     const [currentModel, setCurrentModel] = useState<string>('gemini-2.5-pro');
     const [availableModelsLabeled, setAvailableModelsLabeled] = useState<LabeledItem[]>([]);
@@ -603,6 +609,102 @@ const App: React.FC = () => {
 
     }, [handleStopAudio]);
 
+    // Play audio queue sequentially for continuous avatar speech
+    const playAudioQueue = useCallback(() => {
+        // Don't start if already playing or queue is empty
+        if (audioQueueRef.current.length === 0) return;
+        if (isPlayingQueueRef.current) return; // Use ref to avoid race conditions
+
+        isPlayingQueueRef.current = true;
+
+        setIsPlayingQueue(true);
+
+        const playNext = () => {
+            // Get next audio segment from queue
+            const nextSegment = audioQueueRef.current.shift();
+
+            if (!nextSegment) {
+                // Queue is empty, stop playback
+                isPlayingQueueRef.current = false;
+                setIsPlayingQueue(false);
+                setCurrentViseme('X');
+                return;
+            }
+
+            const { url, visemes: visemeData, messageId } = nextSegment;
+
+            // Create and play audio
+            const audio = new Audio(url);
+            audioRef.current = audio;
+            setActiveAudio(audio);
+            setPlayingAudioId(messageId);
+
+            // Ensure mouth cues are sorted by start time
+            const sortedMouthCues = [...visemeData.mouthCues].sort((a, b) => a.start - b.start);
+
+            const animate = () => {
+                if (audio.paused || audio.ended) {
+                    return; // Will be handled by onended
+                }
+
+                const currentTime = audio.currentTime;
+                let current = 'X';
+
+                // Find the current viseme by checking the time
+                for (const cue of sortedMouthCues) {
+                    if (cue.start <= currentTime) {
+                        current = cue.value;
+                    } else {
+                        break; // Cues are sorted, so we can stop
+                    }
+                }
+
+                setCurrentViseme(current);
+                animationFrameIdRef.current = requestAnimationFrame(animate);
+            };
+
+            audio.onplay = () => {
+                animationFrameIdRef.current = requestAnimationFrame(animate);
+            };
+
+            // When this audio ends, immediately play next segment (NO BREAK!)
+            audio.onended = () => {
+                if (animationFrameIdRef.current) {
+                    cancelAnimationFrame(animationFrameIdRef.current);
+                    animationFrameIdRef.current = null;
+                }
+                // Play next segment immediately for continuous speech
+                playNext();
+            };
+
+            audio.onerror = () => {
+                console.error("Audio playback error in queue.");
+                // Skip to next segment on error
+                playNext();
+            };
+
+            audio.play().catch(e => {
+                console.error("Audio playback failed:", e);
+                playNext(); // Try next segment
+            });
+        };
+
+        // Start playing the first segment
+        playNext();
+    }, []); // No dependencies to avoid stale closures
+
+    // Add audio segment to queue and start playback if not already playing
+    const enqueueAudio = useCallback((url: string, visemes: VisemeData, messageId: string) => {
+        audioQueueRef.current.push({ url, visemes, messageId });
+        setAudioQueue(prev => [...prev, { url, visemes, messageId }]);
+
+        // Start playback if not already playing (use ref to avoid race conditions)
+        if (!isPlayingQueueRef.current) {
+            playAudioQueue();
+        }
+    }, [playAudioQueue]);
+
+
     const handleNewSession = async () => {
         if (!currentUser) return;
         handleStopAudio();
@@ -737,6 +839,15 @@ const App: React.FC = () => {
             abortControllerRef.current.abort();
             abortControllerRef.current = null;
             setIsLoading(false); // Give immediate UI feedback
+            isStreamingRef.current = false; // Mark streaming as complete
+
+            // Clean up any empty messages left from the canceled request
+            setMessages(prev => prev.filter(m =>
+                m.text.trim().length > 0 ||
+                (m.attachedImages?.length ?? 0) > 0 ||
+                (m.attachedAudio?.length ?? 0) > 0 ||
+                (m.attachedVideos?.length ?? 0) > 0
+            ));
         }
     };
 
@@ -808,39 +919,33 @@ const App: React.FC = () => {
                             setMessages(prev => prev.map(m => {
                                 if (m.id === streamingMessageId) {
                                     const newText = m.text + chunk;
-                                    const formatted = newText
-                                        .replace(/^\s*\{\s*$/gm, '')
-                                        .replace(/^\s*\}\s*$/gm, '')
-                                        .replace(/^\s*"[^"]*":\s*\[\s*$/gm, '')
-                                        .replace(/^\s*"[^"]*":\s*"([^"]*)"[,]?\s*$/gm, '$1')
-                                        .replace(/^\s*\]\s*[,]?\s*$/gm, '')
-                                        .replace(/^\s*[,]\s*$/gm, '')
-                                        .replace(/key_findings/gi, 'Key Points')
-                                        .replace(/\bdetails\b/gi, 'Explanation')
-                                        .replace(/\bconclusion\b/gi, 'Summary')
-                                        .replace(/(?<!Additional\s)\bnotes\b/gi, 'Additional Notes');
+                                    // Apply full formatting during streaming for better UX
+                                    const formatted = formatAssistantText(newText);
                                     return { ...m, text: formatted };
                                 }
                                 return m;
                             }));
+                        }, (audioFilename, visemes, sentenceIndex) => {
+                            // NEW: Audio chunk callback - enqueue immediately for continuous playback!
+                            const audioUrl = `${API_BASE_URL}/querytts_audio/${audioFilename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}`;
+                            enqueueAudio(audioUrl, visemes, streamingMessageId);
+
+                            // Stop "thinking" animation when first audio starts
+                            if (sentenceIndex === 0) {
+                                setIsLoading(false);
+                            }
                         });
 
-                        const audioUrl = data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}` : undefined;
-
+                        // Update with final formatted response
                         setMessages(prev => prev.map(m =>
                             m.id === streamingMessageId
-                                ? { ...m, text: formatAssistantText(data.response) || ' ', audioUrl, visemes: data.visemes }
+                                ? { ...m, text: formatAssistantText(data.response) || ' ' }
                                 : m
                         ));
 
-                        setIsLoading(false); // Now we stop the thinking animation
                         isStreamingRef.current = false;
                         // Cleanup any stuck empty messages
                         setMessages(prev => prev.filter(m => m.text.trim().length > 0 || (m.attachedImages?.length ?? 0) > 0 || (m.attachedAudio?.length ?? 0) > 0 || (m.attachedVideos?.length ?? 0) > 0));
-
-                        if (audioUrl && data.visemes) {
-                            playAudioWithVisemes(audioUrl, data.visemes, streamingMessageId);
-                        }
                     } else {
                         // Create empty assistant message for streaming
                         const streamingMessageId = crypto.randomUUID();
@@ -911,38 +1016,32 @@ const App: React.FC = () => {
                             setMessages(prev => prev.map(m => {
                                 if (m.id === streamingMessageId) {
                                     const newText = m.text + chunk;
-                                    const formatted = newText
-                                        .replace(/^\s*\{\s*$/gm, '')
-                                        .replace(/^\s*\}\s*$/gm, '')
-                                        .replace(/^\s*"[^"]*":\s*\[\s*$/gm, '')
-                                        .replace(/^\s*"[^"]*":\s*"([^"]*)"[,]?\s*$/gm, '$1')
-                                        .replace(/^\s*\]\s*[,]?\s*$/gm, '')
-                                        .replace(/^\s*[,]\s*$/gm, '')
-                                        .replace(/key_findings/gi, 'Key Points')
-                                        .replace(/\bdetails\b/gi, 'Explanation')
-                                        .replace(/\bconclusion\b/gi, 'Summary')
-                                        .replace(/(?<!Additional\s)\bnotes\b/gi, 'Additional Notes');
+                                    // Apply full formatting during streaming for better UX
+                                    const formatted = formatAssistantText(newText);
                                     return { ...m, text: formatted };
                                 }
                                 return m;
                             }));
+                        }, (audioFilename, visemes, sentenceIndex) => {
+                            // NEW: Audio chunk callback - enqueue immediately for continuous playback!
+                            const audioUrl = `${API_BASE_URL}/querytts_audio/${audioFilename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}`;
+                            enqueueAudio(audioUrl, visemes, streamingMessageId);
+
+                            // Stop "thinking" animation when first audio starts
+                            if (sentenceIndex === 0) {
+                                setIsLoading(false);
+                            }
                         });
 
-                        const audioUrl = data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}` : undefined;
-
+                        // Update with final formatted response
                         setMessages(prev => prev.map(m =>
                             m.id === streamingMessageId
-                                ? { ...m, text: formatAssistantText(data.response), audioUrl, visemes: data.visemes }
+                                ? { ...m, text: formatAssistantText(data.response) || ' ' }
                                 : m
                         ));
 
-                        setIsLoading(false);
                         isStreamingRef.current = false;
                         setMessages(prev => prev.filter(m => m.text.trim().length > 0 || (m.attachedImages?.length ?? 0) > 0 || (m.attachedAudio?.length ?? 0) > 0 || (m.attachedVideos?.length ?? 0) > 0));
-
-                        if (audioUrl && data.visemes) {
-                            playAudioWithVisemes(audioUrl, data.visemes, streamingMessageId);
-                        }
                     } else {
                         // Create empty assistant message for streaming
                         const streamingMessageId = crypto.randomUUID();
@@ -1014,38 +1113,32 @@ const App: React.FC = () => {
                             setMessages(prev => prev.map(m => {
                                 if (m.id === streamingMessageId) {
                                     const newText = m.text + chunk;
-                                    const formatted = newText
-                                        .replace(/^\s*\{\s*$/gm, '')
-                                        .replace(/^\s*\}\s*$/gm, '')
-                                        .replace(/^\s*"[^"]*":\s*\[\s*$/gm, '')
-                                        .replace(/^\s*"[^"]*":\s*"([^"]*)"[,]?\s*$/gm, '$1')
-                                        .replace(/^\s*\]\s*[,]?\s*$/gm, '')
-                                        .replace(/^\s*[,]\s*$/gm, '')
-                                        .replace(/key_findings/gi, 'Key Points')
-                                        .replace(/\bdetails\b/gi, 'Explanation')
-                                        .replace(/\bconclusion\b/gi, 'Summary')
-                                        .replace(/(?<!Additional\s)\bnotes\b/gi, 'Additional Notes');
+                                    // Apply full formatting during streaming for better UX
+                                    const formatted = formatAssistantText(newText);
                                     return { ...m, text: formatted };
                                 }
                                 return m;
                             }));
+                        }, (audioFilename, visemes, sentenceIndex) => {
+                            // NEW: Audio chunk callback - enqueue immediately for continuous playback!
+                            const audioUrl = `${API_BASE_URL}/querytts_audio/${audioFilename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}`;
+                            enqueueAudio(audioUrl, visemes, streamingMessageId);
+
+                            // Stop "thinking" animation when first audio starts
+                            if (sentenceIndex === 0) {
+                                setIsLoading(false);
+                            }
                         });
 
-                        const audioUrl = data.audio_filename ? `${API_BASE_URL}/querytts_audio/${data.audio_filename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}` : undefined;
-
+                        // Update with final formatted response
                         setMessages(prev => prev.map(m =>
                             m.id === streamingMessageId
-                                ? { ...m, text: formatAssistantText(data.response) || ' ', audioUrl, visemes: data.visemes }
+                                ? { ...m, text: formatAssistantText(data.response) || ' ' }
                                 : m
                         ));
 
-                        setIsLoading(false);
                         isStreamingRef.current = false;
                         setMessages(prev => prev.filter(m => m.text.trim().length > 0 || (m.attachedImages?.length ?? 0) > 0 || (m.attachedAudio?.length ?? 0) > 0 || (m.attachedVideos?.length ?? 0) > 0));
-
-                        if (audioUrl && data.visemes) {
-                            playAudioWithVisemes(audioUrl, data.visemes, streamingMessageId);
-                        }
                     } else {
                         // Create empty assistant message for streaming
                         const streamingMessageId = crypto.randomUUID();
@@ -1493,6 +1586,8 @@ const App: React.FC = () => {
                                     storage.setQueryMode(m);
                                 }}
                                 onCancel={handleCancelGeneration}
+                                onStopAudio={handleStopAudio}
+                                isPlayingAudio={!!activeAudio}
                                 supportsImages={availableModelsLabeled.find(m => m.id === currentModel)?.supports_images}
                                 supportsAudio={availableModelsLabeled.find(m => m.id === currentModel)?.supports_audio}
                                 supportsVideos={availableModelsLabeled.find(m => m.id === currentModel)?.supports_videos}

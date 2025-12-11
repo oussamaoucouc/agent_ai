@@ -12,12 +12,14 @@ interface InputBarProps {
     queryMode: QueryMode;
     onQueryModeChange: (mode: QueryMode) => void;
     onCancel: () => void;
+    onStopAudio: () => void;
+    isPlayingAudio: boolean;
     supportsImages?: boolean;
     supportsAudio?: boolean;
     supportsVideos?: boolean;
 }
 
-export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStartRecording, onStopRecording, isLoading, queryMode, onQueryModeChange, onCancel, supportsImages, supportsAudio, supportsVideos }) => {
+export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStartRecording, onStopRecording, isLoading, queryMode, onQueryModeChange, onCancel, onStopAudio, isPlayingAudio, supportsImages, supportsAudio, supportsVideos }) => {
     const [text, setText] = useState('');
     const [mediaAttachments, setMediaAttachments] = useState<MediaAttachment[]>([]);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -184,6 +186,19 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
                             </button>
                             <span className="absolute -bottom-8 whitespace-nowrap text-xs text-white bg-gray-900/80 backdrop-blur-sm px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                                 Cancel
+                            </span>
+                        </div>
+                    ) : isPlayingAudio ? (
+                        <div className="relative group flex flex-col items-center">
+                            <button
+                                onClick={onStopAudio}
+                                className="p-2.5 rounded-full bg-orange-600 hover:bg-orange-500 transition-colors animate-pulse"
+                                aria-label="Stop audio"
+                            >
+                                <StopIcon className="w-5 h-5 text-white" />
+                            </button>
+                            <span className="absolute -bottom-8 whitespace-nowrap text-xs text-white bg-gray-900/80 backdrop-blur-sm px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                Stop Audio
                             </span>
                         </div>
                     ) : (
