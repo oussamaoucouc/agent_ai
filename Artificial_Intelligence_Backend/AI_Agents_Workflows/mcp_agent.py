@@ -371,15 +371,9 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
     user_urls = []
     if selected_urls:
         user_urls = [str(u).strip() for u in selected_urls if str(u).strip()]
-    elif not user_had_selections and runtime_urls:
-        # Only use all runtime URLs if user never selected anything
-        user_urls = runtime_urls
-        logger.info("No user selections found, using all available MCP servers from config")
-    elif not user_had_selections and cfg.MCP_SERVER_URL:
-        user_urls = [cfg.MCP_SERVER_URL]
     else:
-        # User had selections but they're all stale - don't fall back
-        logger.info("User had tool selections but they are no longer in catalog - no MCP tools will be loaded")
+        # User has no valid selections (or they are stale) - do not fall back to defaults
+        logger.info("No user selections found (or selections were stale). No MCP tools will be loaded.")
          
     for u in user_urls:
         url_str = str(u).strip()

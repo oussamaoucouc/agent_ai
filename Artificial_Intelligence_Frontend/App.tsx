@@ -88,6 +88,7 @@ const App: React.FC = () => {
     const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(false);
+    const [isGenerating, setIsGenerating] = useState<boolean>(false); // New state to track entire generation process
     const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
     const [currentViseme, setCurrentViseme] = useState<string>('X');
     const [activeAudio, setActiveAudio] = useState<HTMLAudioElement | null>(null);
@@ -924,7 +925,10 @@ const App: React.FC = () => {
             }
             abortControllerRef.current.abort();
             abortControllerRef.current = null;
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
             setIsLoading(false); // Give immediate UI feedback
+            setIsGenerating(false); // Stop generation state
             isStreamingRef.current = false; // Mark streaming as complete
 
             // Clean up any empty messages left from the canceled request
@@ -971,7 +975,9 @@ const App: React.FC = () => {
             attachedVideos: attachedVideos.length > 0 ? attachedVideos : undefined
         };
         setMessages(prev => [...prev, userMessage]);
+        setMessages(prev => [...prev, userMessage]);
         setIsLoading(true);
+        setIsGenerating(true);
 
         const controller = new AbortController();
         abortControllerRef.current = controller;
@@ -1300,7 +1306,9 @@ const App: React.FC = () => {
                 ]);
             }
         } finally {
+            setMessages(prev => prev.filter(m => m.text.trim().length > 0 || (m.attachedImages?.length ?? 0) > 0 || (m.attachedAudio?.length ?? 0) > 0 || (m.attachedVideos?.length ?? 0) > 0));
             setIsLoading(false);
+            setIsGenerating(false);
             abortControllerRef.current = null;
         }
     };
@@ -1309,6 +1317,7 @@ const App: React.FC = () => {
         if (!audioBlob || isLoading || !activeSessionId || !currentUser) return;
 
         setIsLoading(true);
+        setIsGenerating(true);
         const controller = new AbortController();
         abortControllerRef.current = controller;
 
@@ -1423,9 +1432,10 @@ const App: React.FC = () => {
                 };
                 setMessages(prev => [...prev, errorMessage]);
             }
-        } finally {
+
             setMessages(prev => prev.filter(m => m.text.trim().length > 0 || (m.attachedImages?.length ?? 0) > 0 || (m.attachedAudio?.length ?? 0) > 0 || (m.attachedVideos?.length ?? 0) > 0));
             setIsLoading(false);
+            setIsGenerating(false);
             isStreamingRef.current = false;
             abortControllerRef.current = null;
         }
@@ -1685,7 +1695,7 @@ const App: React.FC = () => {
                                 isRecording={isRecording}
                                 onStartRecording={startRecording}
                                 onStopRecording={handleStopRecording}
-                                isLoading={isLoading}
+                                isLoading={isGenerating} // Use isGenerating to keep Stop button visible during speech/streaming
                                 queryMode={queryMode}
                                 onQueryModeChange={(m) => {
                                     setQueryMode(m);

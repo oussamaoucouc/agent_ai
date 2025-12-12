@@ -864,6 +864,8 @@ async def reset_mcp_gateway_endpoint(http_request: Request):
         
         reset_mcp_gateway_state()
         return {"status": "success", "message": "MCP Gateway state reset. Servers will be re-registered on next query."}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1248,6 +1250,8 @@ async def stt_query_mcp_endpoint(
     session_id: str = Form(...),
     request: Request = None,
 ):
+    key = f"{user_id}:{session_id}"
+    active_tasks[key] = asyncio.current_task()
     try:
         token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
         if not token_payload:
@@ -1282,8 +1286,21 @@ async def stt_query_mcp_endpoint(
             "session_id": session_id,
             "status": "success"
         }
+    except asyncio.CancelledError:
+        logging.warning(f"Task cancelled: user={user_id} session={session_id}")
+        return {
+            "text": "",
+            "response": "Request cancelled by user",
+            "user_id": user_id,
+            "session_id": session_id,
+            "status": "cancelled"
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing audio query: {str(e)}")
+    finally:
+        active_tasks.pop(key, None)
 
 # ASSISTANT Speech-to-text then Query
 @app.post("/stt_query_assistant", response_model=Dict[str, str])
@@ -1293,6 +1310,8 @@ async def stt_query_assistant_endpoint(
     session_id: str = Form(...),
     request: Request = None,
 ):
+    key = f"{user_id}:{session_id}"
+    active_tasks[key] = asyncio.current_task()
     try:
         token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
         if not token_payload:
@@ -1324,8 +1343,21 @@ async def stt_query_assistant_endpoint(
             "session_id": session_id,
             "status": "success"
         }
+    except asyncio.CancelledError:
+        logging.warning(f"Task cancelled: user={user_id} session={session_id}")
+        return {
+            "text": "",
+            "response": "Request cancelled by user",
+            "user_id": user_id,
+            "session_id": session_id,
+            "status": "cancelled"
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing audio query: {str(e)}")
+    finally:
+        active_tasks.pop(key, None)
 
 # ASSISTANT STT then Query, direct (filtered reasoning)
 @app.post("/stt_query_assistant_direct", response_model=Dict[str, str])
@@ -1335,6 +1367,8 @@ async def stt_query_assistant_direct_endpoint(
     session_id: str = Form(...),
     request: Request = None,
 ):
+    key = f"{user_id}:{session_id}"
+    active_tasks[key] = asyncio.current_task()
     try:
         token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
         if not token_payload:
@@ -1363,8 +1397,21 @@ async def stt_query_assistant_direct_endpoint(
             "session_id": session_id,
             "status": "success"
         }
+    except asyncio.CancelledError:
+        logging.warning(f"Task cancelled: user={user_id} session={session_id}")
+        return {
+            "text": "",
+            "response": "Request cancelled by user",
+            "user_id": user_id,
+            "session_id": session_id,
+            "status": "cancelled"
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing audio query: {str(e)}")
+    finally:
+        active_tasks.pop(key, None)
 
 # MCP STT then Query, direct (filtered reasoning)
 @app.post("/stt_query_mcp_direct", response_model=Dict[str, str])
@@ -1374,6 +1421,8 @@ async def stt_query_mcp_direct_endpoint(
     session_id: str = Form(...),
     request: Request = None,
 ):
+    key = f"{user_id}:{session_id}"
+    active_tasks[key] = asyncio.current_task()
     try:
         token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
         if not token_payload:
@@ -1409,8 +1458,21 @@ async def stt_query_mcp_direct_endpoint(
             "session_id": session_id,
             "status": "success"
         }
+    except asyncio.CancelledError:
+        logging.warning(f"Task cancelled: user={user_id} session={session_id}")
+        return {
+            "text": "",
+            "response": "Request cancelled by user",
+            "user_id": user_id,
+            "session_id": session_id,
+            "status": "cancelled"
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing audio query: {str(e)}")
+    finally:
+        active_tasks.pop(key, None)
 
 # MCP Query then TTS
 @app.post("/query_mcp_tts")
@@ -1418,6 +1480,8 @@ async def query_mcp_tts_endpoint(request: QueryRequest, http_request: Request):
     """
     Returns a JSON with the MCP text response, audio filename, and viseme data.
     """
+    key = f"{request.user_id}:{request.session_id}"
+    active_tasks[key] = asyncio.current_task()
     try:
         token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
         if not token_payload:
@@ -1449,8 +1513,14 @@ async def query_mcp_tts_endpoint(request: QueryRequest, http_request: Request):
             "visemes": viseme_data,
             "status": "success"
         }
+    except asyncio.CancelledError:
+        raise HTTPException(status_code=499, detail="Request cancelled")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        active_tasks.pop(key, None)
 
 # ASSISTANT Query then TTS
 @app.post("/query_assistant_tts")
@@ -1458,6 +1528,8 @@ async def query_assistant_tts_endpoint(request: QueryRequest, http_request: Requ
     """
     Returns a JSON with the assistant text response, audio filename, and viseme data.
     """
+    key = f"{request.user_id}:{request.session_id}"
+    active_tasks[key] = asyncio.current_task()
     try:
         token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
         if not token_payload:
@@ -1582,8 +1654,14 @@ async def query_assistant_tts_endpoint(request: QueryRequest, http_request: Requ
             "visemes": viseme_data,
             "status": "success"
         }
+    except asyncio.CancelledError:
+        raise HTTPException(status_code=499, detail="Request cancelled")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        active_tasks.pop(key, None)
 
 # ASSISTANT Query direct then TTS (filtered reasoning)
 @app.post("/query_assistant_tts_direct")
@@ -1807,8 +1885,8 @@ async def query_assistant_tts_direct(request: QueryRequest, http_request: Reques
                         logging.error(f"ASSISTANT TTS: GeneratorExit!!! Client closed stream. Tasks completed: {tasks_completed}/{total_tasks}")
                         raise
                     except asyncio.CancelledError:
-                        logging.error(f"ASSISTANT TTS: CancelledError!!! Tasks completed: {tasks_completed}/{total_tasks}")
-                        raise
+                        logging.warning(f"ASSISTANT TTS: Cancelled by user. Tasks completed: {tasks_completed}/{total_tasks}")
+                        return
                     except Exception as e:
                         logging.error(f"ASSISTANT TTS: Error in audio processing loop: {str(e)}", exc_info=True)
                     
@@ -1838,7 +1916,8 @@ async def query_assistant_tts_direct(request: QueryRequest, http_request: Reques
                 yield f"data: {json.dumps({'done': True, 'full_response': cleaned_response, 'total_audio_chunks': sentence_index})}\n\n"
 
             except asyncio.CancelledError:
-                yield f"data: {json.dumps({'error': 'Request cancelled'})}\n\n"
+                logging.warning("Stream request cancelled by user")
+                return
             except Exception as e:
                 logging.error(f"Error in Assistant TTS streaming: {str(e)}")
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
@@ -1854,6 +1933,8 @@ async def query_assistant_tts_direct(request: QueryRequest, http_request: Reques
                 "X-Accel-Buffering": "no"
             }
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1996,7 +2077,8 @@ async def query_mcp_tts_direct(request: QueryRequest, http_request: Request):
                 yield f"data: {json.dumps({'done': True, 'full_response': cleaned_response, 'total_audio_chunks': sentence_index})}\n\n"
 
             except asyncio.CancelledError:
-                yield f"data: {json.dumps({'error': 'Request cancelled'})}\n\n"
+                logging.warning("Stream request cancelled by user")
+                return
             except Exception as e:
                 logging.error(f"Error in MCP TTS streaming: {str(e)}")
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
@@ -2012,6 +2094,9 @@ async def query_mcp_tts_direct(request: QueryRequest, http_request: Request):
                 "X-Accel-Buffering": "no"
             }
         )
+    except asyncio.CancelledError:
+        logging.warning("Request cancelled")
+        return JSONResponse(status_code=499, content={"detail": "Request cancelled"})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -2071,6 +2156,9 @@ async def stt_query_mcp_tts_endpoint(
             "session_id": session_id,
             "status": "success"
         }
+    except asyncio.CancelledError:
+        logging.warning("Request cancelled")
+        return JSONResponse(status_code=499, content={"detail": "Request cancelled"})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing audio query with TTS: {str(e)}")
 
@@ -2121,6 +2209,11 @@ async def stt_query_assistant_tts_endpoint(
             "session_id": session_id,
             "status": "success"
         }
+    except asyncio.CancelledError:
+        logging.warning("Request cancelled")
+        return JSONResponse(status_code=499, content={"detail": "Request cancelled"})
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing audio query with TTS: {str(e)}")
 
@@ -2226,7 +2319,8 @@ async def stt_query_assistant_tts_direct_endpoint(
                 yield f"data: {json.dumps({'done': True, 'text': query_text, 'full_response': cleaned_response, 'total_audio_chunks': sentence_index})}\n\n"
 
             except asyncio.CancelledError:
-                yield f"data: {json.dumps({'error': 'Request cancelled'})}\n\n"
+                logging.warning("Stream request cancelled by user")
+                return
             except Exception as e:
                 logging.error(f"Error in STT Assistant TTS streaming: {str(e)}")
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
@@ -2320,7 +2414,7 @@ async def stt_query_mcp_tts_direct_endpoint(
                                         audio_filename = os.path.basename(audio_path)
                                     
                                     # Send audio chunk event immediately
-                                    yield f"data: {json.dumps({'type': 'audio_chunk', 'sentence_index': sentence_index, 'audio_filename': audio_filename, 'visemes': visemes_data, 'sentence_text': sentence})}\n\n"
+                                    yield f"data: {json.dumps({'type': 'audio_chunk', 'sentence_index': sentence_index, 'audio_filename': audio_filename, 'visemes': viseme_data, 'sentence_text': sentence})}\n\n"
                                     sentence_index += 1
                                     
                                 except Exception as e:
@@ -2348,7 +2442,8 @@ async def stt_query_mcp_tts_direct_endpoint(
                 yield f"data: {json.dumps({'done': True, 'text': query_text, 'full_response': cleaned_response, 'total_audio_chunks': sentence_index})}\n\n"
 
             except asyncio.CancelledError:
-                yield f"data: {json.dumps({'error': 'Request cancelled'})}\n\n"
+                logging.warning("Stream request cancelled by user")
+                return
             except Exception as e:
                 logging.error(f"Error in STT MCP TTS streaming: {str(e)}")
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
@@ -2366,7 +2461,10 @@ async def stt_query_mcp_tts_direct_endpoint(
         )
 
     except asyncio.CancelledError:
-        raise HTTPException(status_code=499, detail="Request cancelled")
+        logging.warning("Request cancelled")
+        return JSONResponse(status_code=499, content={"detail": "Request cancelled"})
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing audio query with TTS: {str(e)}")
 #LLM QUERY not displayed Reasoning (with SSE Streaming)
@@ -2410,7 +2508,9 @@ async def query_direct(request: QueryRequest, http_request: Request):
             yield f"data: {json.dumps({'done': True, 'full_response': cleaned_response})}\n\n"
             
         except asyncio.CancelledError:
-            yield f"data: {json.dumps({'error': 'Request cancelled'})}\n\n"
+            logging.warning("RAG Stream request cancelled by user")
+            # If client disconnected, we can just return.
+            return
         except Exception as e:
             logging.error(f"Error in RAG streaming: {type(e).__name__}: {str(e)}")
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
@@ -2680,6 +2780,8 @@ async def query_tts_endpoint(request: QueryRequest, http_request: Request):
             "visemes": viseme_data,
             "status": "success"
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -2838,6 +2940,8 @@ async def query_tts_direct(request: QueryRequest, http_request: Request):
                 "X-Accel-Buffering": "no"
             }
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -2893,6 +2997,11 @@ async def stt_query_tts_endpoint(
             "session_id": session_id,
             "status": "success"
         }
+    except asyncio.CancelledError:
+        logging.warning("Request cancelled")
+        return JSONResponse(status_code=499, content={"detail": "Request cancelled"})
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing audio query with TTS: {str(e)}")
 
@@ -2998,7 +3107,8 @@ async def stt_query_tts_direct_endpoint(
                 yield f"data: {json.dumps({'done': True, 'text': query_text, 'full_response': cleaned_response, 'total_audio_chunks': sentence_index})}\n\n"
 
             except asyncio.CancelledError:
-                yield f"data: {json.dumps({'error': 'Request cancelled'})}\n\n"
+                logging.warning("RAG Stream request cancelled by user")
+                return
             except Exception as e:
                 logging.error(f"Error in STT TTS streaming: {str(e)}")
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
@@ -3016,7 +3126,10 @@ async def stt_query_tts_direct_endpoint(
         )
 
     except asyncio.CancelledError:
-        raise HTTPException(status_code=499, detail="Request cancelled")
+        logging.warning("Request cancelled")
+        return JSONResponse(status_code=499, content={"detail": "Request cancelled"})
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing audio query with TTS: {str(e)}")
 
