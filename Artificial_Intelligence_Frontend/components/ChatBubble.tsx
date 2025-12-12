@@ -89,12 +89,21 @@ const parseMarkdown = (text: string): string => {
             continue;
         }
 
-        // H4 heading (#### ) - for numbered tool sections
-        let match = line.match(/^####\s+(.*)/);
+        // H1 heading (#) - largest heading
+        let match = line.match(/^#\s+(.*)$/);
         if (match) {
             flushBlock();
-            const title = parseInlineMarkdown(match[1].replace(/^`|`$/g, '')); // Remove surrounding backticks if present
-            html += `<h4 class="text-lg font-semibold text-sky-300 mt-5 mb-2 first:mt-0">${title}</h4>`;
+            const title = parseInlineMarkdown(match[1]);
+            html += `<h1 class="text-2xl font-bold text-white mt-4 mb-3 first:mt-0">${title}</h1>`;
+            continue;
+        }
+
+        // H2 heading (##) - second-level heading
+        match = line.match(/^##\s+(.*)$/);
+        if (match) {
+            flushBlock();
+            const title = parseInlineMarkdown(match[1]);
+            html += `<h2 class="text-xl font-bold text-white mt-4 mb-2 first:mt-0">${title}</h2>`;
             continue;
         }
 
@@ -104,6 +113,15 @@ const parseMarkdown = (text: string): string => {
             flushBlock();
             const title = parseInlineMarkdown(match[1].replace(/^\[|\]$/g, '')); // Remove brackets if present
             html += `<h3 class="text-xl font-bold text-white mt-6 mb-3 pb-2 border-b border-slate-500/30 first:mt-0">${title}</h3>`;
+            continue;
+        }
+
+        // H4 heading (#### ) - for numbered tool sections
+        match = line.match(/^####\s+(.*)/);
+        if (match) {
+            flushBlock();
+            const title = parseInlineMarkdown(match[1].replace(/^`|`$/g, '')); // Remove surrounding backticks if present
+            html += `<h4 class="text-lg font-semibold text-sky-300 mt-5 mb-2 first:mt-0">${title}</h4>`;
             continue;
         }
 

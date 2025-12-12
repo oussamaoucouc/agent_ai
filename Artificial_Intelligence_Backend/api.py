@@ -1671,6 +1671,11 @@ async def query_assistant_tts_direct(request: QueryRequest, http_request: Reques
     """
     key = f"{request.user_id}:{request.session_id}"
     active_tasks[key] = asyncio.current_task()
+    
+    # Define tool log regex for chunk cleaning
+    import re
+    tool_log_regex = re.compile(r"[\w_]+\([^)]*\)\s*completed\s+in\s+[\d.]+s\.?", re.IGNORECASE)
+    
     try:
         token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
         if not token_payload:
@@ -1784,19 +1789,26 @@ async def query_assistant_tts_direct(request: QueryRequest, http_request: Reques
             tts_tasks = []  # Track TTS generation tasks
             
             async def generate_tts_task(sentence: str, idx: int):
-                """Generate TTS in background without blocking"""
+                """Generate TTS in background without blocking - with timeout"""
                 try:
-                    audio_path, viseme_data = await run_in_threadpool(text_to_speech, sentence)
+                    # Add 30-second timeout to prevent indefinite hangs
+                    audio_path, viseme_data = await asyncio.wait_for(
+                        run_in_threadpool(text_to_speech, sentence),
+                        timeout=30.0
+                    )
                     audio_filename = None
                     if audio_path:
                         size_bytes = os.path.getsize(audio_path)
-                        logging.info(f"Generated TTS audio: {audio_path} ({size_bytes} bytes)")
+                        logging.info(f"ASSISTANT TTS: Generated audio for sentence {idx}: {audio_path} ({size_bytes} bytes)")
                         if size_bytes < 1000:
-                            logging.warning(f"Audio file seems too small ({size_bytes} bytes) for sentence: {sentence[:50]}...")
+                            logging.warning(f"ASSISTANT TTS: Audio file seems too small ({size_bytes} bytes) for sentence: {sentence[:50]}...")
                         audio_filename = os.path.basename(audio_path)
                     return {'type': 'audio_chunk', 'sentence_index': idx, 'audio_filename': audio_filename, 'visemes': viseme_data, 'sentence_text': sentence}
+                except asyncio.TimeoutError:
+                    logging.error(f"ASSISTANT TTS: Timeout generating audio for sentence {idx} (30s limit exceeded)")
+                    return None
                 except Exception as e:
-                    logging.error(f"Error generating TTS for sentence {idx}: {str(e)}")
+                    logging.error(f"ASSISTANT TTS: Error generating audio for sentence {idx}: {str(e)}")
                     return None
             
             try:
@@ -1851,36 +1863,45 @@ async def query_assistant_tts_direct(request: QueryRequest, http_request: Reques
                     try:
                         logging.info(f"ASSISTANT TTS: Starting as_completed loop with {len(tts_tasks)} tasks")
                         for task in asyncio.as_completed(tts_tasks):
-                            result = await task
-                            tasks_completed += 1
-                            logging.info(f"ASSISTANT TTS: Task {tasks_completed}/{total_tasks} done. Has result: {result is not None}")
-                            
-                            if result:
-                                completed_audio[result['sentence_index']] = result
-                                logging.info(f"ASSISTANT TTS: Buffered sentence {result['sentence_index']}")
+                            try:
+                                result = await task
+                                tasks_completed += 1
+                                logging.info(f"ASSISTANT TTS: Task {tasks_completed}/{total_tasks} completed. Has result: {result is not None}")
                                 
-                            # Send buffered audio in order
-                            while next_index_to_send in completed_audio:
-                                logging.info(f"ASSISTANT TTS: Yielding chunk {next_index_to_send}")
-                                yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
-                                await asyncio.sleep(0.05)  # Small delay to ensure SSE event is processed
-                                del completed_audio[next_index_to_send]
-                                next_index_to_send += 1
-                            
-                            # If all tasks done, send any remaining (skip failed gaps)
-                            if tasks_completed == total_tasks:
-                                logging.info(f"ASSISTANT TTS: Flushing remaining from index {next_index_to_send}")
-                                while next_index_to_send < total_tasks:
-                                    if next_index_to_send in completed_audio:
-                                        logging.info(f"ASSISTANT TTS: Flushing chunk {next_index_to_send}")
-                                        yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
-                                        del completed_audio[next_index_to_send]
-                                    else:
-                                        logging.warning(f"ASSISTANT TTS: Skipping missing index {next_index_to_send}")
+                                if result:
+                                    completed_audio[result['sentence_index']] = result
+                                    logging.info(f"ASSISTANT TTS: Buffered audio chunk for sentence {result['sentence_index']}")
+                                else:
+                                    logging.warning(f"ASSISTANT TTS: Task {tasks_completed} returned None (likely failed/timeout)")
+                                    
+                                # Send buffered audio in order (skip failed chunks)
+                                while next_index_to_send in completed_audio:
+                                    logging.info(f"ASSISTANT TTS: Sending audio chunk {next_index_to_send}")
+                                    yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
+                                    await asyncio.sleep(0.01)  # Small delay to prevent overwhelming client
+                                    del completed_audio[next_index_to_send]
                                     next_index_to_send += 1
+                                
+                            except Exception as task_err:
+                                logging.error(f"ASSISTANT TTS: Error processing task {tasks_completed + 1}: {str(task_err)}")
+                                tasks_completed += 1
                         
+                        # After all tasks done, flush any remaining buffered chunks (skip gaps from failed chunks)
+                        logging.info(f"ASSISTANT TTS: All tasks complete. Flushing remaining chunks from index {next_index_to_send}")
+                        remaining_count = 0
+                        while next_index_to_send < total_tasks:
+                            if next_index_to_send in completed_audio:
+                                logging.info(f"ASSISTANT TTS: Flushing chunk {next_index_to_send}")
+                                yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
+                                await asyncio.sleep(0.01)
+                                del completed_audio[next_index_to_send]
+                                remaining_count += 1
+                            else:
+                                logging.warning(f"ASSISTANT TTS: Skipping missing chunk {next_index_to_send} (failed/timeout)")
+                            next_index_to_send += 1
+                        
+                        logging.info(f"ASSISTANT TTS: Flushed {remaining_count} remaining chunks")
                         logging.info(f"ASSISTANT TTS: as_completed loop finished. Tasks completed: {tasks_completed}/{total_tasks}")
-                        logging.info(f"ASSISTANT TTS: Done processing all {total_tasks} tasks")
                     except GeneratorExit:
                         logging.error(f"ASSISTANT TTS: GeneratorExit!!! Client closed stream. Tasks completed: {tasks_completed}/{total_tasks}")
                         raise
@@ -1946,6 +1967,11 @@ async def query_mcp_tts_direct(request: QueryRequest, http_request: Request):
     """
     key = f"{request.user_id}:{request.session_id}"
     active_tasks[key] = asyncio.current_task()
+    
+    # Define tool log regex for chunk cleaning
+    import re
+    tool_log_regex = re.compile(r"[\w_]+\([^)]*\)\s*completed\s+in\s+[\d.]+s\.?", re.IGNORECASE)
+    
     try:
         token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
         if not token_payload:
@@ -1964,15 +1990,23 @@ async def query_mcp_tts_direct(request: QueryRequest, http_request: Request):
             tts_tasks = []  # Track TTS generation tasks
             
             async def generate_tts_task(sentence: str, idx: int):
-                """Generate TTS in background without blocking"""
+                """Generate TTS in background without blocking - with timeout"""
                 try:
-                    audio_path, viseme_data = await run_in_threadpool(text_to_speech, sentence)
+                    # Add 30-second timeout to prevent indefinite hangs
+                    audio_path, viseme_data = await asyncio.wait_for(
+                        run_in_threadpool(text_to_speech, sentence),
+                        timeout=30.0
+                    )
                     audio_filename = None
                     if audio_path:
                         audio_filename = os.path.basename(audio_path)
+                    logging.info(f"MCP TTS: Successfully generated audio for sentence {idx}")
                     return {'type': 'audio_chunk', 'sentence_index': idx, 'audio_filename': audio_filename, 'visemes': viseme_data, 'sentence_text': sentence}
+                except asyncio.TimeoutError:
+                    logging.error(f"MCP TTS: Timeout generating audio for sentence {idx} (30s limit exceeded)")
+                    return None
                 except Exception as e:
-                    logging.error(f"Error generating TTS for sentence {idx}: {str(e)}")
+                    logging.error(f"MCP TTS: Error generating audio for sentence {idx}: {str(e)}")
                     return None
             
             try:
@@ -2019,35 +2053,52 @@ async def query_mcp_tts_direct(request: QueryRequest, http_request: Request):
                     next_index_to_send = 0
                     total_tasks = len(tts_tasks)
                     tasks_completed = 0
+                    sent_count = 0  # Track how many chunks were actually sent
                     
                     try:
+                        # Wait for all tasks to complete with timeout per task
                         for task in asyncio.as_completed(tts_tasks):
-                            result = await task
-                            tasks_completed += 1
-                            logging.info(f"MCP TTS: Task {tasks_completed}/{total_tasks} done. Has result: {result is not None}")
-                            
-                            if result:
-                                completed_audio[result['sentence_index']] = result
-                                logging.info(f"MCP TTS: Buffered sentence {result['sentence_index']}")
+                            try:
+                                result = await task
+                                tasks_completed += 1
+                                logging.info(f"MCP TTS: Task {tasks_completed}/{total_tasks} completed. Has result: {result is not None}")
                                 
-                            # Send buffered audio in order
-                            while next_index_to_send in completed_audio:
-                                logging.info(f"MCP TTS: Yielding chunk {next_index_to_send}")
-                                yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
-                                del completed_audio[next_index_to_send]
-                                next_index_to_send += 1
-                            
-                            # If all tasks done, send any remaining (skip failed gaps)
-                            if tasks_completed == total_tasks:
-                                logging.info(f"MCP TTS: Flushing remaining from index {next_index_to_send}")
-                                while next_index_to_send < total_tasks:
-                                    if next_index_to_send in completed_audio:
-                                        logging.info(f"MCP TTS: Flushing chunk {next_index_to_send}")
-                                        yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
-                                        del completed_audio[next_index_to_send]
+                                if result:
+                                    completed_audio[result['sentence_index']] = result
+                                    logging.info(f"MCP TTS: Buffered audio chunk for sentence {result['sentence_index']}")
+                                else:
+                                    logging.warning(f"MCP TTS: Task {tasks_completed} returned None (likely failed/timeout)")
+                                    
+                                # Send buffered audio in order (skip failed chunks)
+                                while next_index_to_send in completed_audio:
+                                    logging.info(f"MCP TTS: Sending audio chunk {next_index_to_send}")
+                                    yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
+                                    await asyncio.sleep(0.01)  # Small delay to prevent overwhelming client
+                                    del completed_audio[next_index_to_send]
+                                    sent_count += 1
                                     next_index_to_send += 1
+                                
+                            except Exception as task_err:
+                                logging.error(f"MCP TTS: Error processing task {tasks_completed + 1}: {str(task_err)}")
+                                tasks_completed += 1
                         
-                        logging.info(f"MCP TTS: Done processing all {total_tasks} tasks")
+                        # After all tasks done, flush any remaining buffered chunks (skip gaps from failed chunks)
+                        logging.info(f"MCP TTS: All tasks complete. Flushing remaining chunks from index {next_index_to_send}")
+                        remaining_count = 0
+                        while next_index_to_send < total_tasks:
+                            if next_index_to_send in completed_audio:
+                                logging.info(f"MCP TTS: Flushing chunk {next_index_to_send}")
+                                yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
+                                await asyncio.sleep(0.01)
+                                del completed_audio[next_index_to_send]
+                                remaining_count += 1
+                                sent_count += 1
+                            else:
+                                logging.warning(f"MCP TTS: Skipping missing chunk {next_index_to_send} (failed/timeout)")
+                            next_index_to_send += 1
+                        
+                        skipped_count = total_tasks - sent_count
+                        logging.info(f"MCP TTS: Done. Total chunks: {total_tasks}, Sent: {sent_count}, Skipped: {skipped_count}")
                     except Exception as e:
                         logging.error(f"MCP TTS: Error in audio processing loop: {str(e)}", exc_info=True)
                     
@@ -2059,15 +2110,29 @@ async def query_mcp_tts_direct(request: QueryRequest, http_request: Request):
                 # 3. Handle any remaining incomplete sentence
                 remaining_text = sentence_buffer.flush()
                 if remaining_text and remaining_text.strip():
-                    try:
-                        audio_path, viseme_data = await run_in_threadpool(text_to_speech, remaining_text)
-                        audio_filename = None
-                        if audio_path:
-                            audio_filename = os.path.basename(audio_path)
-                        yield f"data: {json.dumps({'type': 'audio_chunk', 'sentence_index': sentence_index, 'audio_filename': audio_filename, 'visemes': viseme_data, 'sentence_text': remaining_text})}\n\n"
-                        sentence_index += 1
-                    except Exception as e:
-                        logging.error(f"Error generating TTS for final sentence: {str(e)}")
+                    # Validate that the remaining text looks like natural content, not tool names or garbage
+                    # Skip if it contains multiple newlines (suggests fragmented tool names)
+                    # Skip if no spaces (suggests concatenated tool names)
+                    # Skip if it starts with "API-" or looks like a tool list
+                    is_garbage = (
+                        remaining_text.count('\n') > 2 or  # Too many newlines
+                        ' ' not in remaining_text.strip() or  # No spaces (API-post-API-retrieve...)
+                        remaining_text.strip().startswith('API-') or  # Starts with API prefix
+                        len(remaining_text.strip().split()) < 3  # Less than 3 words
+                    )
+                    
+                    if not is_garbage:
+                        try:
+                            audio_path, viseme_data = await run_in_threadpool(text_to_speech, remaining_text)
+                            audio_filename = None
+                            if audio_path:
+                                audio_filename = os.path.basename(audio_path)
+                            yield f"data: {json.dumps({'type': 'audio_chunk', 'sentence_index': sentence_index, 'audio_filename': audio_filename, 'visemes': viseme_data, 'sentence_text': remaining_text})}\n\n"
+                            sentence_index += 1
+                        except Exception as e:
+                            logging.error(f"Error generating TTS for final sentence: {str(e)}")
+                    else:
+                        logging.info(f"MCP TTS: Skipping garbage flush text: {remaining_text[:100]}")
 
                 # 3. Clean full response for final event
                 cleaned_response = clean_model_output(full_response)

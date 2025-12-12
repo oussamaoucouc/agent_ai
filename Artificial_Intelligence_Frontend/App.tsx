@@ -749,6 +749,9 @@ const App: React.FC = () => {
                 animationFrameIdRef.current = requestAnimationFrame(animate);
             };
 
+            // Track if this audio has already triggered playNext to prevent double calls
+            let hasCalledNext = false;
+
             // When this audio ends, immediately play next segment (NO BREAK!)
             audio.onended = () => {
                 if (animationFrameIdRef.current) {
@@ -756,18 +759,28 @@ const App: React.FC = () => {
                     animationFrameIdRef.current = null;
                 }
                 // Play next segment immediately for continuous speech
-                playNext();
+                if (!hasCalledNext) {
+                    hasCalledNext = true;
+                    playNext();
+                }
             };
 
-            audio.onerror = () => {
-                console.error("Audio playback error in queue.");
-                // Skip to next segment on error
-                playNext();
+            audio.onerror = (e) => {
+                console.error(`[AUDIO QUEUE] Audio error for chunk: ${url.substring(url.lastIndexOf('/') + 1)}`, e);
+                // Skip to next segment on error, but only if we haven't already called playNext
+                if (!hasCalledNext) {
+                    hasCalledNext = true;
+                    playNext();
+                }
             };
 
             audio.play().catch(e => {
-                console.error("Audio playback failed:", e);
-                playNext(); // Try next segment
+                console.error(`[AUDIO QUEUE] Playback failed for chunk: ${url.substring(url.lastIndexOf('/') + 1)}`, e);
+                // Try next segment, but only if we haven't already called playNext
+                if (!hasCalledNext) {
+                    hasCalledNext = true;
+                    playNext();
+                }
             });
         };
 

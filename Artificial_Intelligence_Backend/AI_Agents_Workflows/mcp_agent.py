@@ -42,6 +42,14 @@ class MCPToolFunction:
             "parameters": self.parameters or {"type": "object", "properties": {}}
         }
     
+    def model_dump(self, **kwargs) -> dict:
+        """Pydantic v2 compatible serialization method."""
+        return self.to_dict()
+    
+    def dict(self, **kwargs) -> dict:
+        """Pydantic v1 compatible serialization method."""
+        return self.to_dict()
+    
     def __call__(self, *args, **kwargs):
         return self.entrypoint(*args, **kwargs)
 
@@ -73,6 +81,21 @@ _TOOL_EXECUTION_LOG_REGEX = re.compile(
     re.IGNORECASE,
 )
 
+# Pattern to match concatenated tool names like:
+# "API-post-API-retrieve-a-API-get-block-"
+# This removes malformed tool name listings that leak into responses
+_TOOL_NAME_CONCATENATION_REGEX = re.compile(
+    r"(API-[\w-]+(?:-API-[\w-]+)+)",  # Match the pattern without consuming leading space
+    re.IGNORECASE,
+)
+
+# Pattern to match single API- prefix at the very start of text
+# "API-post-I searched..." -> "I searched..."
+_TOOL_NAME_PREFIX_REGEX = re.compile(
+    r"^API-[\w-]+-",  # Match API-xxx- at start of string only
+    re.IGNORECASE | re.MULTILINE,
+)
+
 def _clean_output_artifacts(text: str) -> str:
     """Robustly remove chat-template artifact tokens and tool execution logs.
 
@@ -80,6 +103,7 @@ def _clean_output_artifacts(text: str) -> str:
     - Drop lines that are only an artifact token.
     - Remove tokens anywhere using a compiled regex with surrounding whitespace.
     - Remove AGNO tool execution logs (e.g., "search(query=...) completed in 1.9721s.")
+    - Remove concatenated tool names (e.g., "API-post-API-retrieve-a-")
     - Only remove clearly identified artifact patterns, preserve all other content.
     """
     if not isinstance(text, str):
@@ -87,6 +111,12 @@ def _clean_output_artifacts(text: str) -> str:
 
     # 1) Remove tool execution logs (AGNO framework logs)
     cleaned = _TOOL_EXECUTION_LOG_REGEX.sub("", text)
+    
+    # 1.5) Remove single API- prefix at start of text
+    cleaned = _TOOL_NAME_PREFIX_REGEX.sub("", cleaned)
+    
+    # 1.6) Remove concatenated tool names (malformed listings)
+    cleaned = _TOOL_NAME_CONCATENATION_REGEX.sub("", cleaned)
 
     # 2) Remove lines that are only an artifact token
     def _is_artifact_line(line: str) -> bool:
@@ -106,7 +136,9 @@ def _clean_output_artifacts(text: str) -> str:
     # 5) Clean up excessive blank lines but preserve structure
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     
-    return cleaned.strip()
+    # CRITICAL: Don't strip() individual chunks - this removes leading spaces!
+    # Only strip trailing newlines to avoid excessive whitespace
+    return cleaned.rstrip('\n')
 
 
 def run_agent(query, user_id, session_id, images=None, audio=None, videos=None, stream=False):
@@ -560,7 +592,10 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
                 async for chunk in run_response:
                     # In v1.8, just access chunk.content directly
                     if hasattr(chunk, 'content') and chunk.content:
-                        yield chunk.content
+                        # Clean chunk before yielding to remove tool names and artifacts
+                        cleaned_chunk = _clean_output_artifacts(chunk.content)
+                        if cleaned_chunk:  # Only yield if there's content after cleaning
+                            yield cleaned_chunk
             except Exception as e:
                 logger.error(f"Error in MCP streaming: {type(e).__name__}: {str(e)}")
                 raise

@@ -9,6 +9,7 @@ the full response is complete.
 
 import re
 from typing import List, Tuple
+import logging
 
 
 class SentenceBuffer:
@@ -17,7 +18,7 @@ class SentenceBuffer:
     
     Key features:
     - Accumulates text chunks as they arrive from LLM streaming
-    - Identifies sentence boundaries using punctuation marks
+    - Identifies sentence boundaries using punctuation marks AND list items
     - Extracts complete sentences while preserving incomplete text
     - Optimized for continuous audio playback without gaps
     """
@@ -56,7 +57,6 @@ class SentenceBuffer:
         
         if sentences:
             self.sentences_extracted += len(sentences)
-            import logging
             logging.info(f"SentenceBuffer: Extracted {len(sentences)} sentence(s). Total extracted: {self.sentences_extracted}. Remaining buffer: {len(self.buffer)} chars")
         
         return sentences
@@ -67,9 +67,7 @@ class SentenceBuffer:
         
         For streaming scenarios, a sentence is considered complete when:
         1. It ends with punctuation (. ! ? ;)
-        2. There's either:
-           a) More content after the punctuation (confirming it's not mid-stream)
-           b) Whitespace after the punctuation
+        2. It's a list item (line starting with -, *, or number.) followed by newline
         3. Meets minimum length requirement
         
         Returns:
@@ -77,14 +75,53 @@ class SentenceBuffer:
         """
         sentences = []
         
-        # Find all sentence boundaries
+        # Check if buffer contains list-style formatting (bullet points)
+        # Pattern: line starting with -, *, •, or number. followed by content and newline
+        has_bullets = bool(re.search(r'^\s*[-*•]\s+', self.buffer, re.MULTILINE))
+        has_numbers = bool(re.search(r'^\s*\d+\.\s+', self.buffer, re.MULTILINE))
+        
+        if has_bullets or has_numbers:
+            # Extract complete list items (those followed by another list item or double newline)
+            # Pattern: list marker + content until next list marker or paragraph break
+            list_pattern = r'^\s*(?:[-*•]|\d+\.)\s+(.+?)(?=\n\s*(?:[-*•]|\d+\.|\n)|$)'
+            matches = list(re.finditer(list_pattern, self.buffer, re.MULTILINE | re.DOTALL))
+            
+            if matches:
+                complete_until = 0
+                for i, match in enumerate(matches):
+                    item_end = match.end()
+                    # Check if this item is complete (has another item after or ends with newlines)
+                    if i < len(matches) - 1:
+                        # Not last item, so it's complete
+                        complete_until = item_end
+                    elif item_end < len(self.buffer):
+                        # Last item, check what follows
+                        remaining = self.buffer[item_end:]
+                        # Complete if followed by newline(s) or we have more content
+                        if remaining.startswith('\n'):
+                            complete_until = item_end
+                
+                if complete_until > 0:
+                    # Extract all complete list items
+                    complete_text = self.buffer[:complete_until]
+                    self.buffer = self.buffer[complete_until:].lstrip('\n').lstrip()
+                    
+                    # Split into individual items
+                    for match in matches:
+                        if match.end() <= complete_until:
+                            item = match.group(0).strip()
+                            if item and len(item) >= self.MIN_SENTENCE_LENGTH:
+                                sentences.append(item)
+                    
+                    return sentences
+        
+        # Fall back to regular punctuation-based sentence detection
         matches = list(self.SENTENCE_ENDINGS.finditer(self.buffer))
         
         if not matches:
             return sentences
         
         # Only extract sentences where we're SURE they're complete
-        # A sentence is complete if there's content after it OR if it ends with space+punctuation
         complete_until = 0
         
         for i, match in enumerate(matches):
