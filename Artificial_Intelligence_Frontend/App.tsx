@@ -974,8 +974,11 @@ const App: React.FC = () => {
             attachedAudio: attachedAudio.length > 0 ? attachedAudio : undefined,
             attachedVideos: attachedVideos.length > 0 ? attachedVideos : undefined
         };
-        setMessages(prev => [...prev, userMessage]);
-        setMessages(prev => [...prev, userMessage]);
+        setMessages(prev => {
+            // Defensive: duplicate check
+            if (prev.some(m => m.id === userMessage.id)) return prev;
+            return [...prev, userMessage];
+        });
         setIsLoading(true);
         setIsGenerating(true);
 
