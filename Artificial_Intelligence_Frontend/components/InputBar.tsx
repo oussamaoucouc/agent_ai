@@ -9,6 +9,7 @@ interface InputBarProps {
     onStartRecording: () => void;
     onStopRecording: () => void;
     isLoading: boolean;
+    isPlayingAudio?: boolean;  // Hide cancel button when audio is playing (use ChatBubble speaker button instead)
     queryMode: QueryMode;
     onQueryModeChange: (mode: QueryMode) => void;
     onCancel: () => void;
@@ -17,7 +18,7 @@ interface InputBarProps {
     supportsVideos?: boolean;
 }
 
-export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStartRecording, onStopRecording, isLoading, queryMode, onQueryModeChange, onCancel, supportsImages, supportsAudio, supportsVideos }) => {
+export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStartRecording, onStopRecording, isLoading, isPlayingAudio = false, queryMode, onQueryModeChange, onCancel, supportsImages, supportsAudio, supportsVideos }) => {
     const [text, setText] = useState('');
     const [mediaAttachments, setMediaAttachments] = useState<MediaAttachment[]>([]);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -173,7 +174,9 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
                     disabled={isLoading || isRecording}
                 />
                 <div className="flex items-center gap-2">
-                    {isLoading ? (
+                    {/* Show stop button only when loading AND not playing audio */}
+                    {/* When audio is playing, use the ChatBubble speaker button instead */}
+                    {isLoading && !isPlayingAudio ? (
                         <div className="relative group flex flex-col items-center">
                             <button
                                 onClick={onCancel}
@@ -186,6 +189,9 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
                                 Cancel
                             </span>
                         </div>
+                    ) : isLoading && isPlayingAudio ? (
+                        // Show disabled/dimmed state when audio is playing
+                        null
                     ) : (
                         <>
                             <div className="relative group flex flex-col items-center">

@@ -27,6 +27,7 @@ export class WebAudioQueue {
     private nextScheduledTime = 0;
     private currentSource: AudioBufferSourceNode | null = null;
     private animationFrameId: number | null = null;
+    private stopped = false;  // Flag to prevent re-enqueue after user stops
 
     // Callbacks
     private onVisemeChange: (viseme: string) => void;
@@ -52,6 +53,12 @@ export class WebAudioQueue {
      * Add audio chunk to queue and start playback if needed
      */
     async enqueue(url: string, visemes: VisemeData, messageId: string): Promise<void> {
+        // Don't enqueue if user has stopped playback
+        if (this.stopped) {
+            console.log('[WebAudioQueue] Skipping enqueue - playback was stopped by user');
+            return;
+        }
+
         try {
             console.log(`[WebAudioQueue] Enqueuing: ${url.substring(url.lastIndexOf('/') + 1)}`);
 
@@ -190,6 +197,9 @@ export class WebAudioQueue {
     stop(): void {
         console.log('[WebAudioQueue] Stopping playback');
 
+        // Set stopped flag to prevent re-enqueue from active stream
+        this.stopped = true;
+
         // Stop current source
         if (this.currentSource) {
             try {
@@ -214,6 +224,14 @@ export class WebAudioQueue {
         this.onPlayingStateChange(false);
         this.onVisemeChange('X');
         this.onMessageIdChange(null);
+    }
+
+    /**
+     * Reset stopped flag - call when starting a new stream
+     */
+    reset(): void {
+        console.log('[WebAudioQueue] Reset - allowing new audio');
+        this.stopped = false;
     }
 
     /**

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Message, User } from '../types';
-import { PlayIcon, StopIcon, UserIcon, CopyIcon, CheckIcon, AssistantIcon, MaximizeIcon } from './icons';
+import { SpeakerIcon, SpeakerOffIcon, UserIcon, CopyIcon, CheckIcon, AssistantIcon, MaximizeIcon } from './icons';
 import { MediaModal } from './MediaModal';
 
 interface ChatBubbleProps {
@@ -449,7 +449,8 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, isSt
                     {!isUser && (
                         <div className={`absolute bottom-2 right-2 z-10 flex items-center gap-1.5 bg-slate-900/40 backdrop-blur-sm p-1 rounded-lg transition-opacity duration-200 border border-slate-600/50 ${isPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'
                             }`}>
-                            {/* Show stop button during live playback OR if saved audio exists */}
+                            {/* Show speaker controls for audio - always visible when audio exists or playing */}
+                            {/* Uses speaker icons (not generic stop) to distinguish from generation cancel */}
                             {(isPlaying || message.audioUrl) && (
                                 <>
                                     {isPlaying ? (
@@ -458,7 +459,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, isSt
                                             title="Stop audio"
                                             className="p-1.5 flex items-center justify-center rounded-md bg-red-600/80 hover:bg-red-600 text-white transition-all"
                                         >
-                                            <StopIcon className="w-4 h-4" />
+                                            <SpeakerOffIcon className="w-4 h-4" />
                                         </button>
                                     ) : (
                                         <button
@@ -466,7 +467,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, isSt
                                             title="Play audio"
                                             className="p-1.5 flex items-center justify-center rounded-md text-slate-300 hover:bg-white/10 hover:text-white transition-all"
                                         >
-                                            <PlayIcon className="w-4 h-4" />
+                                            <SpeakerIcon className="w-4 h-4" />
                                         </button>
                                     )}
                                 </>

@@ -555,7 +555,24 @@ const App: React.FC = () => {
         setCurrentViseme('X');
         setActiveAudio(null);
         setPlayingAudioId(null);
-    }, []);
+
+        // Also abort the backend request if still running
+        if (abortControllerRef.current) {
+            // Tell backend to cancel the active task
+            if (currentUser && activeSessionId) {
+                cancelSession({ user_id: currentUser, session_id: activeSessionId })
+                    .catch((err) => console.debug('Cancel request error (likely already finished):', err));
+            }
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
+        }
+
+        // Clear generation state to remove the stop button in InputBar
+        setIsLoading(false);
+        setIsGenerating(false);
+        isStreamingRef.current = false;
+        setStreamingMessageId(null);
+    }, [currentUser, activeSessionId]);
 
     const handleLogout = () => {
         handleStopAudio();
@@ -923,7 +940,16 @@ const App: React.FC = () => {
                         isStreamingRef.current = true;
                         setStreamingMessageId(streamingMessageId);  // Track for UI indicator
 
+                        // Reset audio queue to allow new audio (in case previous stream was stopped)
+                        webAudioQueueRef.current?.reset();
+
+                        // Debounce timer to detect when text streaming ends
+                        let textEndTimeout: NodeJS.Timeout | null = null;
+
                         const data = await queryAgentTTS(requestParams, controller.signal, (chunk) => {
+                            // Clear any existing timeout on each new chunk
+                            if (textEndTimeout) clearTimeout(textEndTimeout);
+
                             setMessages(prev => prev.map(m => {
                                 if (m.id === streamingMessageId) {
                                     const newText = m.text + chunk;
@@ -933,14 +959,24 @@ const App: React.FC = () => {
                                 }
                                 return m;
                             }));
+
+                            // Set timeout - if no more chunks for 400ms, assume text is done
+                            textEndTimeout = setTimeout(() => {
+                                setStreamingMessageId(null);  // Text streaming complete
+                            }, 400);
                         }, (audioFilename, visemes, sentenceIndex) => {
+                            // Clear text end timeout since audio is starting
+                            if (textEndTimeout) clearTimeout(textEndTimeout);
+
                             // NEW: Audio chunk callback - enqueue immediately for continuous playback!
                             const audioUrl = `${API_BASE_URL}/querytts_audio/${audioFilename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}&t=${Date.now()}`;
                             enqueueAudio(audioUrl, visemes, streamingMessageId);
 
                             // Stop "thinking" animation when first audio starts
+                            // Also clear streaming indicator as backup
                             if (sentenceIndex === 0) {
                                 setIsLoading(false);
+                                setStreamingMessageId(null);  // Backup clear
                             }
                         });
 
@@ -1024,7 +1060,16 @@ const App: React.FC = () => {
                         isStreamingRef.current = true; // Keep isLoading=true for avatar
                         setStreamingMessageId(streamingMessageId);  // Track for UI indicator
 
+                        // Reset audio queue to allow new audio (in case previous stream was stopped)
+                        webAudioQueueRef.current?.reset();
+
+                        // Debounce timer to detect when text streaming ends
+                        let textEndTimeout: NodeJS.Timeout | null = null;
+
                         const data = await queryMcpTTS(requestParams, controller.signal, (chunk) => {
+                            // Clear any existing timeout on each new chunk
+                            if (textEndTimeout) clearTimeout(textEndTimeout);
+
                             setMessages(prev => prev.map(m => {
                                 if (m.id === streamingMessageId) {
                                     const newText = m.text + chunk;
@@ -1034,14 +1079,24 @@ const App: React.FC = () => {
                                 }
                                 return m;
                             }));
+
+                            // Set timeout - if no more chunks for 400ms, assume text is done
+                            textEndTimeout = setTimeout(() => {
+                                setStreamingMessageId(null);  // Text streaming complete
+                            }, 400);
                         }, (audioFilename, visemes, sentenceIndex) => {
+                            // Clear text end timeout since audio is starting
+                            if (textEndTimeout) clearTimeout(textEndTimeout);
+
                             // NEW: Audio chunk callback - enqueue immediately for continuous playback!
                             const audioUrl = `${API_BASE_URL}/querytts_audio/${audioFilename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}`;
                             enqueueAudio(audioUrl, visemes, streamingMessageId);
 
                             // Stop "thinking" animation when first audio starts
+                            // Also clear streaming indicator as backup
                             if (sentenceIndex === 0) {
                                 setIsLoading(false);
+                                setStreamingMessageId(null);  // Backup clear
                             }
                         });
 
@@ -1125,7 +1180,16 @@ const App: React.FC = () => {
                         isStreamingRef.current = true; // Keep isLoading=true for avatar
                         setStreamingMessageId(streamingMessageId);  // Track for UI indicator
 
+                        // Reset audio queue to allow new audio (in case previous stream was stopped)
+                        webAudioQueueRef.current?.reset();
+
+                        // Debounce timer to detect when text streaming ends
+                        let textEndTimeout: NodeJS.Timeout | null = null;
+
                         const data = await queryTTS(requestParams, controller.signal, (chunk) => {
+                            // Clear any existing timeout on each new chunk
+                            if (textEndTimeout) clearTimeout(textEndTimeout);
+
                             setMessages(prev => prev.map(m => {
                                 if (m.id === streamingMessageId) {
                                     const newText = m.text + chunk;
@@ -1135,14 +1199,24 @@ const App: React.FC = () => {
                                 }
                                 return m;
                             }));
+
+                            // Set timeout - if no more chunks for 400ms, assume text is done
+                            textEndTimeout = setTimeout(() => {
+                                setStreamingMessageId(null);  // Text streaming complete
+                            }, 400);
                         }, (audioFilename, visemes, sentenceIndex) => {
+                            // Clear text end timeout since audio is starting
+                            if (textEndTimeout) clearTimeout(textEndTimeout);
+
                             // NEW: Audio chunk callback - enqueue immediately for continuous playback!
                             const audioUrl = `${API_BASE_URL}/querytts_audio/${audioFilename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}`;
                             enqueueAudio(audioUrl, visemes, streamingMessageId);
 
                             // Stop "thinking" animation when first audio starts
+                            // Also clear streaming indicator as backup
                             if (sentenceIndex === 0) {
                                 setIsLoading(false);
+                                setStreamingMessageId(null);  // Backup clear
                             }
                         });
 
@@ -1596,6 +1670,7 @@ const App: React.FC = () => {
                         <ChatWindow
                             messages={messages}
                             isLoading={isLoading && !spokenResponses}
+                            isGenerating={isGenerating}
                             playingAudioId={playingAudioId}
                             streamingMessageId={streamingMessageId}
                             onPlayAudio={handlePlayAudio}
@@ -1625,6 +1700,7 @@ const App: React.FC = () => {
                                 onStartRecording={startRecording}
                                 onStopRecording={handleStopRecording}
                                 isLoading={isGenerating} // Use isGenerating to keep Stop button visible during speech/streaming
+                                isPlayingAudio={isPlayingQueue}  // Hide cancel button when audio is playing
                                 queryMode={queryMode}
                                 onQueryModeChange={(m) => {
                                     setQueryMode(m);
