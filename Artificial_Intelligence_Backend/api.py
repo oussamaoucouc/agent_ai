@@ -762,17 +762,21 @@ async def query_agent(request: QueryRequest, http_request: Request):
             async for chunk in stream_gen:
                 if chunk:
                     full_response += chunk
-                    yield f"data: {json.dumps({'content': chunk})}\n\n"
+                    response_data = {'content': chunk}
+                    yield f"data: {json.dumps(response_data)}\n\n"
             
             # Send done event with complete response
             cleaned_response = ensure_response_content(full_response)
-            yield f"data: {json.dumps({'done': True, 'full_response': cleaned_response})}\n\n"
+            response_data = {"done": True, 'full_response': cleaned_response}
+            yield f"data: {json.dumps(response_data)}\n\n"
             
         except asyncio.CancelledError:
-            yield f"data: {json.dumps({'error': 'Request cancelled'})}\n\n"
+            response_data = {'error': 'Request cancelled'}
+            yield f"data: {json.dumps(response_data)}\n\n"
         except Exception as e:
             logging.error(f"Error in RAG streaming: {type(e).__name__}: {str(e)}")
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            response_data = {"error": str(e)}
+            yield f"data: {json.dumps(response_data)}\n\n"
         finally:
             active_tasks.pop(key, None)
     
@@ -785,6 +789,41 @@ async def query_agent(request: QueryRequest, http_request: Request):
             "X-Accel-Buffering": "no"
         }
     )
+
+
+# LLM QUERY (Direct JSON)
+@app.post("/query_direct", response_model=QueryResponse)
+async def query_direct(request: QueryRequest, http_request: Request):
+    key = f"{request.user_id}:{request.session_id}"
+    active_tasks[key] = asyncio.current_task()
+    
+    try:
+        # Auth check
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
+
+        # Run RAG agent non-streaming
+        response_text = await run_rag_agent(request.query, uid, request.session_id)
+        
+        return QueryResponse(
+            user_id=request.user_id,
+            session_id=request.session_id,
+            response=response_text
+        )
+    except Exception as e:
+        import traceback
+        logging.error(f"Error in query_direct: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        active_tasks.pop(key, None)
+
 
 
 # MCP LLM QUERY (with SSE Streaming)
@@ -825,18 +864,22 @@ async def query_mcp(request: QueryRequest, http_request: Request):
                     full_response += chunk  # Keep original for final cleaning
                     # Only send non-empty cleaned chunks
                     if cleaned_chunk.strip():
-                        yield f"data: {json.dumps({'content': cleaned_chunk})}\n\n"
+                        response_data = {"content": cleaned_chunk}
+                        yield f"data: {json.dumps(response_data)}\n\n"
             
             # Clean and send done event
             cleaned_response = clean_model_output(full_response)
             cleaned_response = ensure_response_content(cleaned_response)
-            yield f"data: {json.dumps({'done': True, 'full_response': cleaned_response})}\n\n"
+            response_data = {"done": True, 'full_response': cleaned_response}
+            yield f"data: {json.dumps(response_data)}\n\n"
             
         except asyncio.CancelledError:
-            yield f"data: {json.dumps({'error': 'Request cancelled'})}\n\n"
+            response_data = {'error': 'Request cancelled'}
+            yield f"data: {json.dumps(response_data)}\n\n"
         except Exception as e:
             logging.error(f"Error in MCP streaming: {type(e).__name__}: {str(e)}")
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            response_data = {"error": str(e)}
+            yield f"data: {json.dumps(response_data)}\n\n"
         finally:
             active_tasks.pop(key, None)
     
@@ -996,17 +1039,21 @@ async def query_assistant(request: QueryRequest, http_request: Request):
             async for chunk in stream_gen:
                 if chunk:
                     full_response += chunk
-                    yield f"data: {json.dumps({'content': chunk})}\n\n"
+                    response_data = {'content': chunk}
+                    yield f"data: {json.dumps(response_data)}\n\n"
             
             # Send done event with complete response
             cleaned_response = ensure_response_content(full_response)
-            yield f"data: {json.dumps({'done': True, 'full_response': cleaned_response})}\n\n"
+            response_data = {"done": True, 'full_response': cleaned_response}
+            yield f"data: {json.dumps(response_data)}\n\n"
             
         except asyncio.CancelledError:
-            yield f"data: {json.dumps({'error': 'Request cancelled'})}\n\n"
+            response_data = {'error': 'Request cancelled'}
+            yield f"data: {json.dumps(response_data)}\n\n"
         except Exception as e:
             logging.error(f"Error in assistant streaming: {type(e).__name__}: {str(e)}")
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            response_data = {"error": str(e)}
+            yield f"data: {json.dumps(response_data)}\n\n"
         finally:
             active_tasks.pop(key, None)
     
@@ -1149,19 +1196,23 @@ async def query_assistant_direct(request: QueryRequest, http_request: Request):
                 if chunk:
                     full_response += chunk
                     # SSE format: data: JSON\n\n
-                    yield f"data: {json.dumps({'content': chunk})}\n\n"
+                    response_data = {'content': chunk}
+                    yield f"data: {json.dumps(response_data)}\n\n"
             
             # Clean the final response and send done event
             cleaned_response = clean_model_output(full_response)
             cleaned_response = ensure_response_content(cleaned_response)
             
-            yield f"data: {json.dumps({'done': True, 'full_response': cleaned_response})}\n\n"
+            response_data = {"done": True, 'full_response': cleaned_response}
+            yield f"data: {json.dumps(response_data)}\n\n"
             
         except asyncio.CancelledError:
-            yield f"data: {json.dumps({'error': 'Request cancelled'})}\n\n"
+            response_data = {'error': 'Request cancelled'}
+            yield f"data: {json.dumps(response_data)}\n\n"
         except Exception as e:
             logging.error(f"Error in streaming: {type(e).__name__}: {str(e)}")
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            response_data = {"error": str(e)}
+            yield f"data: {json.dumps(response_data)}\n\n"
         finally:
             active_tasks.pop(key, None)
     
@@ -1215,19 +1266,23 @@ async def query_mcp_direct(request: QueryRequest, http_request: Request):
                     # Only send non-empty cleaned chunks
                     # SSE format: data: JSON\n\n
                     if cleaned_chunk.strip():
-                        yield f"data: {json.dumps({'content': cleaned_chunk})}\n\n"
+                        response_data = {"content": cleaned_chunk}
+                        yield f"data: {json.dumps(response_data)}\n\n"
             
             # Clean the final response and send done event
             cleaned_response = clean_model_output(full_response)
             cleaned_response = ensure_response_content(cleaned_response)
             
-            yield f"data: {json.dumps({'done': True, 'full_response': cleaned_response})}\n\n"
+            response_data = {"done": True, 'full_response': cleaned_response}
+            yield f"data: {json.dumps(response_data)}\n\n"
             
         except asyncio.CancelledError:
-            yield f"data: {json.dumps({'error': 'Request cancelled'})}\n\n"
+            response_data = {'error': 'Request cancelled'}
+            yield f"data: {json.dumps(response_data)}\n\n"
         except Exception as e:
             logging.error(f"Error in MCP streaming: {type(e).__name__}: {str(e)}")
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            response_data = {"error": str(e)}
+            yield f"data: {json.dumps(response_data)}\n\n"
         finally:
             active_tasks.pop(key, None)
     
@@ -1783,165 +1838,76 @@ async def query_assistant_tts_direct(request: QueryRequest, http_request: Reques
 
         async def stream_response():
             full_response = ""
-            sentence_buffer = SentenceBuffer()
-            sentence_index = 0
-            collected_sentences = []  # Collect sentences for later TTS generation
-            tts_tasks = []  # Track TTS generation tasks
-            
-            async def generate_tts_task(sentence: str, idx: int):
-                """Generate TTS in background without blocking - with timeout"""
-                try:
-                    # Add 30-second timeout to prevent indefinite hangs
-                    audio_path, viseme_data = await asyncio.wait_for(
-                        run_in_threadpool(text_to_speech, sentence),
-                        timeout=30.0
-                    )
-                    audio_filename = None
-                    if audio_path:
-                        size_bytes = os.path.getsize(audio_path)
-                        logging.info(f"ASSISTANT TTS: Generated audio for sentence {idx}: {audio_path} ({size_bytes} bytes)")
-                        if size_bytes < 1000:
-                            logging.warning(f"ASSISTANT TTS: Audio file seems too small ({size_bytes} bytes) for sentence: {sentence[:50]}...")
-                        audio_filename = os.path.basename(audio_path)
-                    return {'type': 'audio_chunk', 'sentence_index': idx, 'audio_filename': audio_filename, 'visemes': viseme_data, 'sentence_text': sentence}
-                except asyncio.TimeoutError:
-                    logging.error(f"ASSISTANT TTS: Timeout generating audio for sentence {idx} (30s limit exceeded)")
-                    return None
-                except Exception as e:
-                    logging.error(f"ASSISTANT TTS: Error generating audio for sentence {idx}: {str(e)}")
-                    return None
+            tool_log_regex = re.compile(r"[\w_]+\([^)]*\)\s*completed\s+in\s+[\d.]+s\.?", re.IGNORECASE)
             
             try:
-                # Apply per-session voice before generating audio (once at start)
                 with sessions.SessionLocal() as db:
                     sessions.apply_session_voice(db, request.user_id, request.session_id)
                 
-                # 1. Stream text from Assistant agent
-                stream_gen = await run_assistant_agent(
-                    request.query, uid, request.session_id,
-                    images=images if images else None,
-                    audio=audio_files if audio_files else None,
-                    videos=video_files if video_files else None,
-                    stream=True
-                )
+                logging.info("Assistant TTS: Starting text streaming")
+                stream_gen = await run_assistant_agent(request.query, request.user_id, request.session_id, images, audio_files, video_files, stream=True)
                 
                 async for chunk in stream_gen:
                     if chunk:
-                        # Clean each chunk in real-time
-                        # Replace tool logs with newline
                         cleaned_chunk = tool_log_regex.sub("\n", chunk)
                         full_response += chunk
-                        
-                        # Send text chunk to UI for display
                         if cleaned_chunk.strip():
-                            yield f"data: {json.dumps({'content': cleaned_chunk})}\n\n"
+                            response_data = {"content": cleaned_chunk}
+                            yield f"data: {json.dumps(response_data)}\n\n"
                             await asyncio.sleep(0.01)
-                        
-                        # Add chunk to sentence buffer
-                        complete_sentences = sentence_buffer.add_chunk(cleaned_chunk)
-                        
-                        # Launch TTS generation in PARALLEL for each sentence
-                        for sentence in complete_sentences:
-                             if sentence.strip():
-                                idx = len(collected_sentences)
-                                collected_sentences.append(sentence)
-                                task = asyncio.create_task(generate_tts_task(sentence, idx))
-                                tts_tasks.append(task)
                 
-                # After text streaming, send audio as tasks complete (in order by sentence_index)
-                logging.info(f"ASSISTANT TTS: Text streaming done. Processing {len(tts_tasks)} audio tasks")
-                
-                if len(tts_tasks) == 0:
-                    logging.warning("ASSISTANT TTS: No audio tasks to process, skipping")
-                    sentence_index = 0
-                else:
-                    completed_audio = {}
-                    next_index_to_send = 0
-                    total_tasks = len(tts_tasks)
-                    tasks_completed = 0
-                    
-                    try:
-                        logging.info(f"ASSISTANT TTS: Starting as_completed loop with {len(tts_tasks)} tasks")
-                        for task in asyncio.as_completed(tts_tasks):
-                            try:
-                                result = await task
-                                tasks_completed += 1
-                                logging.info(f"ASSISTANT TTS: Task {tasks_completed}/{total_tasks} completed. Has result: {result is not None}")
-                                
-                                if result:
-                                    completed_audio[result['sentence_index']] = result
-                                    logging.info(f"ASSISTANT TTS: Buffered audio chunk for sentence {result['sentence_index']}")
-                                else:
-                                    logging.warning(f"ASSISTANT TTS: Task {tasks_completed} returned None (likely failed/timeout)")
-                                    
-                                # Send buffered audio in order (skip failed chunks)
-                                while next_index_to_send in completed_audio:
-                                    logging.info(f"ASSISTANT TTS: Sending audio chunk {next_index_to_send}")
-                                    yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
-                                    await asyncio.sleep(0.01)  # Small delay to prevent overwhelming client
-                                    del completed_audio[next_index_to_send]
-                                    next_index_to_send += 1
-                                
-                            except Exception as task_err:
-                                logging.error(f"ASSISTANT TTS: Error processing task {tasks_completed + 1}: {str(task_err)}")
-                                tasks_completed += 1
-                        
-                        # After all tasks done, flush any remaining buffered chunks (skip gaps from failed chunks)
-                        logging.info(f"ASSISTANT TTS: All tasks complete. Flushing remaining chunks from index {next_index_to_send}")
-                        remaining_count = 0
-                        while next_index_to_send < total_tasks:
-                            if next_index_to_send in completed_audio:
-                                logging.info(f"ASSISTANT TTS: Flushing chunk {next_index_to_send}")
-                                yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
-                                await asyncio.sleep(0.01)
-                                del completed_audio[next_index_to_send]
-                                remaining_count += 1
-                            else:
-                                logging.warning(f"ASSISTANT TTS: Skipping missing chunk {next_index_to_send} (failed/timeout)")
-                            next_index_to_send += 1
-                        
-                        logging.info(f"ASSISTANT TTS: Flushed {remaining_count} remaining chunks")
-                        logging.info(f"ASSISTANT TTS: as_completed loop finished. Tasks completed: {tasks_completed}/{total_tasks}")
-                    except GeneratorExit:
-                        logging.error(f"ASSISTANT TTS: GeneratorExit!!! Client closed stream. Tasks completed: {tasks_completed}/{total_tasks}")
-                        raise
-                    except asyncio.CancelledError:
-                        logging.warning(f"ASSISTANT TTS: Cancelled by user. Tasks completed: {tasks_completed}/{total_tasks}")
-                        return
-                    except Exception as e:
-                        logging.error(f"ASSISTANT TTS: Error in audio processing loop: {str(e)}", exc_info=True)
-                    
-                    sentence_index = len(collected_sentences)
-
-
-
-
-                # 2. Handle any remaining incomplete sentence
-                remaining_text = sentence_buffer.flush()
-                if remaining_text and remaining_text.strip():
-                    try:
-                        audio_path, viseme_data = await run_in_threadpool(text_to_speech, remaining_text)
-                        audio_filename = None
-                        if audio_path:
-                            audio_filename = os.path.basename(audio_path)
-                        yield f"data: {json.dumps({'type': 'audio_chunk', 'sentence_index': sentence_index, 'audio_filename': audio_filename, 'visemes': viseme_data, 'sentence_text': remaining_text})}\n\n"
-                        sentence_index += 1
-                    except Exception as e:
-                        logging.error(f"Error generating TTS for final sentence: {str(e)}")
-
-                # 3. Clean full response for final event
+                from AI_Agents_Workflows.tts_chunker import split_for_tts
                 cleaned_response = clean_model_output(full_response)
                 cleaned_response = ensure_response_content(cleaned_response)
-
-                # 4. Send final done event
-                yield f"data: {json.dumps({'done': True, 'full_response': cleaned_response, 'total_audio_chunks': sentence_index})}\n\n"
-
+                chunks = split_for_tts(cleaned_response)
+                logging.info(f"Assistant TTS: Split into {len(chunks)} chunks")
+                
+                sent_count = 0
+                skipped_count = 0
+                
+                for idx, chunk_text in enumerate(chunks):
+                    try:
+                        logging.info(f"Assistant TTS: Generating chunk {idx+1}/{len(chunks)}")
+                        audio_path, viseme_data = await asyncio.wait_for(
+                            run_in_threadpool(text_to_speech, chunk_text),
+                            timeout=30.0
+                        )
+                        if audio_path:
+                            audio_filename = os.path.basename(audio_path)
+                            response_data = {
+                                "type": "audio_chunk",
+                                "sentence_index": idx,
+                                "audio_filename": audio_filename,
+                                "visemes": viseme_data,
+                                "sentence_text": chunk_text
+                            }
+                            yield f"data: {json.dumps(response_data)}\n\n"
+                            sent_count += 1
+                            logging.info(f"Assistant TTS: Sent chunk {idx}")
+                        else:
+                            logging.warning(f"Assistant TTS: No audio for chunk {idx}")
+                            skipped_count += 1
+                    except asyncio.TimeoutError:
+                        logging.error(f"Assistant TTS: Timeout chunk {idx}")
+                        skipped_count += 1
+                    except Exception as e:
+                        logging.error(f"Assistant TTS: Error chunk {idx}: {str(e)}")
+                        skipped_count += 1
+                
+                logging.info(f"Assistant TTS: Done. Sent: {sent_count}, Skipped: {skipped_count}")
+                response_data = {
+                    "done": True,
+                    "full_response": cleaned_response,
+                    "total_audio_chunks": sent_count
+                }
+                yield f"data: {json.dumps(response_data)}\n\n"
             except asyncio.CancelledError:
-                logging.warning("Stream request cancelled by user")
+                logging.warning("Assistant TTS: Cancelled")
                 return
             except Exception as e:
-                logging.error(f"Error in Assistant TTS streaming: {str(e)}")
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                logging.error(f"Assistant TTS: Error: {str(e)}", exc_info=True)
+                response_data = {"error": str(e)}
+                yield f"data: {json.dumps(response_data)}\n\n"
             finally:
                 active_tasks.pop(key, None)
 
@@ -1954,199 +1920,195 @@ async def query_assistant_tts_direct(request: QueryRequest, http_request: Reques
                 "X-Accel-Buffering": "no"
             }
         )
-    except HTTPException:
-        raise
     except Exception as e:
+        logging.error(f"Assistant TTS: Error: {str(e)}", exc_info=True)
+        active_tasks.pop(key, None)
         raise HTTPException(status_code=500, detail=str(e))
 
-# MCP Query direct then TTS (filtered reasoning)
+
 @app.post("/query_mcp_tts_direct")
-async def query_mcp_tts_direct(request: QueryRequest, http_request: Request):
-    """
-    Returns a SSE stream with text chunks, followed by audio filename and viseme data.
-    """
+async def query_mcp_tts_direct_endpoint(request: QueryRequest, http_request: Request):
     key = f"{request.user_id}:{request.session_id}"
     active_tasks[key] = asyncio.current_task()
-    
-    # Define tool log regex for chunk cleaning
-    import re
-    tool_log_regex = re.compile(r"[\w_]+\([^)]*\)\s*completed\s+in\s+[\d.]+s\.?", re.IGNORECASE)
-    
+    try:
+        # Auth
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+
+        async def stream_response():
+            full_response = ""
+            tool_log_regex = re.compile(r"[\w_]+\([^)]*\)\s*completed\s+in\s+[\d.]+s\.?", re.IGNORECASE)
+            
+            try:
+                with sessions.SessionLocal() as db:
+                    sessions.apply_session_voice(db, request.user_id, request.session_id)
+                
+                logging.info("MCP TTS: Starting text streaming")
+                stream_gen = await run_mcp_agent(request.query, uid, request.session_id, stream=True)
+                
+                async for chunk in stream_gen:
+                    if chunk:
+                        cleaned_chunk = tool_log_regex.sub("\n", chunk)
+                        full_response += chunk
+                        if cleaned_chunk.strip():
+                            response_data = {"content": cleaned_chunk}
+                            yield f"data: {json.dumps(response_data)}\n\n"
+                            await asyncio.sleep(0.01)
+                
+                from AI_Agents_Workflows.tts_chunker import split_for_tts
+                cleaned_response = clean_model_output(full_response)
+                cleaned_response = ensure_response_content(cleaned_response)
+                chunks = split_for_tts(cleaned_response)
+                logging.info(f"MCP TTS: Split into {len(chunks)} chunks")
+                
+                sent_count = 0
+                skipped_count = 0
+                
+                for idx, chunk_text in enumerate(chunks):
+                    try:
+                        logging.info(f"MCP TTS: Generating chunk {idx+1}/{len(chunks)}")
+                        audio_path, viseme_data = await asyncio.wait_for(
+                            run_in_threadpool(text_to_speech, chunk_text),
+                            timeout=30.0
+                        )
+                        if audio_path:
+                            audio_filename = os.path.basename(audio_path)
+                            response_data = {
+                                "type": "audio_chunk",
+                                "sentence_index": idx,
+                                "audio_filename": audio_filename,
+                                "visemes": viseme_data,
+                                "sentence_text": chunk_text
+                            }
+                            yield f"data: {json.dumps(response_data)}\n\n"
+                            sent_count += 1
+                            logging.info(f"MCP TTS: Sent chunk {idx}")
+                        else:
+                            logging.warning(f"MCP TTS: No audio for chunk {idx}")
+                            skipped_count += 1
+                    except asyncio.TimeoutError:
+                        logging.error(f"MCP TTS: Timeout chunk {idx}")
+                        skipped_count += 1
+                    except Exception as e:
+                        logging.error(f"MCP TTS: Error chunk {idx}: {str(e)}")
+                        skipped_count += 1
+                
+                logging.info(f"MCP TTS: Done. Sent: {sent_count}, Skipped: {skipped_count}")
+                response_data = {
+                    "done": True,
+                    "full_response": cleaned_response,
+                    "total_audio_chunks": sent_count
+                }
+                yield f"data: {json.dumps(response_data)}\n\n"
+            except asyncio.CancelledError:
+                logging.warning("MCP TTS: Cancelled")
+                return
+            except Exception as e:
+                logging.error(f"MCP TTS: Error: {str(e)}", exc_info=True)
+                response_data = {"error": str(e)}
+                yield f"data: {json.dumps(response_data)}\n\n"
+            finally:
+                active_tasks.pop(key, None)
+
+        return StreamingResponse(
+            stream_response(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+    except Exception as e:
+        logging.error(f"MCP TTS: Error: {str(e)}", exc_info=True)
+        active_tasks.pop(key, None)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/query_tts_direct")
+async def query_tts_direct_endpoint(request: QueryRequest, http_request: Request):
+    key = f"{request.user_id}:{request.session_id}"
+    active_tasks[key] = asyncio.current_task()
     try:
         token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
         if not token_payload:
             raise HTTPException(status_code=401, detail="Unauthorized")
         uid = token_payload.get("uid")
-        with sessions.SessionLocal() as db:
-            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
-            if not s:
-                raise HTTPException(status_code=404, detail="Session not found")
 
         async def stream_response():
             full_response = ""
-            sentence_buffer = SentenceBuffer()
-            sentence_index = 0
-            collected_sentences = []  # Collect sentences for later TTS generation
-            tts_tasks = []  # Track TTS generation tasks
-            
-            async def generate_tts_task(sentence: str, idx: int):
-                """Generate TTS in background without blocking - with timeout"""
-                try:
-                    # Add 30-second timeout to prevent indefinite hangs
-                    audio_path, viseme_data = await asyncio.wait_for(
-                        run_in_threadpool(text_to_speech, sentence),
-                        timeout=30.0
-                    )
-                    audio_filename = None
-                    if audio_path:
-                        audio_filename = os.path.basename(audio_path)
-                    logging.info(f"MCP TTS: Successfully generated audio for sentence {idx}")
-                    return {'type': 'audio_chunk', 'sentence_index': idx, 'audio_filename': audio_filename, 'visemes': viseme_data, 'sentence_text': sentence}
-                except asyncio.TimeoutError:
-                    logging.error(f"MCP TTS: Timeout generating audio for sentence {idx} (30s limit exceeded)")
-                    return None
-                except Exception as e:
-                    logging.error(f"MCP TTS: Error generating audio for sentence {idx}: {str(e)}")
-                    return None
+            tool_log_regex = re.compile(r"[\w_]+\([^)]*\)\s*completed\s+in\s+[\d.]+s\.?", re.IGNORECASE)
             
             try:
-                # Apply per-session voice before generating audio (once at start)
                 with sessions.SessionLocal() as db:
-                    sessions.apply_session_voice(db, request.user_id, request.session_id)
+                    sessions.apply_session_voice(db, uid, request.session_id)
                 
-                # 1. Stream text from MCP agent
-                stream_gen = await run_mcp_agent(
-                    request.query, uid, request.session_id,
-                    stream=True
-                )
+                logging.info("AI TTS: Starting text streaming")
+                stream_gen = await run_rag_agent(request.query, uid, request.session_id, stream=True)
                 
                 async for chunk in stream_gen:
                     if chunk:
-                        # Clean each chunk in real-time
-                        # Replace tool logs with newline
                         cleaned_chunk = tool_log_regex.sub("\n", chunk)
                         full_response += chunk
-                        
-                        # Send text chunk to UI for display
                         if cleaned_chunk.strip():
-                            yield f"data: {json.dumps({'content': cleaned_chunk})}\n\n"
+                            response_data = {"content": cleaned_chunk}
+                            yield f"data: {json.dumps(response_data)}\n\n"
                             await asyncio.sleep(0.01)
-                        
-                        complete_sentences = sentence_buffer.add_chunk(cleaned_chunk)
-                        
-                        # Launch TTS generation in PARALLEL for each sentence
-                        for sentence in complete_sentences:
-                            if sentence.strip():
-                                idx = len(collected_sentences)
-                                collected_sentences.append(sentence)
-                                task = asyncio.create_task(generate_tts_task(sentence, idx))
-                                tts_tasks.append(task)
                 
-                # After text streaming, send audio as tasks complete (in order by sentence_index)
-                logging.info(f"MCP TTS: Text streaming done. Processing {len(tts_tasks)} audio tasks")
-                
-                if len(tts_tasks) == 0:
-                    logging.warning("MCP TTS: No audio tasks to process, skipping")
-                    sentence_index = 0
-                else:
-                    completed_audio = {}
-                    next_index_to_send = 0
-                    total_tasks = len(tts_tasks)
-                    tasks_completed = 0
-                    sent_count = 0  # Track how many chunks were actually sent
-                    
-                    try:
-                        # Wait for all tasks to complete with timeout per task
-                        for task in asyncio.as_completed(tts_tasks):
-                            try:
-                                result = await task
-                                tasks_completed += 1
-                                logging.info(f"MCP TTS: Task {tasks_completed}/{total_tasks} completed. Has result: {result is not None}")
-                                
-                                if result:
-                                    completed_audio[result['sentence_index']] = result
-                                    logging.info(f"MCP TTS: Buffered audio chunk for sentence {result['sentence_index']}")
-                                else:
-                                    logging.warning(f"MCP TTS: Task {tasks_completed} returned None (likely failed/timeout)")
-                                    
-                                # Send buffered audio in order (skip failed chunks)
-                                while next_index_to_send in completed_audio:
-                                    logging.info(f"MCP TTS: Sending audio chunk {next_index_to_send}")
-                                    yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
-                                    await asyncio.sleep(0.01)  # Small delay to prevent overwhelming client
-                                    del completed_audio[next_index_to_send]
-                                    sent_count += 1
-                                    next_index_to_send += 1
-                                
-                            except Exception as task_err:
-                                logging.error(f"MCP TTS: Error processing task {tasks_completed + 1}: {str(task_err)}")
-                                tasks_completed += 1
-                        
-                        # After all tasks done, flush any remaining buffered chunks (skip gaps from failed chunks)
-                        logging.info(f"MCP TTS: All tasks complete. Flushing remaining chunks from index {next_index_to_send}")
-                        remaining_count = 0
-                        while next_index_to_send < total_tasks:
-                            if next_index_to_send in completed_audio:
-                                logging.info(f"MCP TTS: Flushing chunk {next_index_to_send}")
-                                yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
-                                await asyncio.sleep(0.01)
-                                del completed_audio[next_index_to_send]
-                                remaining_count += 1
-                                sent_count += 1
-                            else:
-                                logging.warning(f"MCP TTS: Skipping missing chunk {next_index_to_send} (failed/timeout)")
-                            next_index_to_send += 1
-                        
-                        skipped_count = total_tasks - sent_count
-                        logging.info(f"MCP TTS: Done. Total chunks: {total_tasks}, Sent: {sent_count}, Skipped: {skipped_count}")
-                    except Exception as e:
-                        logging.error(f"MCP TTS: Error in audio processing loop: {str(e)}", exc_info=True)
-                    
-                    sentence_index = len(collected_sentences)
-
-
-
-
-                # 3. Handle any remaining incomplete sentence
-                remaining_text = sentence_buffer.flush()
-                if remaining_text and remaining_text.strip():
-                    # Validate that the remaining text looks like natural content, not tool names or garbage
-                    # Skip if it contains multiple newlines (suggests fragmented tool names)
-                    # Skip if no spaces (suggests concatenated tool names)
-                    # Skip if it starts with "API-" or looks like a tool list
-                    is_garbage = (
-                        remaining_text.count('\n') > 2 or  # Too many newlines
-                        ' ' not in remaining_text.strip() or  # No spaces (API-post-API-retrieve...)
-                        remaining_text.strip().startswith('API-') or  # Starts with API prefix
-                        len(remaining_text.strip().split()) < 3  # Less than 3 words
-                    )
-                    
-                    if not is_garbage:
-                        try:
-                            audio_path, viseme_data = await run_in_threadpool(text_to_speech, remaining_text)
-                            audio_filename = None
-                            if audio_path:
-                                audio_filename = os.path.basename(audio_path)
-                            yield f"data: {json.dumps({'type': 'audio_chunk', 'sentence_index': sentence_index, 'audio_filename': audio_filename, 'visemes': viseme_data, 'sentence_text': remaining_text})}\n\n"
-                            sentence_index += 1
-                        except Exception as e:
-                            logging.error(f"Error generating TTS for final sentence: {str(e)}")
-                    else:
-                        logging.info(f"MCP TTS: Skipping garbage flush text: {remaining_text[:100]}")
-
-                # 3. Clean full response for final event
+                from AI_Agents_Workflows.tts_chunker import split_for_tts
                 cleaned_response = clean_model_output(full_response)
                 cleaned_response = ensure_response_content(cleaned_response)
-
-                # 4. Send final done event
-                yield f"data: {json.dumps({'done': True, 'full_response': cleaned_response, 'total_audio_chunks': sentence_index})}\n\n"
-
+                chunks = split_for_tts(cleaned_response)
+                logging.info(f"AI TTS: Split into {len(chunks)} chunks")
+                
+                sent_count = 0
+                skipped_count = 0
+                
+                for idx, chunk_text in enumerate(chunks):
+                    try:
+                        logging.info(f"AI TTS: Generating chunk {idx+1}/{len(chunks)}")
+                        audio_path, viseme_data = await asyncio.wait_for(
+                            run_in_threadpool(text_to_speech, chunk_text),
+                            timeout=30.0
+                        )
+                        if audio_path:
+                            audio_filename = os.path.basename(audio_path)
+                            response_data = {
+                                "type": "audio_chunk",
+                                "sentence_index": idx,
+                                "audio_filename": audio_filename,
+                                "visemes": viseme_data,
+                                "sentence_text": chunk_text
+                            }
+                            yield f"data: {json.dumps(response_data)}\n\n"
+                            sent_count += 1
+                            logging.info(f"AI TTS: Sent chunk {idx}")
+                        else:
+                            logging.warning(f"AI TTS: No audio for chunk {idx}")
+                            skipped_count += 1
+                    except asyncio.TimeoutError:
+                        logging.error(f"AI TTS: Timeout chunk {idx}")
+                        skipped_count += 1
+                    except Exception as e:
+                        logging.error(f"AI TTS: Error chunk {idx}: {str(e)}")
+                        skipped_count += 1
+                
+                logging.info(f"AI TTS: Done. Sent: {sent_count}, Skipped: {skipped_count}")
+                response_data = {
+                    "done": True,
+                    "full_response": cleaned_response,
+                    "total_audio_chunks": sent_count
+                }
+                yield f"data: {json.dumps(response_data)}\n\n"
             except asyncio.CancelledError:
-                logging.warning("Stream request cancelled by user")
+                logging.warning("AI TTS: Cancelled")
                 return
             except Exception as e:
-                logging.error(f"Error in MCP TTS streaming: {str(e)}")
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                logging.error(f"AI TTS: Error: {str(e)}", exc_info=True)
+                response_data = {"error": str(e)}
+                yield f"data: {json.dumps(response_data)}\n\n"
             finally:
                 active_tasks.pop(key, None)
 
@@ -2159,254 +2121,92 @@ async def query_mcp_tts_direct(request: QueryRequest, http_request: Request):
                 "X-Accel-Buffering": "no"
             }
         )
-    except asyncio.CancelledError:
-        logging.warning("Request cancelled")
-        return JSONResponse(status_code=499, content={"detail": "Request cancelled"})
     except Exception as e:
+        logging.error(f"AI TTS: Error: {str(e)}", exc_info=True)
+        active_tasks.pop(key, None)
         raise HTTPException(status_code=500, detail=str(e))
 
-# MCP Full Agent: STT -> Query -> TTS
-@app.post("/stt_query_mcp_tts", response_model=Dict[str, Any])
-async def stt_query_mcp_tts_endpoint(
-    file: UploadFile = File(...),
-    user_id: str = Form(...),
-    session_id: str = Form(...),
-    request: Request = None,
-):
-    """
-    Combined STT, MCP query, and TTS endpoint that returns viseme data and audio filename.
-    """
-    try:
-        token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
-        if not token_payload:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        uid = token_payload.get("uid")
-        with sessions.SessionLocal() as db:
-            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
-            if not s:
-                raise HTTPException(status_code=404, detail="Session not found")
-        # First transcribe the audio
-        stt_result = await stt_endpoint(file, user_id, session_id)
-        if stt_result["status"] != "success":
-            return stt_result
 
-        # Get the transcribed text
-        query_text = stt_result["text"]
-        try:
-            logging.info(f"STT transcript len={len(query_text)} user={user_id} session={session_id}")
-        except Exception:
-            pass
-        if not query_text:
-            return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
-
-        # Process the query using the MCP agent
-        response_text = await run_mcp_agent(query_text, uid, session_id)
-
-        # Generate audio and visemes
-        # Apply per-session voice before generating audio
-        with sessions.SessionLocal() as db:
-            sessions.apply_session_voice(db, user_id, session_id)
-        audio_path, viseme_data = await run_in_threadpool(text_to_speech, response_text)
-        
-        audio_filename = None
-        if audio_path:
-            audio_filename = os.path.basename(audio_path)
-
-        return {
-            "text": query_text,
-            "response": response_text,
-            "audio_filename": audio_filename,
-            "visemes": viseme_data,
-            "user_id": uid,
-            "session_id": session_id,
-            "status": "success"
-        }
-    except asyncio.CancelledError:
-        logging.warning("Request cancelled")
-        return JSONResponse(status_code=499, content={"detail": "Request cancelled"})
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing audio query with TTS: {str(e)}")
-
-# ASSISTANT Full Agent: STT -> Query -> TTS
-@app.post("/stt_query_assistant_tts", response_model=Dict[str, Any])
-async def stt_query_assistant_tts_endpoint(
-    file: UploadFile = File(...),
-    user_id: str = Form(...),
-    session_id: str = Form(...),
-    request: Request = None,
-):
-    """
-    Combined STT, assistant query, and TTS endpoint that returns viseme data and audio filename.
-    """
-    try:
-        token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
-        if not token_payload:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        uid = token_payload.get("uid")
-        with sessions.SessionLocal() as db:
-            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
-            if not s:
-                raise HTTPException(status_code=404, detail="Session not found")
-        stt_result = await stt_endpoint(file, user_id, session_id)
-        if stt_result["status"] != "success":
-            return stt_result
-
-        query_text = stt_result["text"]
-        if not query_text:
-            return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
-
-        response_text = await run_assistant_agent(query_text, uid, session_id)
-
-        with sessions.SessionLocal() as db:
-            sessions.apply_session_voice(db, user_id, session_id)
-        audio_path, viseme_data = await run_in_threadpool(text_to_speech, response_text)
-        
-        audio_filename = None
-        if audio_path:
-            audio_filename = os.path.basename(audio_path)
-
-        return {
-            "text": query_text,
-            "response": response_text,
-            "audio_filename": audio_filename,
-            "visemes": viseme_data,
-            "user_id": uid,
-            "session_id": session_id,
-            "status": "success"
-        }
-    except asyncio.CancelledError:
-        logging.warning("Request cancelled")
-        return JSONResponse(status_code=499, content={"detail": "Request cancelled"})
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing audio query with TTS: {str(e)}")
-
-# ASSISTANT Full Agent direct: STT -> Query (filtered) -> TTS
 @app.post("/stt_query_assistant_tts_direct")
 async def stt_query_assistant_tts_direct_endpoint(
     file: UploadFile = File(...),
     user_id: str = Form(...),
     session_id: str = Form(...),
+    image_files: List[UploadFile] = File([]),
+    audio_files: List[UploadFile] = File([]),
+    video_files: List[UploadFile] = File([]),
     request: Request = None,
 ):
-    """
-    Combined STT, filtered assistant query, and TTS endpoint that returns a SSE stream.
-    """
     key = f"{user_id}:{session_id}"
     active_tasks[key] = asyncio.current_task()
     try:
-        token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
-        if not token_payload:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        uid = token_payload.get("uid")
-        with sessions.SessionLocal() as db:
-            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
-            if not s:
-                raise HTTPException(status_code=404, detail="Session not found")
-        
-        # 1. Transcribe audio first
+        # Transcribe
         stt_result = await stt_endpoint(file, user_id, session_id)
         if stt_result["status"] != "success":
             return stt_result
-
         query_text = stt_result["text"]
         if not query_text:
             return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
 
         async def stream_response():
             full_response = ""
-            sentence_buffer = SentenceBuffer()
-            sentence_index = 0
-            
+            tool_log_regex = re.compile(r"[\w_]+\([^)]*\)\s*completed\s+in\s+[\d.]+s\.?", re.IGNORECASE)
             try:
-                # 1. Send transcription immediately
-                yield f"data: {json.dumps({'type': 'transcription', 'text': query_text})}\n\n"
-                
-                # Apply per-session voice before generating audio (once at start)
                 with sessions.SessionLocal() as db:
                     sessions.apply_session_voice(db, user_id, session_id)
-
-                # 2. Stream text from Assistant agent
-                stream_gen = await run_assistant_agent(query_text, uid, session_id, stream=True)
+                logging.info("STT-Assistant TTS: Starting text streaming")
+                stream_gen = await run_assistant_agent(query_text, user_id, session_id, image_files, audio_files, video_files, stream=True)
                 
                 async for chunk in stream_gen:
                     if chunk:
                         cleaned_chunk = tool_log_regex.sub("\n", chunk)
                         full_response += chunk
-                        
-                        # Send text chunk to UI for display
                         if cleaned_chunk.strip():
-                            yield f"data: {json.dumps({'content': cleaned_chunk})}\n\n"
+                            response_data = {"content": cleaned_chunk}
+                            yield f"data: {json.dumps(response_data)}\n\n"
                             await asyncio.sleep(0.01)
-                        
-                        # Add chunk to sentence buffer
-                        complete_sentences = sentence_buffer.add_chunk(cleaned_chunk)
-                        
-                        # Generate TTS immediately for each complete sentence
-                        for sentence in complete_sentences:
-                            if sentence.strip():
-                                try:
-                                    # Generate audio and visemes for this sentence
-                                    audio_path, viseme_data = await run_in_threadpool(text_to_speech, sentence)
-                                    
-                                    audio_filename = None
-                                    if audio_path:
-                                        audio_filename = os.path.basename(audio_path)
-                                    
-                                    # Send audio chunk event immediately
-                                    yield f"data: {json.dumps({'type': 'audio_chunk', 'sentence_index': sentence_index, 'audio_filename': audio_filename, 'visemes': viseme_data, 'sentence_text': sentence})}\n\n"
-                                    sentence_index += 1
-                                    
-                                except Exception as e:
-                                    logging.error(f"Error generating TTS for sentence {sentence_index}: {str(e)}")
-                                    # Continue even if one sentence fails
-
-                # 3. Handle any remaining incomplete sentence
-                remaining_text = sentence_buffer.flush()
-                if remaining_text and remaining_text.strip():
+                
+                from AI_Agents_Workflows.tts_chunker import split_for_tts
+                cleaned_response = clean_model_output(full_response)
+                cleaned_response = ensure_response_content(cleaned_response)
+                chunks = split_for_tts(cleaned_response)
+                logging.info(f"STT-Assistant TTS: Split into {len(chunks)} chunks")
+                
+                sent_count = 0
+                skipped_count = 0
+                for idx, chunk_text in enumerate(chunks):
                     try:
-                        audio_path, viseme_data = await run_in_threadpool(text_to_speech, remaining_text)
-                        audio_filename = None
+                        logging.info(f"STT-Assistant TTS: Chunk {idx+1}/{len(chunks)}")
+                        audio_path, viseme_data = await asyncio.wait_for(run_in_threadpool(text_to_speech, chunk_text), timeout=30.0)
                         if audio_path:
                             audio_filename = os.path.basename(audio_path)
-                        yield f"data: {json.dumps({'type': 'audio_chunk', 'sentence_index': sentence_index, 'audio_filename': audio_filename, 'visemes': viseme_data, 'sentence_text': remaining_text})}\n\n"
-                        sentence_index += 1
+                            response_data = {"type": "audio_chunk", "sentence_index": idx, "audio_filename": audio_filename, "visemes": viseme_data, "sentence_text": chunk_text}
+                            yield f"data: {json.dumps(response_data)}\n\n"
+                            sent_count += 1
+                        else:
+                            skipped_count += 1
                     except Exception as e:
-                        logging.error(f"Error generating TTS for final sentence: {str(e)}")
-
-                # 4. Clean full response
-                cleaned_response = clean_model_output(full_response)
-                # Ensure response content (e.g. if empty)
-                cleaned_response = ensure_response_content(cleaned_response)
-
-                # 5. Send done event
-                yield f"data: {json.dumps({'done': True, 'text': query_text, 'full_response': cleaned_response, 'total_audio_chunks': sentence_index})}\n\n"
-
+                        logging.error(f"Error chunk {idx}: {e}")
+                        skipped_count += 1
+                
+                logging.info(f"STT-Assistant TTS: Done. Sent: {sent_count}")
+                response_data = {"done": True, "full_response": cleaned_response, "total_audio_chunks": sent_count}
+                yield f"data: {json.dumps(response_data)}\n\n"
             except asyncio.CancelledError:
-                logging.warning("Stream request cancelled by user")
                 return
             except Exception as e:
-                logging.error(f"Error in STT Assistant TTS streaming: {str(e)}")
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                logging.error(f"Error: {e}", exc_info=True)
+                response_data = {"error": str(e)}
+                yield f"data: {json.dumps(response_data)}\n\n"
             finally:
                 active_tasks.pop(key, None)
 
-        return StreamingResponse(
-            stream_response(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no"
-            }
-        )
-
-    except asyncio.CancelledError:
-        raise HTTPException(status_code=499, detail="Request cancelled")
+        return StreamingResponse(stream_response(), media_type="text/event-stream")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing audio query with TTS: {str(e)}")
-# MCP Full Agent direct: STT -> Query (filtered) -> TTS
+        active_tasks.pop(key, None)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/stt_query_mcp_tts_direct")
 async def stt_query_mcp_tts_direct_endpoint(
     file: UploadFile = File(...),
@@ -2414,663 +2214,60 @@ async def stt_query_mcp_tts_direct_endpoint(
     session_id: str = Form(...),
     request: Request = None,
 ):
-    """
-    Combined STT, filtered MCP query, and TTS endpoint that returns a SSE stream.
-    """
     key = f"{user_id}:{session_id}"
     active_tasks[key] = asyncio.current_task()
     try:
         token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
-        if not token_payload:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        uid = token_payload.get("uid")
-        with sessions.SessionLocal() as db:
-            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
-            if not s:
-                raise HTTPException(status_code=404, detail="Session not found")
+        uid = token_payload.get("uid") if token_payload else None
         
-        # 1. Transcribe audio first
         stt_result = await stt_endpoint(file, user_id, session_id)
-        if stt_result["status"] != "success":
-            return stt_result
-
+        if stt_result["status"] != "success": return stt_result
         query_text = stt_result["text"]
-        if not query_text:
-            return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
+        if not query_text: return {"text": "", "status": "error"}
 
         async def stream_response():
             full_response = ""
-            sentence_buffer = SentenceBuffer()
-            sentence_index = 0
-            
+            tool_log_regex = re.compile(r"[\w_]+\([^)]*\)\s*completed\s+in\s+[\d.]+s\.?", re.IGNORECASE)
             try:
-                # 1. Send transcription immediately
-                yield f"data: {json.dumps({'type': 'transcription', 'text': query_text})}\n\n"
-                
-                # Apply per-session voice before generating audio (once at start)
                 with sessions.SessionLocal() as db:
                     sessions.apply_session_voice(db, user_id, session_id)
-
-                # 2. Stream text from MCP agent
                 stream_gen = await run_mcp_agent(query_text, uid, session_id, stream=True)
                 
                 async for chunk in stream_gen:
                     if chunk:
                         cleaned_chunk = tool_log_regex.sub("\n", chunk)
                         full_response += chunk
-                        
-                        # Send text chunk to UI for display
                         if cleaned_chunk.strip():
                             yield f"data: {json.dumps({'content': cleaned_chunk})}\n\n"
                             await asyncio.sleep(0.01)
-                        
-                        # Add chunk to sentence buffer
-                        complete_sentences = sentence_buffer.add_chunk(cleaned_chunk)
-                        
-                        # Generate TTS immediately for each complete sentence
-                        for sentence in complete_sentences:
-                            if sentence.strip():
-                                try:
-                                    # Generate audio and visemes for this sentence
-                                    audio_path, viseme_data = await run_in_threadpool(text_to_speech, sentence)
-                                    
-                                    audio_filename = None
-                                    if audio_path:
-                                        audio_filename = os.path.basename(audio_path)
-                                    
-                                    # Send audio chunk event immediately
-                                    yield f"data: {json.dumps({'type': 'audio_chunk', 'sentence_index': sentence_index, 'audio_filename': audio_filename, 'visemes': viseme_data, 'sentence_text': sentence})}\n\n"
-                                    sentence_index += 1
-                                    
-                                except Exception as e:
-                                    logging.error(f"Error generating TTS for sentence {sentence_index}: {str(e)}")
-                                    # Continue even if one sentence fails
-
-                # 3. Handle any remaining incomplete sentence
-                remaining_text = sentence_buffer.flush()
-                if remaining_text and remaining_text.strip():
+                
+                from AI_Agents_Workflows.tts_chunker import split_for_tts
+                cleaned_response = ensure_response_content(clean_model_output(full_response))
+                chunks = split_for_tts(cleaned_response)
+                
+                sent_count = 0
+                for idx, chunk_text in enumerate(chunks):
                     try:
-                        audio_path, viseme_data = await run_in_threadpool(text_to_speech, remaining_text)
-                        audio_filename = None
+                        audio_path, viseme_data = await asyncio.wait_for(run_in_threadpool(text_to_speech, chunk_text), timeout=30.0)
                         if audio_path:
                             audio_filename = os.path.basename(audio_path)
-                        yield f"data: {json.dumps({'type': 'audio_chunk', 'sentence_index': sentence_index, 'audio_filename': audio_filename, 'visemes': viseme_data, 'sentence_text': remaining_text})}\n\n"
-                        sentence_index += 1
-                    except Exception as e:
-                        logging.error(f"Error generating TTS for final sentence: {str(e)}")
-
-                # 4. Clean full response
-                cleaned_response = clean_model_output(full_response)
-                cleaned_response = ensure_response_content(cleaned_response)
-
-                # 5. Send done event
-                yield f"data: {json.dumps({'done': True, 'text': query_text, 'full_response': cleaned_response, 'total_audio_chunks': sentence_index})}\n\n"
-
-            except asyncio.CancelledError:
-                logging.warning("Stream request cancelled by user")
-                return
+                            yield f"data: {json.dumps({'type': 'audio_chunk', 'sentence_index': idx, 'audio_filename': audio_filename, 'visemes': viseme_data, 'sentence_text': chunk_text})}\n\n"
+                            sent_count += 1
+                    except Exception:
+                        pass
+                
+                yield f"data: {json.dumps({'done': True, 'full_response': cleaned_response, 'total_audio_chunks': sent_count})}\n\n"
             except Exception as e:
-                logging.error(f"Error in STT MCP TTS streaming: {str(e)}")
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
             finally:
                 active_tasks.pop(key, None)
 
-        return StreamingResponse(
-            stream_response(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no"
-            }
-        )
-
-    except asyncio.CancelledError:
-        logging.warning("Request cancelled")
-        return JSONResponse(status_code=499, content={"detail": "Request cancelled"})
-    except HTTPException:
-        raise
+        return StreamingResponse(stream_response(), media_type="text/event-stream")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing audio query with TTS: {str(e)}")
-#LLM QUERY not displayed Reasoning (with SSE Streaming)
-@app.post("/query_direct")
-async def query_direct(request: QueryRequest, http_request: Request):
-    key = f"{request.user_id}:{request.session_id}"
-    active_tasks[key] = asyncio.current_task()
-    
-    # Auth check outside the generator
-    token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
-    if not token_payload:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    uid = token_payload.get("uid")
-    with sessions.SessionLocal() as db:
-        s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
-        if not s:
-            raise HTTPException(status_code=404, detail="Session not found")
-
-    async def stream_response():
-        full_response = ""
-        try:
-            # Get streaming generator from RAG agent
-            stream_gen = await run_rag_agent(
-                request.query, uid, request.session_id,
-                stream=True
-            )
-            
-            async for chunk in stream_gen:
-                if chunk:
-                    # Clean each chunk in real-time to prevent tool logs from appearing
-                    # Replace with newline to ensure separation
-                    cleaned_chunk = tool_log_regex.sub("\n", chunk)
-                    full_response += chunk
-                    
-                    if cleaned_chunk.strip():
-                        yield f"data: {json.dumps({'content': cleaned_chunk})}\n\n"
-            
-            # Clean and send done event
-            cleaned_response = clean_model_output(full_response)
-            cleaned_response = ensure_response_content(cleaned_response)
-            yield f"data: {json.dumps({'done': True, 'full_response': cleaned_response})}\n\n"
-            
-        except asyncio.CancelledError:
-            logging.warning("RAG Stream request cancelled by user")
-            # If client disconnected, we can just return.
-            return
-        except Exception as e:
-            logging.error(f"Error in RAG streaming: {type(e).__name__}: {str(e)}")
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
-        finally:
-            active_tasks.pop(key, None)
-    
-    return StreamingResponse(
-        stream_response(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"
-        }
-    )
-
-
-#Speach to text
-@app.post("/stt", response_model=Dict[str, str])
-async def stt_endpoint(
-    file: UploadFile = File(...),
-    user_id: str = Form(...),
-    session_id: str = Form(...)
-):
-    """
-    Speech-to-text endpoint that accepts various audio formats, converts to WAV PCM 16-bit mono 16kHz, and returns the transcription.
-    """
-    try:
-        ct = getattr(file, "content_type", "") or ""
-        ct_l = ct.lower()
-        guessed_ext = ".wav"
-        if "webm" in ct_l:
-            guessed_ext = ".webm"
-        elif "ogg" in ct_l:
-            guessed_ext = ".ogg"
-        elif "mp3" in ct_l or "mpeg" in ct_l:
-            guessed_ext = ".mp3"
-        elif "wav" in ct_l:
-            guessed_ext = ".wav"
-
-        name_ext = os.path.splitext(file.filename)[1].lower() if file.filename else ""
-        file_extension = name_ext or guessed_ext
-        with tempfile.NamedTemporaryFile(suffix=file_extension, delete=False) as temp_file:
-            temp_file.write(await file.read())
-            input_path = temp_file.name
-
-        if file_extension != ".wav":
-            try:
-                wav_path = input_path + ".wav"
-                audio = AudioSegment.from_file(input_path)
-                audio = audio.set_channels(1).set_frame_rate(16000)
-                audio.export(wav_path, format="wav")
-                os.unlink(input_path)
-                input_path = wav_path
-            except Exception as e:
-                msg = str(e)
-                if "ffmpeg" in msg.lower():
-                    raise HTTPException(status_code=500, detail="FFmpeg is required to convert audio (install ffmpeg and ensure it's on PATH)")
-                raise HTTPException(status_code=400, detail=f"Error converting audio format: {msg}")
-        else:
-            try:
-                audio = AudioSegment.from_file(input_path)
-                audio = audio.set_channels(1).set_frame_rate(16000)
-                audio.export(input_path, format="wav")
-            except Exception as e:
-                msg = str(e)
-                if "ffmpeg" in msg.lower():
-                    raise HTTPException(status_code=500, detail="FFmpeg is required to process WAV audio (install ffmpeg and ensure it's on PATH)")
-                raise HTTPException(status_code=400, detail=f"Error processing WAV audio: {msg}")
-
-        wf = None
-        try:
-            vosk_model, recognizer = initialize_stt()
-            import wave
-            try:
-                wf = wave.open(input_path, "rb")
-                text = ""
-                while True:
-                    data = wf.readframes(4096)
-                    if len(data) == 0:
-                        break
-                    if recognizer.AcceptWaveform(data):
-                        result = recognizer.Result()
-                        text = json.loads(result).get("text", "")
-                if not text:
-                    text = json.loads(recognizer.FinalResult()).get("text", "")
-            finally:
-                if wf is not None:
-                    wf.close()
-        except Exception as e:
-            try:
-                os.unlink(input_path)
-            except Exception:
-                pass
-            raise HTTPException(status_code=500, detail=f"Error transcribing audio: {str(e)}")
-
-        try:
-            os.unlink(input_path)
-        except Exception:
-            pass
-
-        if not text:
-            return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
-        return {"text": text, "user_id": user_id, "session_id": session_id, "status": "success"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error transcribing speech: {str(e)}")
-
-#Text to Speach
-@app.post("/tts")
-def tts_endpoint(request: TTSRequest):
-    try:
-        # Apply per-session voice before generating audio
-        with sessions.SessionLocal() as db:
-            sessions.apply_session_voice(db, request.user_id, request.session_id)
-        # Generate audio and visemes. This now returns the cached audio path and viseme data.
-        audio_path, viseme_data = text_to_speech(request.text)
-
-        if not audio_path:
-            raise HTTPException(status_code=500, detail="TTS failed to generate audio file.")
-
-        audio_filename = os.path.basename(audio_path)
-
-        # 3. Return both the audio filename and viseme data in a JSON response.
-        return {
-            "audio_filename": audio_filename,
-            "visemes": viseme_data
-        }
-    except Exception as e:
-        # Log the exception for debugging
-        print(f"Error in /tts endpoint: {e}")
+        active_tasks.pop(key, None)
         raise HTTPException(status_code=500, detail=str(e))
 
 
-#Speach to text query
-@app.post("/stt_query", response_model=Dict[str, str])
-async def stt_query_endpoint(
-    file: UploadFile = File(...),
-    user_id: str = Form(...),
-    session_id: str = Form(...),
-    request: Request = None,
-):
-    """
-    Combined STT and query endpoint that:
-    1. Converts audio input to text
-    2. Processes the query using the RAG agent
-    3. Returns both the transcribed text and the query response
-    """
-    try:
-        token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
-        if not token_payload:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        uid = token_payload.get("uid")
-        with sessions.SessionLocal() as db:
-            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
-            if not s:
-                raise HTTPException(status_code=404, detail="Session not found")
-        # First transcribe the audio
-        stt_result = await stt_endpoint(file, user_id, session_id)
-        if stt_result["status"] != "success":
-            return stt_result
-
-        # Get the transcribed text
-        query_text = stt_result["text"]
-        try:
-            logging.info(f"STT transcript len={len(query_text)} user={user_id} session={session_id}")
-        except Exception:
-            pass
-        if not query_text:
-            return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
-
-        # Process the query using the RAG agent
-        response = await run_rag_agent(query_text, uid, session_id)
-
-        return {
-            "text": query_text,
-            "response": response,
-            "user_id": uid,
-            "session_id": session_id,
-            "status": "success"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing audio query: {str(e)}")
-
-#Speach to text query direct not displayed Reasoning
-@app.post("/stt_query_direct", response_model=Dict[str, str])
-async def stt_query_direct_endpoint(
-    file: UploadFile = File(...),
-    user_id: str = Form(...),
-    session_id: str = Form(...),
-    request: Request = None,
-):
-    """
-    Combined STT and filtered query endpoint that:
-    1. Converts audio input to text
-    2. Processes the query using the RAG agent with filtering
-    3. Returns both the transcribed text and the filtered query response
-    """
-    try:
-        token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
-        if not token_payload:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        uid = token_payload.get("uid")
-        with sessions.SessionLocal() as db:
-            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
-            if not s:
-                raise HTTPException(status_code=404, detail="Session not found")
-        # First transcribe the audio
-        stt_result = await stt_endpoint(file, user_id, session_id)
-        if stt_result["status"] != "success":
-            return stt_result
-
-        # Get the transcribed text
-        query_text = stt_result["text"]
-        try:
-            logging.info(f"STT transcript len={len(query_text)} user={user_id} session={session_id}")
-        except Exception:
-            pass
-        if not query_text:
-            return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
-
-        # Process the query using the RAG agent and clean output
-        response = await run_rag_agent(query_text, uid, session_id)
-        response = clean_model_output(response)
-
-        return {
-            "text": query_text,
-            "response": response,
-            "user_id": uid,
-            "session_id": session_id,
-            "status": "success"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing audio query: {str(e)}")
-
-#Query to speach to text 
-@app.post("/query_tts")
-async def query_tts_endpoint(request: QueryRequest, http_request: Request):
-    """
-    Returns a JSON with the text response, audio filename, and viseme data.
-    """
-    try:
-        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
-        if not token_payload:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        uid = token_payload.get("uid")
-        with sessions.SessionLocal() as db:
-            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
-            if not s:
-                raise HTTPException(status_code=404, detail="Session not found")
-        response_text = await run_rag_agent(request.query, uid, request.session_id)
-        
-        # Generate audio and visemes
-        # Apply per-session voice before generating audio
-        with sessions.SessionLocal() as db:
-            sessions.apply_session_voice(db, request.user_id, request.session_id)
-        audio_path, viseme_data = await run_in_threadpool(text_to_speech, response_text)
-
-        audio_filename = None
-        if audio_path:
-            audio_filename = os.path.basename(audio_path)
-
-        return {
-            "user_id": uid,
-            "session_id": request.session_id,
-            "response": response_text,
-            "audio_filename": audio_filename,
-            "visemes": viseme_data,
-            "status": "success"
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-#Query text to speach direct disabled Reasoning
-@app.post("/query_tts_direct")
-async def query_tts_direct(request: QueryRequest, http_request: Request):
-    """
-    Returns a SSE stream with text chunks, followed by audio filename and viseme data.
-    """
-    key = f"{request.user_id}:{request.session_id}"
-    active_tasks[key] = asyncio.current_task()
-    try:
-        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
-        if not token_payload:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        uid = token_payload.get("uid")
-        with sessions.SessionLocal() as db:
-            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
-            if not s:
-                raise HTTPException(status_code=404, detail="Session not found")
-
-        async def stream_response():
-            full_response = ""
-            sentence_buffer = SentenceBuffer()
-            sentence_index = 0
-            collected_sentences = []  # Collect sentences for later TTS generation
-            tts_tasks = []  # Track TTS generation tasks
-            
-            async def generate_tts_task(sentence: str, idx: int):
-                """Generate TTS in background without blocking"""
-                try:
-                    audio_path, viseme_data = await run_in_threadpool(text_to_speech, sentence)
-                    audio_filename = None
-                    if audio_path:
-                        audio_filename = os.path.basename(audio_path)
-                    return {'type': 'audio_chunk', 'sentence_index': idx, 'audio_filename': audio_filename, 'visemes': viseme_data, 'sentence_text': sentence}
-                except Exception as e:
-                    logging.error(f"Error generating TTS for sentence {idx}: {str(e)}")
-                    return None
-            
-            try:
-                # Apply per-session voice before generating audio (once at start)
-                with sessions.SessionLocal() as db:
-                    sessions.apply_session_voice(db, request.user_id, request.session_id)
-                
-                # 1. Stream text from RAG agent
-                stream_gen = await run_rag_agent(
-                    request.query, uid, request.session_id,
-                    stream=True
-                )
-                
-                async for chunk in stream_gen:
-                    if chunk:
-                        # Clean each chunk in real-time to prevent tool logs from appearing
-                        # Replace with newline to ensure separation
-                        cleaned_chunk = tool_log_regex.sub("\n", chunk)
-                        full_response += chunk
-                        
-                        # Send text chunk to UI for display
-                        if cleaned_chunk.strip():
-                            yield f"data: {json.dumps({'content': cleaned_chunk})}\n\n"
-                            await asyncio.sleep(0.01)
-                        
-                        # Add chunk to sentence buffer
-                        complete_sentences = sentence_buffer.add_chunk(cleaned_chunk)
-                        
-                        # Launch TTS generation in PARALLEL for each sentence
-                        for sentence in complete_sentences:
-                             if sentence.strip():
-                                idx = len(collected_sentences)
-                                collected_sentences.append(sentence)
-                                task = asyncio.create_task(generate_tts_task(sentence, idx))
-                                tts_tasks.append(task)
-                        
-                # After text streaming, send audio as tasks complete (in order by sentence_index)
-                logging.info(f"RAG TTS: Text streaming done. Processing {len(tts_tasks)} audio tasks")
-                
-                if len(tts_tasks) == 0:
-                    logging.warning("RAG TTS: No audio tasks to process, skipping")
-                    sentence_index = 0
-                else:
-                    completed_audio = {}
-                    next_index_to_send = 0
-                    total_tasks = len(tts_tasks)
-                    tasks_completed = 0
-                    
-                    try:
-                        for task in asyncio.as_completed(tts_tasks):
-                            result = await task
-                            tasks_completed += 1
-                            logging.info(f"RAG TTS: Task {tasks_completed}/{total_tasks} done. Has result: {result is not None}")
-                            
-                            if result:
-                                completed_audio[result['sentence_index']] = result
-                                logging.info(f"RAG TTS: Buffered sentence {result['sentence_index']}")
-                                
-                            # Send buffered audio in order
-                            while next_index_to_send in completed_audio:
-                                logging.info(f"RAG TTS: Yielding chunk {next_index_to_send}")
-                                yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
-                                del completed_audio[next_index_to_send]
-                                next_index_to_send += 1
-                            
-                            # If all tasks done, send any remaining (skip failed gaps)
-                            if tasks_completed == total_tasks:
-                                logging.info(f"RAG TTS: Flushing remaining from index {next_index_to_send}")
-                                while next_index_to_send < total_tasks:
-                                    if next_index_to_send in completed_audio:
-                                        logging.info(f"RAG TTS: Flushing chunk {next_index_to_send}")
-                                        yield f"data: {json.dumps(completed_audio[next_index_to_send])}\n\n"
-                                        del completed_audio[next_index_to_send]
-                                    next_index_to_send += 1
-                        
-                        logging.info(f"RAG TTS: Done processing all {total_tasks} tasks")
-                    except Exception as e:
-                        logging.error(f"RAG TTS: Error in audio processing loop: {str(e)}", exc_info=True)
-                    
-                    sentence_index = len(collected_sentences)
-
-
-                
-                # 2. Handle any remaining incomplete sentence
-                remaining_text = sentence_buffer.flush()
-                if remaining_text and remaining_text.strip():
-                    try:
-                        audio_path, viseme_data = await run_in_threadpool(text_to_speech, remaining_text)
-                        audio_filename = None
-                        if audio_path:
-                            audio_filename = os.path.basename(audio_path)
-                        yield f"data: {json.dumps({'type': 'audio_chunk', 'sentence_index': sentence_index, 'audio_filename': audio_filename, 'visemes': viseme_data, 'sentence_text': remaining_text})}\n\n"
-                        sentence_index += 1
-                    except Exception as e:
-                        logging.error(f"Error generating TTS for final sentence: {str(e)}")
-
-                # 3. Clean full response for final event
-                cleaned_response = clean_model_output(full_response)
-                cleaned_response = ensure_response_content(cleaned_response)
-
-                # 4. Send final done event
-                yield f"data: {json.dumps({'done': True, 'full_response': cleaned_response, 'total_audio_chunks': sentence_index})}\n\n"
-                
-            except asyncio.CancelledError:
-                yield f"data: {json.dumps({'error': 'Request cancelled'})}\n\n"
-            except Exception as e:
-                logging.error(f"Error in TTS streaming: {str(e)}")
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
-            finally:
-                active_tasks.pop(key, None)
-
-        return StreamingResponse(
-            stream_response(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no"
-            }
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# Full Agent
-@app.post("/stt_query_tts", response_model=Dict[str, Any])
-async def stt_query_tts_endpoint(
-    file: UploadFile = File(...),
-    user_id: str = Form(...),
-    session_id: str = Form(...),
-    request: Request = None,
-):
-    """
-    Combined STT, query, and TTS endpoint that returns viseme data and audio filename.
-    """
-    try:
-        token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
-        if not token_payload:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        uid = token_payload.get("uid")
-        with sessions.SessionLocal() as db:
-            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
-            if not s:
-                raise HTTPException(status_code=404, detail="Session not found")
-        # First transcribe the audio
-        stt_result = await stt_endpoint(file, user_id, session_id)
-        if stt_result["status"] != "success":
-            return stt_result
-
-        # Get the transcribed text
-        query_text = stt_result["text"]
-        if not query_text:
-            return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
-
-        # Process the query using the RAG agent
-        response_text = await run_rag_agent(query_text, uid, session_id)
-
-        # Generate audio and visemes
-        # Apply per-session voice before generating audio
-        with sessions.SessionLocal() as db:
-            sessions.apply_session_voice(db, user_id, session_id)
-        audio_path, viseme_data = await run_in_threadpool(text_to_speech, response_text)
-        
-        audio_filename = None
-        if audio_path:
-            audio_filename = os.path.basename(audio_path)
-
-        return {
-            "text": query_text,
-            "response": response_text,
-            "audio_filename": audio_filename,
-            "visemes": viseme_data,
-            "user_id": uid,
-            "session_id": session_id,
-            "status": "success"
-        }
-    except asyncio.CancelledError:
-        logging.warning("Request cancelled")
-        return JSONResponse(status_code=499, content={"detail": "Request cancelled"})
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing audio query with TTS: {str(e)}")
-
-# Full Agent with reasoning not displayed
 @app.post("/stt_query_tts_direct")
 async def stt_query_tts_direct_endpoint(
     file: UploadFile = File(...),
@@ -3078,125 +2275,54 @@ async def stt_query_tts_direct_endpoint(
     session_id: str = Form(...),
     request: Request = None,
 ):
-    """
-    Combined STT, filtered query, and TTS endpoint that returns a SSE stream.
-    """
     key = f"{user_id}:{session_id}"
     active_tasks[key] = asyncio.current_task()
     try:
         token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
-        if not token_payload:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        uid = token_payload.get("uid")
-        with sessions.SessionLocal() as db:
-            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
-            if not s:
-                raise HTTPException(status_code=404, detail="Session not found")
+        uid = token_payload.get("uid") if token_payload else None
         
-        # 1. Transcribe audio first (blocking but necessary)
         stt_result = await stt_endpoint(file, user_id, session_id)
-        if stt_result["status"] != "success":
-            return stt_result
-
+        if stt_result["status"] != "success": return stt_result
         query_text = stt_result["text"]
-        if not query_text:
-            return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
+        if not query_text: return {"text": "", "status": "error"}
 
         async def stream_response():
             full_response = ""
-            sentence_buffer = SentenceBuffer()
-            sentence_index = 0
-            
             try:
-                # 1. Send transcription immediately
-                yield f"data: {json.dumps({'type': 'transcription', 'text': query_text})}\n\n"
-                
-                # Apply per-session voice before generating audio (once at start)
                 with sessions.SessionLocal() as db:
-                    sessions.apply_session_voice(db, user_id, session_id)
-
-                # 2. Stream text from RAG agent
+                    sessions.apply_session_voice(db, uid, session_id)
                 stream_gen = await run_rag_agent(query_text, uid, session_id, stream=True)
                 
                 async for chunk in stream_gen:
                     if chunk:
-                        # Clean each chunk in real-time
-                        # Replace tool logs with newline
-                        cleaned_chunk = tool_log_regex.sub("\n", chunk)
                         full_response += chunk
-                        
-                        # Send text chunk to UI for display
-                        if cleaned_chunk.strip():
-                            yield f"data: {json.dumps({'content': cleaned_chunk})}\n\n"
-                            await asyncio.sleep(0.01)
-                        
-                        # Add chunk to sentence buffer
-                        complete_sentences = sentence_buffer.add_chunk(cleaned_chunk)
-                        
-                        # Generate TTS immediately for each complete sentence
-                        for sentence in complete_sentences:
-                            if sentence.strip():
-                                try:
-                                    # Generate audio and visemes for this sentence
-                                    audio_path, viseme_data = await run_in_threadpool(text_to_speech, sentence)
-                                    
-                                    audio_filename = None
-                                    if audio_path:
-                                        audio_filename = os.path.basename(audio_path)
-                                    
-                                    # Send audio chunk event immediately
-                                    yield f"data: {json.dumps({'type': 'audio_chunk', 'sentence_index': sentence_index, 'audio_filename': audio_filename, 'visemes': viseme_data, 'sentence_text': sentence})}\n\n"
-                                    sentence_index += 1
-                                    
-                                except Exception as e:
-                                    logging.error(f"Error generating TTS for sentence {sentence_index}: {str(e)}")
-                                    # Continue even if one sentence fails
-
-                # 3. Handle any remaining incomplete sentence
-                remaining_text = sentence_buffer.flush()
-                if remaining_text and remaining_text.strip():
+                        yield f"data: {json.dumps({'content': chunk})}\n\n"
+                
+                from AI_Agents_Workflows.tts_chunker import split_for_tts
+                cleaned_response = ensure_response_content(clean_model_output(full_response))
+                chunks = split_for_tts(cleaned_response)
+                
+                sent_count = 0
+                for idx, chunk_text in enumerate(chunks):
                     try:
-                        audio_path, viseme_data = await run_in_threadpool(text_to_speech, remaining_text)
-                        audio_filename = None
+                        audio_path, viseme_data = await asyncio.wait_for(run_in_threadpool(text_to_speech, chunk_text), timeout=30.0)
                         if audio_path:
                             audio_filename = os.path.basename(audio_path)
-                        yield f"data: {json.dumps({'type': 'audio_chunk', 'sentence_index': sentence_index, 'audio_filename': audio_filename, 'visemes': viseme_data, 'sentence_text': remaining_text})}\n\n"
-                        sentence_index += 1
-                    except Exception as e:
-                        logging.error(f"Error generating TTS for final sentence: {str(e)}")
-
-                # 4. Clean full response for final event
-                cleaned_response = clean_model_output(full_response)
-
-                # 5. Send final done event with audio data and original query text (for UI)
-                yield f"data: {json.dumps({'done': True, 'text': query_text, 'full_response': cleaned_response, 'total_audio_chunks': sentence_index})}\n\n"
-
-            except asyncio.CancelledError:
-                logging.warning("RAG Stream request cancelled by user")
-                return
+                            yield f"data: {json.dumps({'type': 'audio_chunk', 'sentence_index': idx, 'audio_filename': audio_filename, 'visemes': viseme_data, 'sentence_text': chunk_text})}\n\n"
+                            sent_count += 1
+                    except Exception:
+                        pass
+                
+                yield f"data: {json.dumps({'done': True, 'full_response': cleaned_response, 'total_audio_chunks': sent_count})}\n\n"
             except Exception as e:
-                logging.error(f"Error in STT TTS streaming: {str(e)}")
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
             finally:
                 active_tasks.pop(key, None)
 
-        return StreamingResponse(
-            stream_response(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no"
-            }
-        )
-
-    except asyncio.CancelledError:
-        logging.warning("Request cancelled")
-        return JSONResponse(status_code=499, content={"detail": "Request cancelled"})
-    except HTTPException:
-        raise
+        return StreamingResponse(stream_response(), media_type="text/event-stream")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing audio query with TTS: {str(e)}")
+        active_tasks.pop(key, None)
+        raise HTTPException(status_code=500, detail=str(e))
 
 #Downloading audio file
 def _delete_tts_pair(file_path: str, delay_seconds: int = 2):

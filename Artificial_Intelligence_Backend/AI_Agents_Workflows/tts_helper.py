@@ -37,6 +37,13 @@ def generate_visemes(audio_path, text):
         temp_dialog_file.write(text)
         dialog_file_path = temp_dialog_file.name
 
+    # Ensure the executable has permission to run
+    try:
+        current_mode = os.stat(RHUBARB_PATH).st_mode
+        os.chmod(RHUBARB_PATH, current_mode | 0o111)
+    except Exception as e:
+        print(f"Warning: Could not set execute permission on {RHUBARB_PATH}: {e}", file=sys.stderr)
+
     try:
         command = [
             str(RHUBARB_PATH),

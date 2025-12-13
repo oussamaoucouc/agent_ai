@@ -1,6 +1,7 @@
 
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { WebAudioQueue } from './WebAudioQueue';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { ChatWindow } from './components/ChatWindow';
@@ -98,11 +99,9 @@ const App: React.FC = () => {
     const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(storage.getSidebarOpen());
     const [queryMode, setQueryMode] = useState<QueryMode>('agent');
 
-    // Audio queue for incremental sentence-based TTS
-    const [audioQueue, setAudioQueue] = useState<Array<{ url: string, visemes: VisemeData, messageId: string }>>([]);
+    // Web Audio API queue for perfect gapless playback
     const [isPlayingQueue, setIsPlayingQueue] = useState<boolean>(false);
-    const audioQueueRef = useRef<Array<{ url: string, visemes: VisemeData, messageId: string }>>([]);
-    const isPlayingQueueRef = useRef<boolean>(false); // Use ref to avoid race conditions
+    const webAudioQueueRef = useRef<WebAudioQueue | null>(null);
 
     // New states for model and voice selection
     const [currentModel, setCurrentModel] = useState<string>('gemini-2.5-pro');
@@ -547,10 +546,10 @@ const App: React.FC = () => {
             activeAudioRef.current = null;
         }
 
-        // Clear audio queue
-        audioQueueRef.current = [];
-        isPlayingQueueRef.current = false;
-        setIsPlayingQueue(false);
+        // Stop Web Audio Queue
+        if (webAudioQueueRef.current) {
+            webAudioQueueRef.current.stop();
+        }
 
         setCurrentViseme('X');
         setActiveAudio(null);
@@ -667,143 +666,42 @@ const App: React.FC = () => {
 
     }, [handleStopAudio]);
 
-    // Play audio queue sequentially for continuous avatar speech
-    const playAudioQueue = useCallback(() => {
-        // Don't start if already playing or queue is empty
-        if (audioQueueRef.current.length === 0) return;
-        if (isPlayingQueueRef.current) return; // Use ref to avoid race conditions
-
-        isPlayingQueueRef.current = true;
-
-        setIsPlayingQueue(true);
-
-        let preloadedAudio: HTMLAudioElement | null = null; // Preload next audio for gapless playback
-
-        const playNext = () => {
-            // Get next audio segment from queue
-            const nextSegment = audioQueueRef.current.shift();
-            console.log(`[AUDIO QUEUE] playNext called. Remaining queue: ${audioQueueRef.current.length}`);
-
-            if (!nextSegment) {
-                // Queue is empty, stop playback
-                console.log('[AUDIO QUEUE] Queue empty, stopping playback');
-                isPlayingQueueRef.current = false;
-                setIsPlayingQueue(false);
-                setCurrentViseme('X');
-
-                // Clear active audio state
-                activeAudioRef.current = null;
-                setActiveAudio(null);
-                setPlayingAudioId(null);
-                return;
-            }
-
-            const { url, visemes: visemeData, messageId } = nextSegment;
-            console.log(`[AUDIO QUEUE] Playing chunk: ${url.substring(url.lastIndexOf('/') + 1)}`);
-
-            // Use preloaded audio if available, otherwise create new
-            const audio = preloadedAudio && preloadedAudio.src.includes(url)
-                ? preloadedAudio
-                : new Audio(url);
-
-            preloadedAudio = null; // Clear preloaded reference
-
-            audioRef.current = audio;
-            activeAudioRef.current = audio;
-            setActiveAudio(audio);
-            setPlayingAudioId(messageId);
-
-            // Preload next audio chunk while current is playing (for gapless playback)
-            if (audioQueueRef.current.length > 0) {
-                const nextUrl = audioQueueRef.current[0].url;
-                preloadedAudio = new Audio(nextUrl);
-                preloadedAudio.preload = 'auto';
-                preloadedAudio.load(); // Start loading immediately
-            }
-
-            // Ensure mouth cues are sorted by start time
-            const sortedMouthCues = [...visemeData.mouthCues].sort((a, b) => a.start - b.start);
-
-            const animate = () => {
-                if (audio.paused || audio.ended) {
-                    return; // Will be handled by onended
-                }
-
-                const currentTime = audio.currentTime;
-                let current = 'X';
-
-                // Find the current viseme by checking the time
-                for (const cue of sortedMouthCues) {
-                    if (cue.start <= currentTime) {
-                        current = cue.value;
-                    } else {
-                        break; // Cues are sorted, so we can stop
-                    }
-                }
-
-                setCurrentViseme(current);
-                animationFrameIdRef.current = requestAnimationFrame(animate);
-            };
-
-            audio.onplay = () => {
-                animationFrameIdRef.current = requestAnimationFrame(animate);
-            };
-
-            // Track if this audio has already triggered playNext to prevent double calls
-            let hasCalledNext = false;
-
-            // When this audio ends, immediately play next segment (NO BREAK!)
-            audio.onended = () => {
-                if (animationFrameIdRef.current) {
-                    cancelAnimationFrame(animationFrameIdRef.current);
-                    animationFrameIdRef.current = null;
-                }
-                // Play next segment immediately for continuous speech
-                if (!hasCalledNext) {
-                    hasCalledNext = true;
-                    playNext();
-                }
-            };
-
-            audio.onerror = (e) => {
-                console.error(`[AUDIO QUEUE] Audio error for chunk: ${url.substring(url.lastIndexOf('/') + 1)}`, e);
-                // Skip to next segment on error, but only if we haven't already called playNext
-                if (!hasCalledNext) {
-                    hasCalledNext = true;
-                    playNext();
-                }
-            };
-
-            audio.play().catch(e => {
-                console.error(`[AUDIO QUEUE] Playback failed for chunk: ${url.substring(url.lastIndexOf('/') + 1)}`, e);
-                // Try next segment, but only if we haven't already called playNext
-                if (!hasCalledNext) {
-                    hasCalledNext = true;
-                    playNext();
-                }
-            });
-        };
-
-        // Start playing the first segment
-        playNext();
-    }, []); // No dependencies to avoid stale closures
-
-    // Add audio segment to queue and start playback if not already playing
-    const enqueueAudio = useCallback((url: string, visemes: VisemeData, messageId: string) => {
-        console.log(`[AUDIO QUEUE] Enqueuing chunk. Queue length before: ${audioQueueRef.current.length}`);
-        audioQueueRef.current.push({ url, visemes, messageId });
-        setAudioQueue(prev => [...prev, { url, visemes, messageId }]);
-        console.log(`[AUDIO QUEUE] Enqueued chunk. Queue length after: ${audioQueueRef.current.length}`);
-
-        // Start playback if not already playing (use ref to avoid race conditions)
-        if (!isPlayingQueueRef.current) {
-            console.log('[AUDIO QUEUE] Starting playback');
-            playAudioQueue();
-        } else {
-            console.log('[AUDIO QUEUE] Already playing, chunk will play when current finishes');
+    // Initialize Web Audio Queue on mount
+    useEffect(() => {
+        if (!webAudioQueueRef.current) {
+            console.log('[App] Initializing WebAudioQueue');
+            webAudioQueueRef.current = new WebAudioQueue(
+                (viseme) => setCurrentViseme(viseme),
+                (playing) => setIsPlayingQueue(playing),
+                (messageId) => setPlayingAudioId(messageId)
+            );
         }
-    }, [playAudioQueue]);
 
+        return () => {
+            // Cleanup on unmount
+            if (webAudioQueueRef.current) {
+                console.log('[App] Disposing WebAudioQueue');
+                webAudioQueueRef.current.dispose();
+                webAudioQueueRef.current = null;
+            }
+        };
+    }, []);
+
+    // Enqueue audio chunk for playback
+    const enqueueAudio = useCallback(async (url: string, visemes: VisemeData, messageId: string) => {
+        if (!webAudioQueueRef.current) {
+            console.error('[App] WebAudioQueue not initialized');
+            return;
+        }
+
+        try {
+            await webAudioQueueRef.current.enqueue(url, visemes, messageId);
+        } catch (error) {
+            console.error('[App] Failed to enqueue audio:', error);
+        }
+    }, []);
+
+    // Stop audio playback
 
     const handleNewSession = async () => {
         if (!currentUser) return;
@@ -955,7 +853,7 @@ const App: React.FC = () => {
     };
 
     const handleSendText = async (text: string, mediaFiles?: MediaAttachment[]) => {
-        if ((!text.trim() && (!mediaFiles || mediaFiles.length === 0)) || isLoading || !activeSessionId || !currentUser) return;
+        if ((!text.trim() && (!mediaFiles || mediaFiles.length === 0)) || isLoading || isGenerating || !activeSessionId || !currentUser) return;
 
         // Process media files
         const attachedImages: string[] = [];
@@ -1582,7 +1480,7 @@ const App: React.FC = () => {
         );
     };
 
-    const isSpeaking = !!activeAudio || isRecording;
+    const isSpeaking = !!activeAudio || isRecording || isPlayingQueue;
     const isConversationStarted = messages.length > 1;
 
     const renderPage = () => {

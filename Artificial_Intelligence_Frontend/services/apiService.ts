@@ -38,7 +38,7 @@ const authedFetch = async (url: string, init: RequestInit = {}): Promise<Respons
     const res = await fetch(url, init);
     if (res.status !== 401) return res;
     try {
-        const refreshRes = await fetch(`${API_BASE_URL}/auth/refresh`, { method: 'POST', credentials: 'include' });
+        const refreshRes = await fetch(`${API_BASE_URL}/users/refresh`, { method: 'POST', credentials: 'include' });
         if (!refreshRes.ok) {
             // Refresh failed, preventing infinite loop or dead end.
             // Dispatch event so App.tsx can handle logout/UI.
