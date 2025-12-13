@@ -39,40 +39,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 
 
-def format_rag_output(content: str) -> str:
-    """
-    Format RAG output to be more user-friendly.
-    Cleans up markdown formatting and makes content more readable.
-    """
-    if not content:
-        return content
-    
-    # Remove excessive markdown headers (#### to ##)
-    content = re.sub(r'^####\s+(.+)$', r'**\1**', content, flags=re.MULTILINE)
-    content = re.sub(r'^###\s+(.+)$', r'**\1**', content, flags=re.MULTILINE)
-    
-    # Clean up "Source & Context" section to be more natural
-    content = re.sub(r'\*\*Source & Context\*\*', '\n📄 **Source Information:**', content)
-    content = re.sub(r'From the\s+', '\n📌 ', content)
-    
-    # Clean up "Key Additional Notes" section
-    content = re.sub(r'\*\*Key Additional Notes\*\*', '\n📝 **Additional Notes:**', content)
-    
-    # Add emoji bullets for better readability
-    content = re.sub(r'^-\s+', '  • ', content, flags=re.MULTILINE)
-    
-    # Clean up "Taxes:", "Validity:", "Assumptions:" to be more readable
-    content = re.sub(r'\*\*Taxes:\*\*', '\n💰 **Taxes:**', content)
-    content = re.sub(r'\*\*Validity:\*\*', '\n📅 **Validity:**', content)
-    content = re.sub(r'\*\*Assumptions:\*\*', '\n📋 **Assumptions:**', content)
-    
-    # Format currency amounts nicely
-    content = re.sub(r'\$(\d+)\s+USD', r'💵 $\1 USD', content)
-    
-    # Add spacing around sections for better readability
-    content = re.sub(r'\n\n+', '\n\n', content)
-    
-    return content.strip()
+from .output_utils import clean_agent_output
 
 # Removed custom KB cache directory; rely on AGNO/Chroma persistence.
 
@@ -378,6 +345,28 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
         - If no relevant documents are retrieved, do not answer from memory about user-uploaded files; reply that no relevant KB documents were found.
         - When memory conflicts with the current knowledge base, resolve in favor of the KB.
         
+        8. ▶ Response Formatting for Optimal Readability
+        - Structure responses in SHORT paragraphs (2-3 sentences maximum)
+        - Add blank lines between different topics or concepts
+        - Use numbered lists for multi-step information (ALWAYS on separate lines)
+        - Put source citations and references in clearly separated sections
+        - Give important information (IDs, URLs, specific data) breathing room
+        - Example GOOD format:
+          ```
+          Based on the retrieved documents, here's what I found:
+          
+          **Key Points:**
+          
+          1. First important finding
+          2. Second important finding
+          3. Third important finding
+          
+          **Source Information:**
+          
+          📄 From document: "filename.pdf"
+          ```
+        - Example BAD format: "Based on documents here's what I found:1. Finding2. Finding3. FindingFrom document filename.pdf"
+        
  """),
     )
 
@@ -392,7 +381,10 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
                     async for chunk in run_response:
                         # In v1.8, just access chunk.content directly
                         if hasattr(chunk, 'content') and chunk.content:
-                            yield chunk.content
+                            # Clean each chunk for consistency (matching Assistant agent)
+                            cleaned_chunk = clean_agent_output(chunk.content, agent_type="rag")
+                            if cleaned_chunk:  # Only yield non-empty chunks
+                                yield cleaned_chunk
                 except Exception as e:
                     logging.error(f"Error in RAG streaming: {type(e).__name__}: {str(e)}")
                     raise
@@ -446,9 +438,9 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
                     source = getattr(doc, 'source', None) or doc.get('source', 'Unknown') if isinstance(doc, dict) else 'Unknown'
                     logging.info(f"INFO Document {i}: Title: {title} | Source: {source}")
 
-            # Format the output to be more user-friendly
-            formatted_content = format_rag_output(result_content)
-            return formatted_content
+            # Use shared output cleaning for consistency
+            formatted_content = clean_agent_output(result_content, agent_type="rag")
+            return formatted_content 
 
     except Exception as e:
         logging.error(f"Error in RAG agent: {type(e).__name__}: {str(e)}")

@@ -541,7 +541,7 @@ def refresh_token(request: Request, db: SASession = Depends(get_db)):
         role = payload.get("role")
         new_access_token = issue_access_token(user_id, role)
         
-        return {"token": new_access_token}
+        return {"access_token": new_access_token}
     except HTTPException:
         raise
     except Exception as e:

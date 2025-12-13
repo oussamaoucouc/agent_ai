@@ -6,6 +6,7 @@ import { MediaModal } from './MediaModal';
 interface ChatBubbleProps {
     message: Message;
     isPlaying: boolean;
+    isStreaming?: boolean;  // Show streaming indicator when agent is still generating
     onPlayAudio: () => void;
     onStopAudio: () => void;
 }
@@ -33,6 +34,100 @@ const parseMarkdown = (text: string): string => {
         .replace(/^\s*\]\s*[,]?\s*$/gm, '') // Remove array endings
         .replace(/^\s*[,]\s*$/gm, '') // Remove stray commas
         .trim();
+
+    // ========== EXHAUSTIVE MARKDOWN PREPROCESSING ==========
+    // Fixes ALL inline patterns that need line breaks BEFORE splitting
+    // Handles all markdown elements regardless of how streaming chunks arrived
+
+    // ----- HEADERS (# through ######) -----
+    // Fix headers that appear inline without preceding newline
+    cleanText = cleanText.replace(/([^\n])(#{1,6}\s+[^\n])/g, '$1\n\n$2');
+
+    // ----- BOLD/ITALIC SECTION HEADERS -----
+    // Fix **Title:** or **Title** patterns that should start new lines
+    cleanText = cleanText.replace(/([^\n])(\*\*[^*]+:\*\*)/g, '$1\n\n$2');
+    // Fix standalone **Bold** that starts a section (followed by :)
+    cleanText = cleanText.replace(/([^\n])(\*\*[^*]+\*\*:)/g, '$1\n\n$2');
+
+    // ----- BULLET LISTS (-, *, +) -----
+    // Fix - bullet lists inline
+    cleanText = cleanText.replace(/([^\n\-])(-\s+\S)/g, '$1\n$2');
+    // Fix * bullet lists inline (not bold markers)
+    cleanText = cleanText.replace(/([^\n\*])(\*\s+[^*])/g, '$1\n$2');
+    // Fix + bullet lists inline
+    cleanText = cleanText.replace(/([^\n\+])(\+\s+\S)/g, '$1\n$2');
+
+    // ----- NUMBERED LISTS -----
+    // Fix numbered lists (1., 2., etc.) inline
+    cleanText = cleanText.replace(/([^\n\d])(\d+\.\s+)/g, '$1\n\n$2');
+
+    // ----- BLOCKQUOTES -----
+    // Fix > blockquotes inline
+    cleanText = cleanText.replace(/([^\n])(>\s+)/g, '$1\n\n$2');
+
+    // ----- HORIZONTAL RULES -----
+    // Fix --- or *** or ___ inline
+    cleanText = cleanText.replace(/([^\n\-])(---+)/g, '$1\n\n$2');
+    cleanText = cleanText.replace(/([^\n\*])(\*\*\*+)/g, '$1\n\n$2');
+    cleanText = cleanText.replace(/([^\n_])(___+)/g, '$1\n\n$2');
+
+    // ----- COLONS THAT INTRODUCE LISTS -----
+    cleanText = cleanText.replace(/(:\s*)(\d+\.)/g, ':\n\n$2');
+    cleanText = cleanText.replace(/(:\s*)(-\s+)/g, ':\n\n$2');
+    cleanText = cleanText.replace(/(:\s*)(\*\s+[^*])/g, ':\n\n$2');
+    cleanText = cleanText.replace(/(:\s*)(\+\s+)/g, ':\n\n$2');
+    cleanText = cleanText.replace(/(:\s*)(>\s+)/g, ':\n\n$2');
+
+    // ----- EMOJI BULLETS -----
+    // Common emoji used as bullets: ✅ ❌ ⚠️ 📌 🔹 🔸 ➡️ etc.
+    cleanText = cleanText.replace(/([^\n])([\u2705\u274C\u26A0\uD83D][\uFE0F\uDCCC\uDD39\uDD38]?\s+)/g, '$1\n$2');
+
+    // ========== CLEANUP MALFORMED PATTERNS ==========
+
+    // Remove lone # symbols (malformed headers with nothing after)
+    cleanText = cleanText.replace(/^\s*#{1,6}\s*$/gm, '');
+
+    // Remove empty bullet points (all variants)
+    cleanText = cleanText.replace(/^\s*[•·●○\-\*\+]\s*$/gm, '');
+
+    // Remove empty blockquotes
+    cleanText = cleanText.replace(/^\s*>\s*$/gm, '');
+
+    // Remove empty numbered list items
+    cleanText = cleanText.replace(/^\s*\d+\.\s*$/gm, '');
+
+    // Remove lines that are just whitespace
+    cleanText = cleanText.replace(/^\s+$/gm, '');
+
+    // ========== FINAL CLEANUP ==========
+
+    // Clean up excessive blank lines
+    cleanText = cleanText.replace(/\n{3,}/g, '\n\n');
+
+    // Trim leading/trailing whitespace
+    cleanText = cleanText.trim();
+
+    // ========== RENUMBER SEQUENTIAL LISTS ==========
+    // LLM often outputs all items as "1." (valid markdown, but our renderer needs sequential)
+    // Find sequences of numbered list items and renumber them properly
+    let listCounter = 0;
+    let lastWasListItem = false;
+    cleanText = cleanText.split('\n').map(line => {
+        const match = line.match(/^(\s*)(\d+)\.\s+(.*)/);
+        if (match) {
+            if (!lastWasListItem) {
+                listCounter = 0;  // Reset counter for new list
+            }
+            listCounter++;
+            lastWasListItem = true;
+            return `${match[1]}${listCounter}. ${match[3]}`;
+        } else {
+            lastWasListItem = false;
+            return line;
+        }
+    }).join('\n');
+
+    // ========== END EXHAUSTIVE PREPROCESSING ==========
 
     const lines = cleanText.split('\n');
     let html = '';
@@ -199,7 +294,7 @@ const parseMarkdown = (text: string): string => {
 };
 
 
-export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, onPlayAudio, onStopAudio }) => {
+export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, isStreaming = false, onPlayAudio, onStopAudio }) => {
     const isUser = message.sender === User.USER;
     const [showCopied, setShowCopied] = useState(false);
     const [mediaModalOpen, setMediaModalOpen] = useState(false);
@@ -326,6 +421,30 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, onPl
                             className={`prose-p:m-0 prose-strong:text-white prose-em:text-slate-300 space-y-3 ${!isUser ? 'pb-8' : ''}`}
                             dangerouslySetInnerHTML={{ __html: parseMarkdown(message.text) }}
                         />
+                    )}
+
+                    {/* Claude/Gemini-style streaming indicator - shows below content when still generating */}
+                    {!isUser && isStreaming && message.text && (
+                        <div className="flex items-center gap-2 pt-3 pb-1 border-t border-slate-700/30 mt-3">
+                            {/* Animated typing cursor */}
+                            <div className="flex items-center gap-1">
+                                <div className="w-0.5 h-4 bg-gradient-to-b from-sky-400 to-teal-400 rounded-full animate-pulse" />
+                            </div>
+                            {/* Status text */}
+                            <span className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                                <svg className="w-3.5 h-3.5 text-sky-400 animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                </svg>
+                                Still thinking...
+                            </span>
+                            {/* Subtle pulsing dots */}
+                            <div className="flex gap-0.5">
+                                <span className="w-1 h-1 bg-sky-400/50 rounded-full animate-pulse" style={{ animationDelay: '0ms' }} />
+                                <span className="w-1 h-1 bg-sky-400/50 rounded-full animate-pulse" style={{ animationDelay: '150ms' }} />
+                                <span className="w-1 h-1 bg-sky-400/50 rounded-full animate-pulse" style={{ animationDelay: '300ms' }} />
+                            </div>
+                        </div>
                     )}
                     {!isUser && (
                         <div className={`absolute bottom-2 right-2 z-10 flex items-center gap-1.5 bg-slate-900/40 backdrop-blur-sm p-1 rounded-lg transition-opacity duration-200 border border-slate-600/50 ${isPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'

@@ -7,11 +7,12 @@ interface ChatWindowProps {
     messages: Message[];
     isLoading: boolean;
     playingAudioId: string | null;
+    streamingMessageId: string | null;  // ID of message currently being streamed
     onPlayAudio: (message: Message) => void;
     onStopAudio: () => void;
 }
 
-export const ChatWindow: React.FC<ChatWindowProps> = ({ messages, isLoading, playingAudioId, onPlayAudio, onStopAudio }) => {
+export const ChatWindow: React.FC<ChatWindowProps> = ({ messages, isLoading, playingAudioId, streamingMessageId, onPlayAudio, onStopAudio }) => {
     const endOfMessagesRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -25,6 +26,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ messages, isLoading, pla
                     key={msg.id}
                     message={msg}
                     isPlaying={playingAudioId === msg.id}
+                    isStreaming={streamingMessageId === msg.id}
                     onPlayAudio={() => onPlayAudio(msg)}
                     onStopAudio={onStopAudio}
                 />

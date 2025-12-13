@@ -138,6 +138,7 @@ const App: React.FC = () => {
     const animationFrameIdRef = useRef<number | null>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
     const isStreamingRef = useRef<boolean>(false); // Track streaming to prevent session save spam
+    const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);  // Track active streaming message for UI indicator
 
     const showAlert = (title: string, message: string) => {
         setModalConfig({
@@ -920,6 +921,7 @@ const App: React.FC = () => {
                         setMessages(prev => [...prev, assistantMessage]);
                         // Keep isLoading=true so Avatar stays in thinking/generating mode while text streams
                         isStreamingRef.current = true;
+                        setStreamingMessageId(streamingMessageId);  // Track for UI indicator
 
                         const data = await queryAgentTTS(requestParams, controller.signal, (chunk) => {
                             setMessages(prev => prev.map(m => {
@@ -950,6 +952,7 @@ const App: React.FC = () => {
                         ));
 
                         isStreamingRef.current = false;
+                        setStreamingMessageId(null);  // Clear streaming indicator
                         // Cleanup any stuck empty messages
                         setMessages(prev => prev.filter(m => m.text.trim().length > 0 || (m.attachedImages?.length ?? 0) > 0 || (m.attachedAudio?.length ?? 0) > 0 || (m.attachedVideos?.length ?? 0) > 0));
                     } else {
@@ -965,6 +968,7 @@ const App: React.FC = () => {
                         setIsLoading(false);
                         // Mark as streaming to prevent session save spam
                         isStreamingRef.current = true;
+                        setStreamingMessageId(streamingMessageId);  // Track for UI indicator
 
                         const data = await queryAgent(requestParams, controller.signal, (chunk) => {
                             // Append chunk and format immediately for smooth display
@@ -1001,6 +1005,7 @@ const App: React.FC = () => {
 
                         // Streaming done - allow session save
                         isStreamingRef.current = false;
+                        setStreamingMessageId(null);  // Clear streaming indicator
                         // Skip adding message again since we already added it
                         setIsLoading(false);
                         abortControllerRef.current = null;
@@ -1017,6 +1022,7 @@ const App: React.FC = () => {
                         };
                         setMessages(prev => [...prev, assistantMessage]);
                         isStreamingRef.current = true; // Keep isLoading=true for avatar
+                        setStreamingMessageId(streamingMessageId);  // Track for UI indicator
 
                         const data = await queryMcpTTS(requestParams, controller.signal, (chunk) => {
                             setMessages(prev => prev.map(m => {
@@ -1047,6 +1053,7 @@ const App: React.FC = () => {
                         ));
 
                         isStreamingRef.current = false;
+                        setStreamingMessageId(null);  // Clear streaming indicator
                         setMessages(prev => prev.filter(m => m.text.trim().length > 0 || (m.attachedImages?.length ?? 0) > 0 || (m.attachedAudio?.length ?? 0) > 0 || (m.attachedVideos?.length ?? 0) > 0));
                     } else {
                         // Create empty assistant message for streaming
@@ -1062,6 +1069,7 @@ const App: React.FC = () => {
                         setIsLoading(false);
                         // Mark as streaming to prevent session save spam
                         isStreamingRef.current = true;
+                        setStreamingMessageId(streamingMessageId);  // Track for UI indicator
 
                         // Stream the response with progressive updates
                         const data = await queryMcp(requestParams, controller.signal, (chunk) => {
@@ -1097,6 +1105,7 @@ const App: React.FC = () => {
 
                         // Streaming done - allow session save
                         isStreamingRef.current = false;
+                        setStreamingMessageId(null);  // Clear streaming indicator
                         // Skip adding message again since we already added it
                         setIsLoading(false);
                         abortControllerRef.current = null;
@@ -1114,6 +1123,7 @@ const App: React.FC = () => {
                         };
                         setMessages(prev => [...prev, assistantMessage]);
                         isStreamingRef.current = true; // Keep isLoading=true for avatar
+                        setStreamingMessageId(streamingMessageId);  // Track for UI indicator
 
                         const data = await queryTTS(requestParams, controller.signal, (chunk) => {
                             setMessages(prev => prev.map(m => {
@@ -1144,6 +1154,7 @@ const App: React.FC = () => {
                         ));
 
                         isStreamingRef.current = false;
+                        setStreamingMessageId(null);  // Clear streaming indicator
                         setMessages(prev => prev.filter(m => m.text.trim().length > 0 || (m.attachedImages?.length ?? 0) > 0 || (m.attachedAudio?.length ?? 0) > 0 || (m.attachedVideos?.length ?? 0) > 0));
                     } else {
                         // Create empty assistant message for streaming
@@ -1159,6 +1170,7 @@ const App: React.FC = () => {
                         setIsLoading(false);
                         // Mark as streaming to prevent session save spam
                         isStreamingRef.current = true;
+                        setStreamingMessageId(streamingMessageId);  // Track for UI indicator
 
                         // Stream the response with progressive updates
                         const data = await query(requestParams, controller.signal, (chunk) => {
@@ -1194,6 +1206,7 @@ const App: React.FC = () => {
 
                         // Streaming done - allow session save
                         isStreamingRef.current = false;
+                        setStreamingMessageId(null);  // Clear streaming indicator
                         // Skip adding message again since we already added it
                         setIsLoading(false);
                         setMessages(prev => prev.filter(m => m.text.trim().length > 0 || (m.attachedImages?.length ?? 0) > 0 || (m.attachedAudio?.length ?? 0) > 0 || (m.attachedVideos?.length ?? 0) > 0));
@@ -1223,6 +1236,7 @@ const App: React.FC = () => {
             setMessages(prev => prev.filter(m => m.text.trim().length > 0 || (m.attachedImages?.length ?? 0) > 0 || (m.attachedAudio?.length ?? 0) > 0 || (m.attachedVideos?.length ?? 0) > 0));
             setIsLoading(false);
             setIsGenerating(false);
+            setStreamingMessageId(null);  // Ensure streaming indicator is cleared
             abortControllerRef.current = null;
         }
     };
@@ -1583,6 +1597,7 @@ const App: React.FC = () => {
                             messages={messages}
                             isLoading={isLoading && !spokenResponses}
                             playingAudioId={playingAudioId}
+                            streamingMessageId={streamingMessageId}
                             onPlayAudio={handlePlayAudio}
                             onStopAudio={handleStopAudio}
                         />

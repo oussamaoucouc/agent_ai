@@ -11,6 +11,7 @@ from . import config as cfg
 from agno.models.ollama import Ollama
 from agno.models.openai import OpenAIChat
 from . import model_factory
+from .output_utils import clean_agent_output
 
 
 logging.basicConfig(level=logging.INFO)
@@ -101,10 +102,22 @@ async def run_assistant_agent_async(query, user_id, session_id, images=None, aud
         - Avoid words like "manifest," "utilize," "elucidate," or "meta-logic" unless absolutely necessary.
         - Use analogies from real life to explain abstract concepts.
 
-        3. **FORMATTING FOR READABILITY**
-        - **Use Bold Titles for sections** (Do NOT use Markdown headers like #, ##, ###, or ####).
-        - Use bullet points to break up walls of text.
-        - Keep paragraphs short (2-3 sentences max).
+        3. **FORMATTING FOR SCANNABLE READABILITY** (CRITICAL for UX)
+        - **Short Paragraphs**: Keep paragraphs to 2-3 sentences maximum
+        - **Blank Lines**: Add blank lines between different ideas or topics
+        - **Numbered Lists**: ALWAYS put numbered items on SEPARATE lines
+          - ✅ GOOD:
+            ```
+            Here's how to do it:
+            
+            1. First step explanation
+            2. Second step explanation
+            3. Third step explanation
+            ```
+          - ❌ BAD: "Here's how:1. First2. Second3. Third"
+        - **Visual Breathing Room**: Give important info space to stand out
+        - **Use Bold Titles** for sections (Do NOT use Markdown headers like #, ##, ###, or ####)
+        - Use bullet points to break up walls of text
         - **Do NOT** use code blocks (backticks) for simple text or numbers. Only use them for actual code snippets.
 
         4. **IMAGE & DOCUMENT ANALYSIS**
@@ -121,6 +134,11 @@ async def run_assistant_agent_async(query, user_id, session_id, images=None, aud
         - **Friendly:** "Here's how that works..." NOT "The mechanism functions as follows..."
         - **Humble:** "I'm not sure about that part," NOT "My data is insufficient."
         - **Human:** Use natural transitions. Avoid stiff structure.
+        
+        6. **READABILITY PRIORITY**
+        - Every response should be easy to scan and digest
+        - If you have multiple points, separate them visually
+        - Put questions or calls-to-action on new lines with spacing
  """),
     )
 
@@ -142,7 +160,10 @@ async def run_assistant_agent_async(query, user_id, session_id, images=None, aud
                     # In v1.8, just access chunk.content directly
                     async for chunk in run_response:
                         if hasattr(chunk, 'content') and chunk.content:
-                            yield chunk.content
+                            # Clean each chunk for consistency
+                            cleaned_chunk = clean_agent_output(chunk.content, agent_type="assistant")
+                            if cleaned_chunk:  # Only yield non-empty chunks
+                                yield cleaned_chunk
                 except Exception as e:
                     logging.error(f"Error in streaming: {type(e).__name__}: {str(e)}")
                     raise
@@ -189,7 +210,9 @@ async def run_assistant_agent_async(query, user_id, session_id, images=None, aud
             # --- MINIMAL LOGGING ---
             logging.info("INFO Generated assistant response for query.")
 
-            return result_content
+            # Apply output cleaning for consistency
+            cleaned_content = clean_agent_output(result_content, agent_type="assistant")
+            return cleaned_content
 
     except Exception as e:
         logging.error(f"Error in assistant agent: {type(e).__name__}: {str(e)}")

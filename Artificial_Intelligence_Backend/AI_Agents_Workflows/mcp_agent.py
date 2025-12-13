@@ -100,14 +100,25 @@ def _clean_output_artifacts(text: str) -> str:
     """Robustly remove chat-template artifact tokens and tool execution logs.
 
     Strategy:
-    - Drop lines that are only an artifact token.
-    - Remove tokens anywhere using a compiled regex with surrounding whitespace.
+    - Protect URLs from corruption during cleaning
+    - Drop lines that are only an artifact token
+    - Remove tokens anywhere using a compiled regex with surrounding whitespace
     - Remove AGNO tool execution logs (e.g., "search(query=...) completed in 1.9721s.")
-    - Remove concatenated tool names (e.g., "API-post-API-retrieve-a-")
-    - Only remove clearly identified artifact patterns, preserve all other content.
+    - Remove concatenated tool names (e.g., "API-post-API-retrieve-a-") with more specific pattern
+    - Preserve proper spacing between content blocks
+    - Only remove clearly identified artifact patterns, preserve all other content
     """
     if not isinstance(text, str):
         return text
+
+    # STEP 0: Protect URLs from being corrupted by regex cleaning
+    url_pattern = re.compile(r'(https?://[^\s<>\"]+)')
+    urls = url_pattern.findall(text)
+    url_placeholders = {}
+    for i, url in enumerate(urls):
+        placeholder = f"__PROTECTED_URL_{i}__"
+        url_placeholders[placeholder] = url
+        text = text.replace(url, placeholder)
 
     # 1) Remove tool execution logs (AGNO framework logs)
     cleaned = _TOOL_EXECUTION_LOG_REGEX.sub("", text)
@@ -115,8 +126,14 @@ def _clean_output_artifacts(text: str) -> str:
     # 1.5) Remove single API- prefix at start of text
     cleaned = _TOOL_NAME_PREFIX_REGEX.sub("", cleaned)
     
-    # 1.6) Remove concatenated tool names (malformed listings)
-    cleaned = _TOOL_NAME_CONCATENATION_REGEX.sub("", cleaned)
+    # 1.6) Remove concatenated tool names (malformed listings) - MORE SPECIFIC NOW
+    # Only match lowercase patterns with reasonable length to avoid false positives
+    cleaned = re.sub(
+        r'\b(API-[a-z]{3,15}(?:-API-[a-z]{3,15}){1,5})\b',  # More restrictive pattern
+        "",
+        cleaned,
+        flags=re.IGNORECASE
+    )
 
     # 2) Remove lines that are only an artifact token
     def _is_artifact_line(line: str) -> bool:
@@ -135,6 +152,54 @@ def _clean_output_artifacts(text: str) -> str:
     
     # 5) Clean up excessive blank lines but preserve structure
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    
+    # 6) Fix concatenated text (lowercase followed by uppercase)
+    cleaned = re.sub(r'([a-z])([A-Z])', r'\1 \2', cleaned)
+    
+    # Ensure spacing after periods, colons, question marks, and exclamations if missing
+    cleaned = re.sub(r'([.!?:])([A-Z])', r'\1 \2', cleaned)
+    
+    # ========== COMPREHENSIVE FORMAT FIXING FOR 10/10 UX ==========
+    
+    # 7) Fix markdown headers (## and ###) - MUST be on their own line
+    cleaned = re.sub(r'([^\n])(#{2,}\s+)', r'\1\n\n\2', cleaned)
+    
+    # 8) Fix bold section headers (**Title:**) - need line break before AND after
+    # Match pattern: text followed by **SomeBoldText:** 
+    cleaned = re.sub(r'([^\n])(\*\*[^*]+:\*\*)', r'\1\n\n\2', cleaned)
+    # Also add line break after bold headers if followed by content
+    cleaned = re.sub(r'(\*\*[^*]+:\*\*)([^\n\*])', r'\1\n\2', cleaned)
+    
+    # 9) Fix bullet lists (- item) - MUST be on their own line
+    cleaned = re.sub(r'([^\n\-])(\-\s+[A-Z])', r'\1\n\2', cleaned)
+    
+    # 10) Fix numbered lists (1., 2., etc.) - MUST be on their own line
+    cleaned = re.sub(r'([^\n\d])(\d+\.\s+)', r'\1\n\n\2', cleaned)
+    
+    # 11) Fix questions followed by content - add line break
+    cleaned = re.sub(r'(\?)\s*([A-Z])', r'\1\n\n\2', cleaned)
+    
+    # 12) Fix transitional phrases - add line break
+    cleaned = re.sub(r'([.!?])\s*(However,|Let me|I will|To proceed|Here\'s why|Consider)', r'\1\n\n\2', cleaned)
+    
+    # 13) Fix colons that introduce lists
+    cleaned = re.sub(r'(:\s*)(\d+\.)', r':\n\n\2', cleaned)
+    cleaned = re.sub(r'(:\s*)(\-\s+)', r':\n\n\2', cleaned)
+    
+    # 14) Ensure proper spacing after section markers like "###"
+    cleaned = re.sub(r'(#{2,}[^\n]+)([A-Z])', r'\1\n\n\2', cleaned)
+    
+    # ========== END COMPREHENSIVE FORMATTING ==========
+    
+    # 15) Ensure proper spacing after headers and bold patterns
+    cleaned = re.sub(r'(\*\*[^*]+:\*\*)(\n)([^\n])', r'\1\n\n\3', cleaned)
+    
+    # 16) RESTORE protected URLs
+    for placeholder, url in url_placeholders.items():
+        cleaned = cleaned.replace(placeholder, url)
+    
+    # 17) Final cleanup - remove duplicate blank lines
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
     
     # CRITICAL: Don't strip() individual chunks - this removes leading spaces!
     # Only strip trailing newlines to avoid excessive whitespace
@@ -313,14 +378,46 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
         
         ---
         
+        ### OUTPUT FORMATTING FOR READABILITY
+        
+        **Paragraph Structure**:
+        - Keep paragraphs SHORT (2-3 sentences maximum)
+        - Add blank line between different ideas or topics
+        - Break up long explanations into scannable chunks
+        
+        **Numbered Lists** (CRITICAL):
+        - ALWAYS put numbered items on separate lines
+        - ✅ GOOD:
+          ```
+          Would you like me to:
+          
+          1. Share the page URL?
+          2. Check if there's another way?
+          3. Look in other workspaces?
+          ```
+        - ❌ BAD: "Would you like me to:1. Share the URL?2. Check another way?3. Look elsewhere?"
+        
+        **Questions**:
+        - Put follow-up questions on new lines
+        - Add blank line before question lists
+        - Give questions breathing room
+        
+        **Special Info** (IDs, URLs, etc.):
+        - Put important identifiers on their own line
+        - ✅ GOOD: "The page ID is:\nf6aaee1c-ffb6-4fe0"
+        - ❌ BAD: "The page ID is f6aaee1c-ffb6-4fe0.Would you..."
+        
+        ---
+        
         ### CRITICAL REMINDERS
         
         1. **NO-FLUFF START**: Never begin with "That's interesting," "Great question," etc.
         2. **SIMPLICITY**: Coffee shop conversation, not technical documentation
         3. **VISIBILITY**: Tool usage is invisible; users see only natural results
-        4. **HONESTY**: "I don't know" is always acceptable when appropriate
-        5. **REQUIRED PARAMS**: Never call tools without all required parameters
-        6. **GROUNDING**: Stick to tool outputs; don't embellish with general knowledge
+        4. **READABILITY**: Short paragraphs, proper spacing, scannable format
+        5. **HONESTY**: "I don't know" is always acceptable when appropriate
+        6. **REQUIRED PARAMS**: Never call tools without all required parameters
+        7. **GROUNDING**: Stick to tool outputs; don't embellish with general knowledge
  """),
         markdown=True,
         show_tool_calls=False,

@@ -46,7 +46,8 @@ const authedFetch = async (url: string, init: RequestInit = {}): Promise<Respons
             return res;
         }
         const data = await refreshRes.json().catch(() => null) as any;
-        const newToken = data?.access_token;
+        // Handle both 'token' (from /users/refresh) and 'access_token' (from /auth/refresh)
+        const newToken = data?.token || data?.access_token;
         if (!newToken) {
             window.dispatchEvent(new CustomEvent("auth:session_expired"));
             return res;
