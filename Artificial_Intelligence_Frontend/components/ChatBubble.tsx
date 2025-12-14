@@ -35,6 +35,12 @@ const parseMarkdown = (text: string): string => {
         .replace(/^\s*[,]\s*$/gm, '') // Remove stray commas
         .trim();
 
+    // ========== FIX NUMBERED LIST + BOLD HEADER PATTERNS ==========
+    // LLM often outputs "1.\n**Bold Header**" which needs to become "1. **Bold Header**"
+    cleanText = cleanText.replace(/^(\d+)\.\s*\n+(\*\*[^\n]+)/gm, '$1. $2');
+    // Also fix "1.\nHeader Text" patterns (non-bold headers after numbers)
+    cleanText = cleanText.replace(/^(\d+)\.\s*\n+([A-Z][a-zA-Z\s]+)$/gm, '$1. $2');
+
     // ========== EXHAUSTIVE MARKDOWN PREPROCESSING ==========
     // Fixes ALL inline patterns that need line breaks BEFORE splitting
     // Handles all markdown elements regardless of how streaming chunks arrived
@@ -107,25 +113,8 @@ const parseMarkdown = (text: string): string => {
     // Trim leading/trailing whitespace
     cleanText = cleanText.trim();
 
-    // ========== RENUMBER SEQUENTIAL LISTS ==========
-    // LLM often outputs all items as "1." (valid markdown, but our renderer needs sequential)
-    // Find sequences of numbered list items and renumber them properly
-    let listCounter = 0;
-    let lastWasListItem = false;
-    cleanText = cleanText.split('\n').map(line => {
-        const match = line.match(/^(\s*)(\d+)\.\s+(.*)/);
-        if (match) {
-            if (!lastWasListItem) {
-                listCounter = 0;  // Reset counter for new list
-            }
-            listCounter++;
-            lastWasListItem = true;
-            return `${match[1]}${listCounter}. ${match[3]}`;
-        } else {
-            lastWasListItem = false;
-            return line;
-        }
-    }).join('\n');
+    // NOTE: CSS counters in index.css now handle sequential numbering across <ol> elements
+    // No JS renumbering needed - the .numbered-section class uses counter-increment
 
     // ========== END EXHAUSTIVE PREPROCESSING ==========
 
@@ -144,7 +133,7 @@ const parseMarkdown = (text: string): string => {
         } else if (blockType === 'ul') {
             html += `<ul class="list-disc list-inside space-y-2 pl-4 my-3 text-slate-200">${currentBlock.map(li => `<li class="leading-relaxed">${li}</li>`).join('')}</ul>`;
         } else if (blockType === 'ol') {
-            html += `<ol class="list-decimal list-inside space-y-2 pl-4 my-3 text-slate-200">${currentBlock.map(li => `<li class="leading-relaxed">${li}</li>`).join('')}</ol>`;
+            html += `<ol class="numbered-section space-y-2 my-3 text-slate-200">${currentBlock.map(li => `<li class="leading-relaxed">${li}</li>`).join('')}</ol>`;
         } else if (blockType === 'table' && tableRows.length > 0) {
             html += `<div class="overflow-x-auto my-4">
                 <table class="min-w-full border-collapse border border-slate-600/50 bg-slate-800/20 rounded-lg">
@@ -418,7 +407,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, isSt
 
                     {message.text && (
                         <div
-                            className={`prose-p:m-0 prose-strong:text-white prose-em:text-slate-300 space-y-3 ${!isUser ? 'pb-8' : ''}`}
+                            className={`chat-content-with-counter prose-p:m-0 prose-strong:text-white prose-em:text-slate-300 space-y-3 ${!isUser ? 'pb-8' : ''}`}
                             dangerouslySetInnerHTML={{ __html: parseMarkdown(message.text) }}
                         />
                     )}

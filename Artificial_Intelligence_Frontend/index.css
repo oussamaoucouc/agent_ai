@@ -1,5 +1,46 @@
 @import "tailwindcss";
 
 /* App-level tweaks */
-html, body, #root { height: 100%; }
-body { @apply text-white selection:bg-sky-500/30; }
+html,
+body,
+#root {
+    height: 100%;
+}
+
+body {
+    @apply text-white selection:bg-sky-500/30;
+}
+
+/* ========== CSS COUNTERS FOR NUMBERED LISTS ==========
+ * This solves the "1. 1. 1." problem when content appears between numbered items.
+ * The counter is shared across all .numbered-section <ol> elements within a chat message.
+ */
+
+/* Reset counter at the chat content container level */
+.chat-content-with-counter {
+    counter-reset: section-counter;
+}
+
+/* Each numbered-section list item increments and displays the counter */
+.chat-content-with-counter .numbered-section {
+    list-style: none !important;
+    padding-left: 0;
+    margin: 0.75rem 0;
+}
+
+.chat-content-with-counter .numbered-section>li {
+    display: block;
+    padding-left: 1rem;
+    position: relative;
+    line-height: 1.625;
+}
+
+.chat-content-with-counter .numbered-section>li::before {
+    counter-increment: section-counter;
+    content: counter(section-counter) ". ";
+    position: absolute;
+    left: 0;
+    font-weight: 600;
+    color: rgb(226 232 240);
+    /* slate-200 */
+}

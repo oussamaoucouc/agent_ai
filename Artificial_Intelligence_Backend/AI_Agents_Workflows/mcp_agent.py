@@ -10,48 +10,43 @@ import asyncio
 from agno.agent import Agent, RunResponse
 from agno.storage.postgres import PostgresStorage
 from agno.tools.mcp import MultiMCPTools, MCPTools
+from agno.tools.function import Function  # Import Agno's native Function class
 from . import config as cfg
 
 from . import model_factory
 
-class MCPToolFunction:
-    """Wrapper for MCP tool function to satisfy Agno's expected interface."""
-    def __init__(self, name, description, parameters, callable_func):
-        self.name = name
-        self.description = description
-        self.parameters = parameters
-        # Support both likely expected attribute names
-        self.entrypoint = callable_func
-        self.callable = callable_func
-        # Additional attributes that agno may expect
-        self._processed = False
-        self.strict = False
+
+def create_mcp_tool_function(tool_name: str, description: str, parameters: dict, session) -> Function:
+    """
+    Create an Agno-compatible Function object for dynamically added MCP tools.
     
-    def process_entrypoint(self, strict: bool = False):
-        """Process the entrypoint - required by agno framework."""
-        self.strict = strict
-        self._processed = True
-        # No-op for MCP tools since they're already processed
-        pass
+    This uses Agno's native Function class which properly satisfies FunctionCall
+    Pydantic validation, unlike custom wrapper classes.
     
-    def to_dict(self) -> dict:
-        """Serialize this function to a dict for model consumption - required by agno."""
-        return {
-            "name": self.name,
-            "description": self.description or f"Tool: {self.name}",
-            "parameters": self.parameters or {"type": "object", "properties": {}}
-        }
+    Args:
+        tool_name: Name of the MCP tool
+        description: Tool description
+        parameters: JSON Schema parameters for the tool
+        session: The MCP session to call tools through
     
-    def model_dump(self, **kwargs) -> dict:
-        """Pydantic v2 compatible serialization method."""
-        return self.to_dict()
+    Returns:
+        An Agno Function object that can be registered in toolkit.functions
+    """
+    # Create the async callable that invokes the MCP tool
+    async def tool_entrypoint(**kwargs):
+        result = await session.call_tool(tool_name, kwargs)
+        if result.content:
+            return str(result.content[0].text) if hasattr(result.content[0], 'text') else str(result.content[0])
+        return ""
     
-    def dict(self, **kwargs) -> dict:
-        """Pydantic v1 compatible serialization method."""
-        return self.to_dict()
-    
-    def __call__(self, *args, **kwargs):
-        return self.entrypoint(*args, **kwargs)
+    # Build a proper Agno Function using the native class
+    # The Function class accepts these standard parameters
+    return Function(
+        name=tool_name,
+        description=description or f"MCP Tool: {tool_name}",
+        parameters=parameters or {"type": "object", "properties": {}},
+        entrypoint=tool_entrypoint,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -200,6 +195,47 @@ def _clean_output_artifacts(text: str) -> str:
     
     # 17) Final cleanup - remove duplicate blank lines
     cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+    
+    # ========== RENUMBER SEQUENTIAL LISTS ==========
+    # LLM often outputs all items as "1." - renumber them to 1, 2, 3...
+    # A new section (header or ### or multiple blank lines before a heading-style line) resets the counter
+    lines = cleaned.split('\n')
+    result_lines = []
+    list_counter = 0
+    
+    # Patterns that indicate a new section (reset list counter)
+    section_break_pattern = re.compile(r'^(#{1,6}\s+|[A-Z][a-zA-Z\s]+:$|\*\*[^*]+:\*\*$)')
+    
+    for i, line in enumerate(lines):
+        # Check if this is a numbered list item
+        num_match = re.match(r'^(\s*)(\d+)\.\s+(.*)$', line)
+        
+        if num_match:
+            indent, num, content = num_match.groups()
+            list_counter += 1
+            result_lines.append(f'{indent}{list_counter}. {content}')
+        else:
+            # Check if this is a section break that should reset numbering
+            # Section breaks: headers, empty lines before headers, triple+ blank lines
+            is_section_break = False
+            
+            # Check for heading-style lines
+            if section_break_pattern.match(line.strip()):
+                is_section_break = True
+            
+            # Check for blank line followed by a heading-style line
+            if line.strip() == '' and i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+                if section_break_pattern.match(next_line):
+                    is_section_break = True
+            
+            if is_section_break:
+                list_counter = 0
+            
+            result_lines.append(line)
+    
+    cleaned = '\n'.join(result_lines)
+    # ========== END RENUMBER SEQUENTIAL LISTS ==========
     
     # CRITICAL: Don't strip() individual chunks - this removes leading spaces!
     # Only strip trailing newlines to avoid excessive whitespace
@@ -669,30 +705,26 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
                 logger.warning(f"Failed to auto-add MCP server {name}: {e}")
         
         # After ALL servers added, refresh tools in the SAME session
+        # We now use Agno's native Function class (via create_mcp_tool_function)
+        # which properly satisfies FunctionCall Pydantic validation in v1.8.4+
         logger.info("Refreshing toolkit with newly added tools...")
         try:
             await asyncio.sleep(0.5)  # Brief wait for propagation
             tools_result = await gateway_toolkit.session.list_tools()
-            logger.info(f"Gateway now has {len(tools_result.tools)} tools")
+            tool_names = [t.name for t in tools_result.tools]
+            logger.info(f"Gateway now has {len(tools_result.tools)} tools: {tool_names}")
             
-            # Manually update the toolkit's function registry
+            # Register dynamically added tools using Agno's native Function class
             for tool_def in tools_result.tools:
                 if tool_def.name not in gateway_toolkit.functions:
-                    # Create a wrapper function for this tool
-                    tool_name = tool_def.name
-                    async def tool_caller(name=tool_name, **kwargs):
-                        return await gateway_toolkit.session.call_tool(name, kwargs)
-                    
-                    # Register with Agno's function format
-                    # Register with Agno's function format using our wrapper object
-                    # Resolves AttributeError: 'dict' object has no attribute 'parameters'
-                    gateway_toolkit.functions[tool_name] = MCPToolFunction(
-                        name=tool_name,
-                        description=tool_def.description or f"Tool: {tool_name}",
+                    # Use the helper that creates Agno-compatible Function objects
+                    gateway_toolkit.functions[tool_def.name] = create_mcp_tool_function(
+                        tool_name=tool_def.name,
+                        description=tool_def.description or f"Tool: {tool_def.name}",
                         parameters=tool_def.inputSchema or {},
-                        callable_func=tool_caller
+                        session=gateway_toolkit.session
                     )
-                    logger.info(f"Registered tool: {tool_name}")
+                    logger.info(f"Registered tool with Agno Function: {tool_def.name}")
             
             final_tools = list(gateway_toolkit.functions.keys())
             logger.info(f"Final tools available to Agent: {final_tools}")
