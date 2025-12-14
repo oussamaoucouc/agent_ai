@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Message, User } from '../types';
 import { SpeakerIcon, SpeakerOffIcon, UserIcon, CopyIcon, CheckIcon, AssistantIcon, MaximizeIcon } from './icons';
 import { MediaModal } from './MediaModal';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface ChatBubbleProps {
     message: Message;
@@ -135,9 +137,11 @@ const parseMarkdown = (text: string): string => {
         } else if (blockType === 'ol') {
             html += `<ol class="numbered-section space-y-2 my-3 text-slate-200">${currentBlock.map(li => `<li class="leading-relaxed">${li}</li>`).join('')}</ol>`;
         } else if (blockType === 'table' && tableRows.length > 0) {
-            html += `<div class="overflow-x-auto my-4">
-                <table class="min-w-full border-collapse border border-slate-600/50 bg-slate-800/20 rounded-lg">
+            html += `<div class="overflow-x-auto my-3">
+                <table class="w-full border-collapse bg-slate-800/40 rounded-lg overflow-hidden">
+                    <tbody>
                     ${tableRows.join('')}
+                    </tbody>
                 </table>
             </div>`;
             tableRows = [];
@@ -151,8 +155,8 @@ const parseMarkdown = (text: string): string => {
         const cells = line.split('|').map(cell => cell.trim()).filter(cell => cell !== '');
         const tag = isHeader ? 'th' : 'td';
         const cellClass = isHeader
-            ? 'px-4 py-3 text-left font-semibold text-white bg-white/10 border border-slate-600/50'
-            : 'px-4 py-3 text-slate-200 border border-slate-600/50';
+            ? 'px-4 py-2.5 text-left font-semibold text-white bg-slate-700/50 border-b border-slate-600/50'
+            : 'px-4 py-2.5 text-slate-200 border-b border-slate-700/30';
 
         return `<tr class="${isHeader ? '' : 'hover:bg-white/5'}">
             ${cells.map(cell => `<${tag} class="${cellClass}">${parseInlineMarkdown(cell)}</${tag}>`).join('')}
@@ -249,24 +253,23 @@ const parseMarkdown = (text: string): string => {
         }
 
         // Table detection - check for pipe-separated values
+        // First, skip any line that looks like a table separator or lone pipe
+        const looksLikeSeparator = /^[\s|:\-]+$/.test(line.trim());
+        if (looksLikeSeparator) {
+            // This is a separator line (|---|---| or just dashes/pipes) - skip it
+            continue;
+        }
+
         if (line.includes('|') && line.trim().split('|').length >= 3) {
-            // Check if it's a separator line (like |---|---|)
-            const isSeparator = /^\s*\|[\s\-:]*\|[\s\-:|]*$/.test(line);
-
-            if (!isSeparator) {
-                if (blockType !== 'table') {
-                    flushBlock();
-                    blockType = 'table';
-                    isTableHeader = true;
-                }
-
-                tableRows.push(parseTableRow(line, isTableHeader));
-                isTableHeader = false;
-                continue;
-            } else {
-                // Skip separator lines but continue table processing
-                continue;
+            if (blockType !== 'table') {
+                flushBlock();
+                blockType = 'table';
+                isTableHeader = true;
             }
+
+            tableRows.push(parseTableRow(line, isTableHeader));
+            isTableHeader = false;
+            continue;
         } else if (blockType === 'table') {
             // End of table, flush it
             flushBlock();
@@ -406,10 +409,72 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, isSt
                     )}
 
                     {message.text && (
-                        <div
-                            className={`chat-content-with-counter prose-p:m-0 prose-strong:text-white prose-em:text-slate-300 space-y-3 ${!isUser ? 'pb-8' : ''}`}
-                            dangerouslySetInnerHTML={{ __html: parseMarkdown(message.text) }}
-                        />
+                        <div className={`chat-content-with-counter prose-p:m-0 prose-strong:text-white prose-em:text-slate-300 space-y-3 ${!isUser ? 'pb-8' : ''}`}>
+                            {(() => {
+                                // Split content into table and non-table sections
+                                const text = message.text;
+                                const tableRegex = /(\|[^\n]+\|\n(?:\|[-:| ]+\|\n)?(?:\|[^\n]+\|\n)*)/g;
+                                const parts: { type: 'text' | 'table'; content: string }[] = [];
+                                let lastIndex = 0;
+                                let match;
+
+                                while ((match = tableRegex.exec(text)) !== null) {
+                                    // Add text before table
+                                    if (match.index > lastIndex) {
+                                        parts.push({ type: 'text', content: text.slice(lastIndex, match.index) });
+                                    }
+                                    // Add table
+                                    parts.push({ type: 'table', content: match[1] });
+                                    lastIndex = match.index + match[0].length;
+                                }
+                                // Add remaining text
+                                if (lastIndex < text.length) {
+                                    parts.push({ type: 'text', content: text.slice(lastIndex) });
+                                }
+
+                                // If no tables found, just use custom parser
+                                if (parts.length === 0) {
+                                    return <div dangerouslySetInnerHTML={{ __html: parseMarkdown(text) }} />;
+                                }
+
+                                return parts.map((part, index) => {
+                                    if (part.type === 'table') {
+                                        return (
+                                            <div key={index} className="my-4 overflow-x-auto">
+                                                <Markdown
+                                                    remarkPlugins={[remarkGfm]}
+                                                    components={{
+                                                        table: ({ children }) => (
+                                                            <table className="w-full border-collapse bg-slate-800/40 rounded-lg overflow-hidden">
+                                                                {children}
+                                                            </table>
+                                                        ),
+                                                        thead: ({ children }) => <thead className="bg-slate-700/50">{children}</thead>,
+                                                        th: ({ children }) => (
+                                                            <th className="px-4 py-2.5 text-left font-semibold text-white border-b border-slate-600/50">
+                                                                {children}
+                                                            </th>
+                                                        ),
+                                                        td: ({ children }) => (
+                                                            <td className="px-4 py-2.5 text-slate-200 border-b border-slate-700/30">
+                                                                {children}
+                                                            </td>
+                                                        ),
+                                                        tr: ({ children }) => (
+                                                            <tr className="hover:bg-white/5">{children}</tr>
+                                                        ),
+                                                    }}
+                                                >
+                                                    {part.content}
+                                                </Markdown>
+                                            </div>
+                                        );
+                                    } else {
+                                        return <div key={index} dangerouslySetInnerHTML={{ __html: parseMarkdown(part.content) }} />;
+                                    }
+                                });
+                            })()}
+                        </div>
                     )}
 
                     {/* Claude/Gemini-style streaming indicator - shows below content when still generating */}
