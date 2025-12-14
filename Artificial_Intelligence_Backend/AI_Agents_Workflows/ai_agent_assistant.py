@@ -57,6 +57,10 @@ async def run_assistant_agent_async(query, user_id, session_id, images=None, aud
         logging.warning(f"Falling back to current model for assistant due to error resolving session model: {e}")
         session_model = cfg.get_current_model()
 
+    # Disable tool calling for models that don't support it (e.g., OCR models)
+    # OCR models fail with "does not support tools" error if any tool-related params are set
+    is_tool_unsupported_model = "ocr" in session_model_id.lower()
+
     assistant_agent = Agent(
         model=session_model,
         reasoning=False,
@@ -79,11 +83,12 @@ async def run_assistant_agent_async(query, user_id, session_id, images=None, aud
             Always listen carefully to user demands and provide helpful, accurate, and friendly responses.
             """),
         markdown=True,
-        read_chat_history=True,
+        read_chat_history=False if is_tool_unsupported_model else True,
         add_history_to_messages=True,
         num_history_responses=5,
         monitoring=True,
-        show_tool_calls=True,
+        show_tool_calls=False if is_tool_unsupported_model else True,
+        tools=[] if is_tool_unsupported_model else None,
         storage = PostgresStorage(table_name="agent_session", db_url=cfg.DB_URL),
         enable_session_summaries=False,
         instructions=dedent("""\
