@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import { ChatBubble } from './ChatBubble';
 import { Message } from '../types';
 import { AssistantIcon } from './icons';
@@ -14,13 +14,44 @@ interface ChatWindowProps {
 
 export const ChatWindow: React.FC<ChatWindowProps> = ({ messages, isLoading, playingAudioId, streamingMessageId, onPlayAudio, onStopAudio }) => {
     const endOfMessagesRef = useRef<HTMLDivElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const isUserNearBottomRef = useRef(true);
+    const lastAutoScrollTimeRef = useRef(0);
 
+    // Check if user is near the bottom of the scroll container
+    const checkIfNearBottom = useCallback(() => {
+        if (containerRef.current) {
+            const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+            // Consider "near bottom" if within 400px of the bottom
+            // Larger threshold makes it easier to escape auto-scroll during streaming
+            const threshold = 400;
+            isUserNearBottomRef.current = scrollHeight - scrollTop - clientHeight < threshold;
+        }
+    }, []);
+
+    // Handle scroll events to track user position
     useEffect(() => {
-        endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
+        const container = containerRef.current;
+        if (container) {
+            container.addEventListener('scroll', checkIfNearBottom, { passive: true });
+            return () => container.removeEventListener('scroll', checkIfNearBottom);
+        }
+    }, [checkIfNearBottom]);
+
+    // Gentle auto-scroll: only scroll if user is near bottom AND throttled to every 500ms
+    useEffect(() => {
+        const now = Date.now();
+        const timeSinceLastScroll = now - lastAutoScrollTimeRef.current;
+
+        // Throttle auto-scroll to max once per 500ms to be gentler
+        if (isUserNearBottomRef.current && timeSinceLastScroll > 500) {
+            lastAutoScrollTimeRef.current = now;
+            endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
     }, [messages, isLoading]);
 
     return (
-        <div className="flex-1 w-full overflow-y-auto px-4 space-y-8">
+        <div ref={containerRef} className="flex-1 w-full overflow-y-auto px-4 space-y-8">
             {messages.map((msg) => (
                 <ChatBubble
                     key={msg.id}

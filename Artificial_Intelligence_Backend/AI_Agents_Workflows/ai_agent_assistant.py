@@ -16,6 +16,16 @@ from .output_utils import clean_agent_output
 
 logging.basicConfig(level=logging.INFO)
 
+# Models that don't support function/tool calling
+# Add model name patterns here (case-insensitive partial match)
+TOOL_UNSUPPORTED_MODEL_PATTERNS = [
+    "ocr",
+    "olmo",# OCR models (e.g., deepseek-ocr:3b)
+    # Add more patterns as needed:
+    # "vision-only",
+    # "embedding",
+]
+
 
 async def run_assistant_agent_async(query, user_id, session_id, images=None, audio=None, videos=None, stream=False):
     """
@@ -59,7 +69,8 @@ async def run_assistant_agent_async(query, user_id, session_id, images=None, aud
 
     # Disable tool calling for models that don't support it (e.g., OCR models)
     # OCR models fail with "does not support tools" error if any tool-related params are set
-    is_tool_unsupported_model = "ocr" in session_model_id.lower()
+    model_id_lower = session_model_id.lower()
+    is_tool_unsupported_model = any(pattern in model_id_lower for pattern in TOOL_UNSUPPORTED_MODEL_PATTERNS)
 
     assistant_agent = Agent(
         model=session_model,
