@@ -318,7 +318,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, isSt
                     <AssistantIcon className="w-5 h-5 text-teal-300" />
                 </div>
             )}
-            <div className={`flex flex-col gap-1.5 max-w-2xl ${isUser ? 'items-end' : 'items-start'}`}>
+            <div className={`flex flex-col gap-1.5 ${isUser ? 'max-w-xl items-end' : 'max-w-4xl items-start'}`}>
                 <div className="font-bold text-slate-200">{isUser ? 'You' : 'Assistant'}</div>
                 <div className={`relative text-slate-200 p-4 group ${isUser ? 'bg-gradient-to-br from-indigo-500/30 via-blue-500/20 to-sky-500/20 backdrop-blur-xl border border-white/10 shadow-lg shadow-blue-500/10 rounded-2xl rounded-br-sm' : 'bg-slate-800/40 backdrop-blur-sm border border-slate-600/50 rounded-2xl rounded-tl-none'}`}>
 
@@ -451,17 +451,17 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isPlaying, isSt
                                                         ),
                                                         thead: ({ children }) => <thead className="bg-slate-700/50">{children}</thead>,
                                                         th: ({ children }) => (
-                                                            <th className="px-4 py-2.5 text-left font-semibold text-white border-b border-slate-600/50">
+                                                            <th className="px-4 py-3 text-left font-semibold text-white border-b-2 border-slate-500/50">
                                                                 {children}
                                                             </th>
                                                         ),
                                                         td: ({ children }) => (
-                                                            <td className="px-4 py-2.5 text-slate-200 border-b border-slate-700/30">
+                                                            <td className="px-4 py-3 text-slate-200 border-b border-slate-600/40">
                                                                 {children}
                                                             </td>
                                                         ),
                                                         tr: ({ children }) => (
-                                                            <tr className="hover:bg-white/5">{children}</tr>
+                                                            <tr className="hover:bg-white/5 even:bg-slate-700/20">{children}</tr>
                                                         ),
                                                     }}
                                                 >
