@@ -6,13 +6,14 @@ import { AssistantIcon } from './icons';
 interface ChatWindowProps {
     messages: Message[];
     isLoading: boolean;
+    isGenerating: boolean;
     playingAudioId: string | null;
     streamingMessageId: string | null;  // ID of message currently being streamed
     onPlayAudio: (message: Message) => void;
     onStopAudio: () => void;
 }
 
-export const ChatWindow: React.FC<ChatWindowProps> = ({ messages, isLoading, playingAudioId, streamingMessageId, onPlayAudio, onStopAudio }) => {
+export const ChatWindow: React.FC<ChatWindowProps> = ({ messages, isLoading, isGenerating, playingAudioId, streamingMessageId, onPlayAudio, onStopAudio }) => {
     const endOfMessagesRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const isUserNearBottomRef = useRef(true);
