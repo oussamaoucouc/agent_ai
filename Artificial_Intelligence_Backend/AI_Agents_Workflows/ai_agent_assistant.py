@@ -12,6 +12,7 @@ from agno.models.ollama import Ollama
 from agno.models.openai import OpenAIChat
 from . import model_factory
 from .output_utils import clean_agent_output
+from .ollama_queue import local_llm_rate_limit
 
 
 logging.basicConfig(level=logging.INFO)
@@ -159,76 +160,78 @@ async def run_assistant_agent_async(query, user_id, session_id, images=None, aud
     )
 
     try:
-        if stream:
-            # Streaming mode: return an async generator that yields content chunks
-            async def stream_generator():
-                try:
-                    # AGNO v1.8: arun with stream=True returns Iterator[RunResponse]
-                    # stream_intermediate_steps=False prevents tool execution logs from appearing
-                    run_response = await assistant_agent.arun(
-                        query,
-                        stream=True,
-                        stream_intermediate_steps=False,
-                        images=images if images else None,
-                        audio=audio if audio else None,
-                        videos=videos if videos else None
-                    )
-                    # In v1.8, just access chunk.content directly
-                    async for chunk in run_response:
-                        if hasattr(chunk, 'content') and chunk.content:
-                            # Clean each chunk for consistency
-                            cleaned_chunk = clean_agent_output(chunk.content, agent_type="assistant")
-                            if cleaned_chunk:  # Only yield non-empty chunks
-                                yield cleaned_chunk
-                except Exception as e:
-                    logging.error(f"Error in streaming: {type(e).__name__}: {str(e)}")
-                    raise
-            
-            logging.info("INFO Starting streaming assistant response for query.")
-            return stream_generator()
-        else:
-            # Non-streaming mode: return complete response
-            response = await assistant_agent.arun(
-                query,
-                images=images if images else None,
-                audio=audio if audio else None,
-                videos=videos if videos else None
-            )
-            # --- Robust error checking for response.content ---
-            # Explicit check for boolean response
-            if isinstance(response, bool):
-                raise RuntimeError(
-                    f"AGNO agent returned a boolean ({response}) instead of a response object. "
-                    "This usually means the agent or routing failed. Please check the agent configuration and query."
-                )
-
-            # Check for callable (function) or string content
-            if hasattr(response, 'content'):
-                if callable(response.content):
+        # Rate limit for local LLM providers (Ollama, Docker Model Runner)
+        async with local_llm_rate_limit(session_model_id):
+            if stream:
+                # Streaming mode: return an async generator that yields content chunks
+                async def stream_generator():
                     try:
-                        content_result = response.content()
+                        # AGNO v1.8: arun with stream=True returns Iterator[RunResponse]
+                        # stream_intermediate_steps=False prevents tool execution logs from appearing
+                        run_response = await assistant_agent.arun(
+                            query,
+                            stream=True,
+                            stream_intermediate_steps=False,
+                            images=images if images else None,
+                            audio=audio if audio else None,
+                            videos=videos if videos else None
+                        )
+                        # In v1.8, just access chunk.content directly
+                        async for chunk in run_response:
+                            if hasattr(chunk, 'content') and chunk.content:
+                                # Clean each chunk for consistency
+                                cleaned_chunk = clean_agent_output(chunk.content, agent_type="assistant")
+                                if cleaned_chunk:  # Only yield non-empty chunks
+                                    yield cleaned_chunk
                     except Exception as e:
-                        raise RuntimeError(f"Error calling response.content(): {e}")
-                    if not isinstance(content_result, str):
-                        raise RuntimeError(f"response.content() did not return a string: got {type(content_result)}")
-                    result_content = content_result
-                elif isinstance(response.content, str):
-                    result_content = response.content
+                        logging.error(f"Error in streaming: {type(e).__name__}: {str(e)}")
+                        raise
+                
+                logging.info("INFO Starting streaming assistant response for query.")
+                return stream_generator()
+            else:
+                # Non-streaming mode: return complete response
+                response = await assistant_agent.arun(
+                    query,
+                    images=images if images else None,
+                    audio=audio if audio else None,
+                    videos=videos if videos else None
+                )
+                # --- Robust error checking for response.content ---
+                # Explicit check for boolean response
+                if isinstance(response, bool):
+                    raise RuntimeError(
+                        f"AGNO agent returned a boolean ({response}) instead of a response object. "
+                        "This usually means the agent or routing failed. Please check the agent configuration and query."
+                    )
+
+                # Check for callable (function) or string content
+                if hasattr(response, 'content'):
+                    if callable(response.content):
+                        try:
+                            content_result = response.content()
+                        except Exception as e:
+                            raise RuntimeError(f"Error calling response.content(): {e}")
+                        if not isinstance(content_result, str):
+                            raise RuntimeError(f"response.content() did not return a string: got {type(content_result)}")
+                        result_content = content_result
+                    elif isinstance(response.content, str):
+                        result_content = response.content
+                    else:
+                        raise RuntimeError(
+                            f"response.content is not a string or callable, got type: {type(response.content)} and value: {response.content}"
+                        )
                 else:
                     raise RuntimeError(
-                        f"response.content is not a string or callable, got type: {type(response.content)} and value: {response.content}"
+                        f"Response object of type {type(response)} does not have a 'content' attribute. Value: {response}"
                     )
-            else:
-                raise RuntimeError(
-                    f"Response object of type {type(response)} does not have a 'content' attribute. Value: {response}"
-                )
 
-            # --- MINIMAL LOGGING ---
-            logging.info("INFO Generated assistant response for query.")
+                # --- MINIMAL LOGGING ---
+                logging.info("INFO Generated assistant response for query.")
 
-            # Apply output cleaning for consistency
-            cleaned_content = clean_agent_output(result_content, agent_type="assistant")
-            return cleaned_content
+                # Apply output cleaning for consistency
+                cleaned_content = clean_agent_output(result_content, agent_type="assistant")
+                return cleaned_content
 
     except Exception as e:
         logging.error(f"Error in assistant agent: {type(e).__name__}: {str(e)}")

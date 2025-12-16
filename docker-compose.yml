@@ -71,6 +71,9 @@ services:
     image: ollama/ollama
     ports:
       - "11434:11434"
+    environment:
+      - OLLAMA_NUM_PARALLEL=2 # Process 2 requests simultaneously
+      - OLLAMA_MAX_QUEUE=100 # Queue up to 100 pending requests
     volumes:
       - ollama_data_vol:/root/.ollama
     healthcheck:
