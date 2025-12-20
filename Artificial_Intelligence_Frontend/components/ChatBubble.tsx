@@ -1,8 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Message, User } from '../types';
-import { AssistantIcon, UserIcon, SpeakerIcon, SpeakerOffIcon, StopIcon } from './icons';
+import { AssistantIcon, UserIcon, SpeakerIcon, SpeakerOffIcon } from './icons';
 
 interface ChatBubbleProps {
     message: Message;
@@ -12,6 +12,65 @@ interface ChatBubbleProps {
     onStopAudio: () => void;
 }
 
+interface ToolCall {
+    name: string;
+    details: string;
+}
+
+/**
+ * Parses text to extract tool usage logs and clean the message.
+ * Handles patterns like:
+ * ```text
+ * duckduckgo
+ * ```
+ * (search) -
+ */
+const extractToolUsage = (text: string): { cleanText: string; toolCalls: ToolCall[] } => {
+    if (!text) return { cleanText: '', toolCalls: [] };
+
+    const toolCalls: ToolCall[] = [];
+    let cleanText = text;
+
+    // Regex to capture the specific pattern seen in screenshots
+    // Pattern: code block with tool name, followed by optional newline, then (category) -
+    // We look for common tool names and the specific log format
+    const toolPatterns = [
+        { name: 'duckduckgo', regex: /```(?:text)?\s*duckduckgo\s*```\s*\n\s*\(search\) -/gi },
+        { name: 'fetch', regex: /```(?:text)?\s*fetch\s*```\s*\n\s*\(internet access\) -/gi },
+        { name: 'memory', regex: /```(?:text)?\s*memory\s*```\s*\n\s*\(data management\) -/gi },
+        { name: 'notion', regex: /```(?:text)?\s*notion\s*```\s*\n\s*\(database.*?\) -/gi },
+        { name: 'sequentialthinking', regex: /```(?:text)?\s*sequentialthinking\s*```\s*\n\s*\(problem-solving\) -/gi },
+        // Generic fallback for other tools if they follow the pattern
+        { name: 'unknown', regex: /```(?:text)?\s*(\w+)\s*```\s*\n\s*\(([^)]+)\) -/gi }
+    ];
+
+    // First pass: specific known tools
+    toolPatterns.forEach(pattern => {
+        let match;
+        // Reset regex just in case
+        const regex = new RegExp(pattern.regex);
+
+        // We use a loop to find all occurrences
+        while ((match = regex.exec(cleanText)) !== null) {
+            const toolName = pattern.name === 'unknown' ? match[1] : pattern.name;
+            const toolDetails = pattern.name === 'unknown' ? match[2] : 'Executed';
+
+            toolCalls.push({
+                name: toolName,
+                details: toolDetails
+            });
+        }
+
+        // Remove from text
+        cleanText = cleanText.replace(regex, '');
+    });
+
+    // Clean up excessive newlines left behind
+    cleanText = cleanText.replace(/\n{3,}/g, '\n\n').trim();
+
+    return { cleanText, toolCalls };
+};
+
 /**
  * Preprocesses markdown text to fix common malformed patterns from AI output.
  * Key fix: Strip orphan ** markers that don't have a matching pair on the same line.
@@ -20,6 +79,13 @@ const preprocessMarkdown = (text: string): string => {
     if (!text) return '';
 
     let processed = text;
+
+    // Fix run-on numbered lists where text immediately precedes a number (e.g., "text1. Item")
+    // We insert two newlines to ensure markdown renders it as a proper list
+    processed = processed.replace(/([^\n])\s*(\d+\.)\s/g, '$1\n\n$2 ');
+
+    // Fix run-on bullet points (e.g., "text- Item")
+    processed = processed.replace(/([^\n])\s*([-•])\s/g, '$1\n\n$2 ');
 
     // Fix headers with no space after # (e.g., "##Title" -> "## Title")
     processed = processed.replace(/^(#{1,6})([^#\s])/gm, '$1 $2');
@@ -82,11 +148,19 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
     onStopAudio,
 }) => {
     const isUser = message.sender === User.USER;
+    const [isToolsExpanded, setIsToolsExpanded] = useState(false);
 
-    // Preprocess markdown for better rendering
-    const processedText = useMemo(() => {
-        if (isUser) return message.text;
-        return preprocessMarkdown(message.text);
+    // Process text to extract tools and fix markdown
+    const { cleanText, toolCalls } = useMemo(() => {
+        if (isUser) return { cleanText: message.text, toolCalls: [] };
+
+        // 1. Extract tool usage first
+        const { cleanText: textWithoutTools, toolCalls: extractedTools } = extractToolUsage(message.text);
+
+        // 2. Then preprocess the remaining markdown
+        const finalProcessedText = preprocessMarkdown(textWithoutTools);
+
+        return { cleanText: finalProcessedText, toolCalls: extractedTools };
     }, [message.text, isUser]);
 
     // Custom components for react-markdown
@@ -391,6 +465,39 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
                         </div>
                     )}
 
+                    {/* Tool Usage Section */}
+                    {toolCalls.length > 0 && !isUser && (
+                        <div className="mb-4">
+                            <button
+                                onClick={() => setIsToolsExpanded(!isToolsExpanded)}
+                                className="flex items-center gap-2 text-xs font-medium text-sky-400 hover:text-sky-300 transition-colors bg-slate-700/40 hover:bg-slate-700/60 px-3 py-1.5 rounded-lg border border-slate-600/30 w-full"
+                            >
+                                <span className="flex-1 flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-teal-400 animate-pulse"></span>
+                                    Used {toolCalls.length} tool{toolCalls.length !== 1 ? 's' : ''}
+                                </span>
+                                <span className={`transform transition-transform duration-200 ${isToolsExpanded ? 'rotate-180' : ''}`}>
+                                    ▼
+                                </span>
+                            </button>
+
+                            {isToolsExpanded && (
+                                <div className="mt-2 flex flex-col gap-2 p-3 bg-slate-900/50 rounded-lg border border-slate-600/30">
+                                    {toolCalls.map((tool, idx) => (
+                                        <div key={idx} className="flex items-start gap-2 text-xs">
+                                            <div className="px-1.5 py-0.5 rounded bg-slate-700 text-sky-300 font-mono">
+                                                {tool.name}
+                                            </div>
+                                            <span className="text-slate-400 py-0.5">
+                                                {tool.details}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {/* Content */}
                     <div className={`relative ${isUser ? 'text-white' : 'chat-content-with-counter'}`}>
                         {isUser ? (
@@ -400,7 +507,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
                             // Assistant messages
                             <>
                                 {/* Show skeleton loader when streaming but no content yet */}
-                                {isStreaming && !processedText.trim() ? (
+                                {isStreaming && !cleanText.trim() ? (
                                     <div className="flex flex-col gap-2 min-w-[200px]">
                                         {/* Skeleton shimmer bars */}
                                         <div
@@ -439,7 +546,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
                                         remarkPlugins={[remarkGfm]}
                                         components={markdownComponents}
                                     >
-                                        {processedText}
+                                        {cleanText}
                                     </ReactMarkdown>
                                 )}
                             </>

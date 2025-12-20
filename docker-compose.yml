@@ -76,6 +76,13 @@ services:
       - OLLAMA_MAX_QUEUE=100 # Queue up to 100 pending requests
     volumes:
       - ollama_data_vol:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
     healthcheck:
       test: [ "CMD", "ollama", "list" ]
       interval: 30s
