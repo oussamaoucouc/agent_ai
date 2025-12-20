@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 
 interface AvatarProps {
     isSpeaking: boolean;
@@ -7,187 +7,286 @@ interface AvatarProps {
     size?: 'large' | 'small';
 }
 
-export const Avatar: React.FC<AvatarProps> = ({ isSpeaking, isLoading, currentViseme, size = 'large' }) => {
-    // -------------------------------------------------------------------------
-    //  FLUID BLOB IMPLEMENTATION (Metaballs Animation)
-    // -------------------------------------------------------------------------
-    //  Core Concept: Multiple orbiting circles are blurred together using an
-    //  SVG filter (feGaussianBlur + feColorMatrix) to create a "liquid"
-    //  merging effect.
-    // -------------------------------------------------------------------------
+// ============================================================================
+// MODERN 2025 AI AVATAR - Ultra-Smooth Cross-Fade Transitions
+// Uses CSS keyframes + layered cross-fade for buttery smooth state changes
+// ============================================================================
 
-    const containerRef = useRef<HTMLDivElement>(null);
-    const animationRef = useRef<number | null>(null);
+type AvatarState = 'idle' | 'loading' | 'speaking';
 
-    // Physics state for blobs
-    // We use a central blob + orbiting satellites
-    const blobCount = 5;
-    const blobs = useRef(Array.from({ length: blobCount }).map((_, i) => ({
-        x: 0,
-        y: 0,
-        vx: (Math.random() - 0.5) * 2,
-        vy: (Math.random() - 0.5) * 2,
-        radius: i === 0 ? 35 : 15 + Math.random() * 15, // Index 0 is the "Core"
-        color: '', // Set dynamically
-        angle: Math.random() * Math.PI * 2,
-        speed: 0.02 + Math.random() * 0.03
-    })));
+interface ColorTheme {
+    primary: string;
+    secondary: string;
+    tertiary: string;
+    glow: string;
+}
 
-    // Dynamic Colors based on state
-    const [gradientClass, setGradientClass] = useState('from-cyan-400 to-blue-600');
-    const [glowColor, setGlowColor] = useState('rgba(34, 211, 238, 0.5)'); // Cyan default
+const COLOR_THEMES: Record<AvatarState, ColorTheme> = {
+    idle: {
+        primary: '#22d3ee',      // cyan-400
+        secondary: '#38bdf8',    // sky-400
+        tertiary: '#3b82f6',     // blue-500
+        glow: 'rgba(34, 211, 238, 0.4)'
+    },
+    loading: {
+        primary: '#a855f7',      // purple-500
+        secondary: '#d946ef',    // fuchsia-500
+        tertiary: '#8b5cf6',     // violet-500
+        glow: 'rgba(168, 85, 247, 0.4)'
+    },
+    speaking: {
+        primary: '#2dd4bf',      // teal-400
+        secondary: '#34d399',    // emerald-400
+        tertiary: '#22d3ee',     // cyan-400
+        glow: 'rgba(45, 212, 191, 0.5)'
+    }
+};
 
-    // Update styling based on state
+const ANIMATION_SPEEDS: Record<AvatarState, { morph: string; rotate: string; pulse: string }> = {
+    idle: { morph: '10s', rotate: '20s', pulse: '5s' },
+    loading: { morph: '5s', rotate: '10s', pulse: '2.5s' },
+    speaking: { morph: '4s', rotate: '8s', pulse: '2s' }
+};
+
+// Transition duration for cross-fade (in ms)
+const TRANSITION_DURATION = 1200;
+
+export const Avatar: React.FC<AvatarProps> = ({ isSpeaking, isLoading, size = 'large' }) => {
+    // State management for smooth cross-fade
+    const [layers, setLayers] = useState<{ state: AvatarState; opacity: number; key: number }[]>([
+        { state: 'idle', opacity: 1, key: 0 }
+    ]);
+    const keyCounter = useRef(1);
+    const transitionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Determine target state
+    const targetState: AvatarState = isLoading ? 'loading' : isSpeaking ? 'speaking' : 'idle';
+
+    // Handle state transitions
     useEffect(() => {
-        if (isLoading) {
-            setGradientClass('from-violet-400 to-fuchsia-600'); // Purple/Pink thinking
-            setGlowColor('rgba(192, 38, 211, 0.5)');
-        } else if (isSpeaking) {
-            setGradientClass('from-emerald-300 to-teal-500'); // Active Green/Teal
-            setGlowColor('rgba(45, 212, 191, 0.6)');
-        } else {
-            setGradientClass('from-cyan-400 to-blue-600'); // Neutral Blue
-            setGlowColor('rgba(34, 211, 238, 0.5)');
-        }
-    }, [isLoading, isSpeaking]);
+        const currentTopLayer = layers[layers.length - 1];
 
-    // MAIN ANIMATION LOOP
-    useEffect(() => {
-        let time = 0;
+        if (currentTopLayer.state !== targetState) {
+            // Add new layer on top with opacity 0
+            const newKey = keyCounter.current++;
+            setLayers(prev => [
+                ...prev.map(l => ({ ...l })), // Keep existing layers
+                { state: targetState, opacity: 0, key: newKey }
+            ]);
 
-        const animate = () => {
-            time += 0.05;
-
-            // Adjust physics parameters based on state
-            const excitement = isSpeaking ? 2.5 : isLoading ? 0.5 : 1.0;
-            const radiusScale = isSpeaking ? 1.2 : 1.0;
-            const centerWander = isLoading ? 5 : 2; // Core moves more when thinking
-
-            blobs.current.forEach((blob, i) => {
-                // Blob 0 is the CORE
-                if (i === 0) {
-                    // Gentle wandering center
-                    blob.x = Math.sin(time * 0.5) * centerWander;
-                    blob.y = Math.cos(time * 0.3) * centerWander;
-                    // Pulse size
-                    if (isSpeaking) {
-                        blob.radius = 35 + Math.sin(time * 10) * 3; // Rapid pulse
-                    } else if (isLoading) {
-                        blob.radius = 30 + Math.sin(time * 3) * 5; // Deep pulse
-                    } else {
-                        blob.radius = 35 + Math.sin(time) * 2; // Idle breath
-                    }
-                }
-                // Creating Orbiting Satellites
-                else {
-                    // Update angle
-                    blob.angle += blob.speed * excitement;
-
-                    // Radius from center varies
-                    const orbitRadius = (40 + Math.sin(time * i + i) * 10) * radiusScale;
-
-                    // Simple orbital mechanics
-                    blob.x = Math.cos(blob.angle) * orbitRadius;
-                    blob.y = Math.sin(blob.angle) * orbitRadius;
-                }
+            // Animate: fade in new layer, fade out old layers
+            requestAnimationFrame(() => {
+                setTimeout(() => {
+                    setLayers(prev => prev.map((l, i) => ({
+                        ...l,
+                        opacity: i === prev.length - 1 ? 1 : 0 // Top layer fully visible, others fade out
+                    })));
+                }, 50); // Small delay to ensure CSS picks up the change
             });
 
-            // Force Re-render / Update DOM
-            // We use direct DOM manipulation for performance (avoiding React render cycle for 60fps)
-            if (containerRef.current) {
-                const childDivs = containerRef.current.children;
-                blobs.current.forEach((blob, i) => {
-                    const el = childDivs[i] as HTMLElement;
-                    if (el) {
-                        el.style.transform = `translate(${blob.x}px, ${blob.y}px)`;
-                        el.style.width = `${blob.radius * 2}px`;
-                        el.style.height = `${blob.radius * 2}px`;
-                        // Centering correction
-                        el.style.marginLeft = `-${blob.radius}px`;
-                        el.style.marginTop = `-${blob.radius}px`;
-                    }
-                });
+            // Clean up old layers after transition
+            if (transitionTimeoutRef.current) {
+                clearTimeout(transitionTimeoutRef.current);
             }
-
-            animationRef.current = requestAnimationFrame(animate);
-        };
-
-        animationRef.current = requestAnimationFrame(animate);
+            transitionTimeoutRef.current = setTimeout(() => {
+                setLayers(prev => [prev[prev.length - 1]]); // Keep only the top layer
+            }, TRANSITION_DURATION + 100);
+        }
 
         return () => {
-            if (animationRef.current) cancelAnimationFrame(animationRef.current);
+            if (transitionTimeoutRef.current) {
+                clearTimeout(transitionTimeoutRef.current);
+            }
         };
-    }, [isSpeaking, isLoading]);
+    }, [targetState]);
 
+    // Inject keyframes
+    useEffect(() => {
+        const styleId = 'avatar-keyframes-v3';
+        if (!document.getElementById(styleId)) {
+            const style = document.createElement('style');
+            style.id = styleId;
+            style.textContent = `
+                @keyframes morphBlob {
+                    0%, 100% {
+                        border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
+                        transform: rotate(0deg) scale(1);
+                    }
+                    25% {
+                        border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%;
+                        transform: rotate(90deg) scale(1.015);
+                    }
+                    50% {
+                        border-radius: 50% 60% 30% 60% / 30% 60% 70% 40%;
+                        transform: rotate(180deg) scale(0.985);
+                    }
+                    75% {
+                        border-radius: 60% 40% 60% 50% / 70% 30% 50% 60%;
+                        transform: rotate(270deg) scale(1.01);
+                    }
+                }
 
-    // Determine Size Classes
-    const sizeClasses = size === 'large' ? 'w-48 h-48' : 'w-10 h-10';
-    const filterId = `goo-filter-${size}`; // Unique ID
+                @keyframes morphBlobAlt {
+                    0%, 100% {
+                        border-radius: 40% 60% 60% 40% / 70% 30% 70% 30%;
+                        transform: rotate(0deg) scale(1);
+                    }
+                    33% {
+                        border-radius: 70% 30% 50% 50% / 30% 70% 30% 70%;
+                        transform: rotate(-60deg) scale(1.02);
+                    }
+                    66% {
+                        border-radius: 30% 70% 40% 60% / 50% 40% 60% 50%;
+                        transform: rotate(-120deg) scale(0.98);
+                    }
+                }
 
-    // Loading Spinner for small size
+                @keyframes gentlePulse {
+                    0%, 100% { opacity: 0.5; transform: scale(1); }
+                    50% { opacity: 0.7; transform: scale(1.03); }
+                }
+
+                @keyframes slowRotate {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+
+                @keyframes floatY {
+                    0%, 100% { transform: translateY(0px); }
+                    50% { transform: translateY(-6px); }
+                }
+
+                @keyframes innerGlow {
+                    0%, 100% { opacity: 0.35; }
+                    50% { opacity: 0.6; }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+    }, []);
+
+    // Size config
+    const sizeConfig = size === 'large'
+        ? { container: 'w-48 h-48', blob: 140, glow: 200 }
+        : { container: 'w-10 h-10', blob: 36, glow: 50 };
+
+    // Small loading state
     if (size === 'small' && isLoading) {
         return (
-            <div className={`${sizeClasses} rounded-full bg-slate-800/20 border-slate-500/30 flex items-center justify-center`}>
+            <div className={`${sizeConfig.container} rounded-full bg-slate-800/20 border-slate-500/30 flex items-center justify-center`}>
                 <div className="w-6 h-6 border-2 border-t-sky-400 border-r-sky-400 border-b-sky-400 border-l-transparent rounded-full animate-spin"></div>
             </div>
         );
     }
 
-    return (
-        <div className="relative flex items-center justify-center">
+    // Render a single blob layer
+    const renderBlobLayer = (state: AvatarState, opacity: number, layerKey: number) => {
+        const colors = COLOR_THEMES[state];
+        const durations = ANIMATION_SPEEDS[state];
 
-            {/* 1. THE GOOEY CONTAINER */}
+        return (
             <div
-                className={`${sizeClasses} relative flex items-center justify-center transition-all duration-700`}
-                style={{ filter: `url(#${filterId})` }} // Apply the SVG filter here
-            >
-                <div ref={containerRef} className="absolute inset-0 flex items-center justify-center">
-                    {blobs.current.map((_, i) => (
-                        <div
-                            key={i}
-                            className={`absolute rounded-full bg-linear-to-br ${gradientClass} transition-colors duration-700`}
-                            style={{
-                                width: '50px',
-                                height: '50px',
-                                left: '50%',
-                                top: '50%',
-                                willChange: 'transform, width, height',
-                            }}
-                        />
-                    ))}
-                </div>
-            </div>
-
-            {/* 2. GLOW EFFECT (Outside the filter to stay soft) */}
-            <div
-                className={`absolute inset-0 rounded-full blur-2xl transition-all duration-700 opacity-60 pointer-events-none`}
+                key={layerKey}
+                className="absolute inset-0 flex items-center justify-center pointer-events-none"
                 style={{
-                    backgroundColor: glowColor,
-                    transform: 'scale(1.2)'
+                    opacity,
+                    transition: `opacity ${TRANSITION_DURATION}ms cubic-bezier(0.25, 0.1, 0.25, 1.0)`,
                 }}
-            />
+            >
+                {/* Outer Glow */}
+                <div
+                    className="absolute rounded-full"
+                    style={{
+                        width: `${sizeConfig.glow}px`,
+                        height: `${sizeConfig.glow}px`,
+                        background: `radial-gradient(circle, ${colors.glow} 0%, transparent 70%)`,
+                        animation: `gentlePulse ${durations.pulse} ease-in-out infinite`,
+                        filter: 'blur(25px)',
+                    }}
+                />
 
-            {/* 3. SVG FILTER DEFINITION (Hidden) */}
-            {/* 
-                Explanation: 
-                - feGaussianBlur: Blurs the shapes so they overlap.
-                - feColorMatrix: Increases slight opacity to 1 (solid) and cuts off transparent edges.
-                                 This creates the sharp "liquid" edge where blurred elements meet.
-            */}
-            <svg style={{ position: 'absolute', width: 0, height: 0, pointerEvents: 'none' }}>
-                <defs>
-                    <filter id={filterId}>
-                        <feGaussianBlur in="SourceGraphic" stdDeviation={size === 'large' ? "12" : "4"} result="blur" />
-                        <feColorMatrix
-                            in="blur"
-                            mode="matrix"
-                            values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 19 -9"
-                            result="goo"
-                        />
-                        <feComposite in="SourceGraphic" in2="goo" operator="atop" />
-                    </filter>
-                </defs>
-            </svg>
+                {/* Rotating conic glow */}
+                <div
+                    className="absolute rounded-full"
+                    style={{
+                        width: `${sizeConfig.blob * 1.35}px`,
+                        height: `${sizeConfig.blob * 1.35}px`,
+                        background: `conic-gradient(from 0deg, ${colors.primary}30, ${colors.secondary}30, ${colors.tertiary}30, ${colors.primary}30)`,
+                        animation: `slowRotate ${durations.rotate} linear infinite`,
+                        filter: 'blur(18px)',
+                        opacity: 0.5,
+                    }}
+                />
+
+                {/* Main Blob */}
+                <div
+                    className="absolute"
+                    style={{
+                        width: `${sizeConfig.blob}px`,
+                        height: `${sizeConfig.blob}px`,
+                        background: `linear-gradient(135deg, ${colors.primary} 0%, ${colors.secondary} 50%, ${colors.tertiary} 100%)`,
+                        animation: `morphBlob ${durations.morph} ease-in-out infinite`,
+                        boxShadow: `
+                            inset 0 0 40px rgba(255,255,255,0.25),
+                            inset -12px -12px 40px rgba(0,0,0,0.15),
+                            0 0 50px ${colors.glow}
+                        `,
+                    }}
+                />
+
+                {/* Secondary overlay blob for depth */}
+                <div
+                    className="absolute"
+                    style={{
+                        width: `${sizeConfig.blob * 0.88}px`,
+                        height: `${sizeConfig.blob * 0.88}px`,
+                        background: `linear-gradient(315deg, ${colors.secondary}bb 0%, ${colors.primary}bb 100%)`,
+                        animation: `morphBlobAlt ${durations.morph} ease-in-out infinite`,
+                        animationDelay: '-2.5s',
+                        mixBlendMode: 'overlay',
+                        opacity: 0.7,
+                    }}
+                />
+
+                {/* Inner highlight - glass effect */}
+                <div
+                    className="absolute rounded-full"
+                    style={{
+                        width: `${sizeConfig.blob * 0.55}px`,
+                        height: `${sizeConfig.blob * 0.45}px`,
+                        background: `radial-gradient(ellipse at 30% 30%, rgba(255,255,255,0.45) 0%, transparent 70%)`,
+                        top: size === 'large' ? '22%' : '12%',
+                        left: size === 'large' ? '22%' : '12%',
+                        animation: `innerGlow ${durations.pulse} ease-in-out infinite`,
+                        borderRadius: '50%',
+                        transform: 'rotate(-25deg)',
+                    }}
+                />
+
+                {/* Subtle core glow */}
+                <div
+                    className="absolute rounded-full pointer-events-none"
+                    style={{
+                        width: `${sizeConfig.blob * 0.35}px`,
+                        height: `${sizeConfig.blob * 0.35}px`,
+                        background: `radial-gradient(circle, ${colors.primary}70 0%, transparent 70%)`,
+                        filter: 'blur(12px)',
+                        opacity: state === 'speaking' ? 0.85 : 0.55,
+                    }}
+                />
+            </div>
+        );
+    };
+
+    return (
+        <div
+            className={`${sizeConfig.container} relative flex items-center justify-center`}
+            style={{
+                animation: size === 'large' ? `floatY 8s ease-in-out infinite` : 'none'
+            }}
+        >
+            {/* Render all active layers - older layers fade out, newest fades in */}
+            {layers.map(layer => renderBlobLayer(layer.state, layer.opacity, layer.key))}
         </div>
     );
 };

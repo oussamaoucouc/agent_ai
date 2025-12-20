@@ -1727,6 +1727,7 @@ const App: React.FC = () => {
                             currentViseme={currentViseme}
                             isLoading={isLoading}
                             isConversationStarted={isConversationStarted}
+                            onStopAudio={handleStopAudio}
                         />
                     </div>
                 </aside>

@@ -44,3 +44,42 @@ body {
     color: rgb(226 232 240);
     /* slate-200 */
 }
+
+/* ========== MODERN THINKING ANIMATION ==========
+ * Gemini/ChatGPT-style thinking indicator with bouncing dots and shimmer text
+ */
+
+@keyframes thinkingDot {
+
+    0%,
+    80%,
+    100% {
+        transform: scale(0.6);
+        opacity: 0.4;
+    }
+
+    40% {
+        transform: scale(1.1);
+        opacity: 1;
+    }
+}
+
+@keyframes shimmerText {
+    0% {
+        background-position: 200% 50%;
+    }
+
+    100% {
+        background-position: -200% 50%;
+    }
+}
+
+@keyframes skeletonShimmer {
+    0% {
+        background-position: 200% 50%;
+    }
+
+    100% {
+        background-position: -200% 50%;
+    }
+}

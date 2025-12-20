@@ -335,12 +335,44 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
                 <div className={`font-semibold text-sm text-slate-200 flex items-center gap-2`}>
                     {isUser ? 'You' : 'Assistant'}
                     {isStreaming && !isUser && (
-                        <span className="text-xs font-normal text-sky-400/80 flex items-center gap-1">
-                            <span className="relative flex h-2 w-2">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-2 w-2 bg-sky-500"></span>
+                        <span className="text-xs font-normal text-sky-400/90 flex items-center gap-2">
+                            {/* Modern thinking animation - animated dots with shimmer */}
+                            <span className="flex items-center gap-0.5">
+                                <span
+                                    className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-sky-400 to-cyan-400"
+                                    style={{
+                                        animation: 'thinkingDot 1.4s ease-in-out infinite',
+                                        animationDelay: '0s'
+                                    }}
+                                />
+                                <span
+                                    className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-sky-400 to-cyan-400"
+                                    style={{
+                                        animation: 'thinkingDot 1.4s ease-in-out infinite',
+                                        animationDelay: '0.2s'
+                                    }}
+                                />
+                                <span
+                                    className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-sky-400 to-cyan-400"
+                                    style={{
+                                        animation: 'thinkingDot 1.4s ease-in-out infinite',
+                                        animationDelay: '0.4s'
+                                    }}
+                                />
                             </span>
-                            generating
+                            <span
+                                className="relative overflow-hidden"
+                                style={{
+                                    background: 'linear-gradient(90deg, rgba(56,189,248,0.9) 0%, rgba(34,211,238,1) 50%, rgba(56,189,248,0.9) 100%)',
+                                    backgroundSize: '200% 100%',
+                                    WebkitBackgroundClip: 'text',
+                                    WebkitTextFillColor: 'transparent',
+                                    backgroundClip: 'text',
+                                    animation: 'shimmerText 2s ease-in-out infinite'
+                                }}
+                            >
+                                Thinking
+                            </span>
                         </span>
                     )}
                 </div>
@@ -365,13 +397,52 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
                             // User messages - simple text, no markdown
                             <p className="leading-relaxed whitespace-pre-wrap">{message.text}</p>
                         ) : (
-                            // Assistant messages - full markdown rendering
-                            <ReactMarkdown
-                                remarkPlugins={[remarkGfm]}
-                                components={markdownComponents}
-                            >
-                                {processedText}
-                            </ReactMarkdown>
+                            // Assistant messages
+                            <>
+                                {/* Show skeleton loader when streaming but no content yet */}
+                                {isStreaming && !processedText.trim() ? (
+                                    <div className="flex flex-col gap-2 min-w-[200px]">
+                                        {/* Skeleton shimmer bars */}
+                                        <div
+                                            className="h-3 rounded-full bg-slate-600/40"
+                                            style={{
+                                                width: '85%',
+                                                animation: 'skeletonShimmer 1.5s ease-in-out infinite',
+                                                background: 'linear-gradient(90deg, rgba(100,116,139,0.3) 25%, rgba(148,163,184,0.4) 50%, rgba(100,116,139,0.3) 75%)',
+                                                backgroundSize: '200% 100%'
+                                            }}
+                                        />
+                                        <div
+                                            className="h-3 rounded-full bg-slate-600/40"
+                                            style={{
+                                                width: '70%',
+                                                animation: 'skeletonShimmer 1.5s ease-in-out infinite',
+                                                animationDelay: '0.15s',
+                                                background: 'linear-gradient(90deg, rgba(100,116,139,0.3) 25%, rgba(148,163,184,0.4) 50%, rgba(100,116,139,0.3) 75%)',
+                                                backgroundSize: '200% 100%'
+                                            }}
+                                        />
+                                        <div
+                                            className="h-3 rounded-full bg-slate-600/40"
+                                            style={{
+                                                width: '55%',
+                                                animation: 'skeletonShimmer 1.5s ease-in-out infinite',
+                                                animationDelay: '0.3s',
+                                                background: 'linear-gradient(90deg, rgba(100,116,139,0.3) 25%, rgba(148,163,184,0.4) 50%, rgba(100,116,139,0.3) 75%)',
+                                                backgroundSize: '200% 100%'
+                                            }}
+                                        />
+                                    </div>
+                                ) : (
+                                    // Full markdown rendering
+                                    <ReactMarkdown
+                                        remarkPlugins={[remarkGfm]}
+                                        components={markdownComponents}
+                                    >
+                                        {processedText}
+                                    </ReactMarkdown>
+                                )}
+                            </>
                         )}
                     </div>
 

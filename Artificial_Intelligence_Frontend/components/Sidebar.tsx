@@ -399,23 +399,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             {mcpToolsCatalog.some(isDockerGateway) && (
                                 <>
                                     {/* Compact Autonomous Mode Card */}
-                                    <div className={`relative overflow-hidden rounded-lg p-[1px] transition-all duration-300 ${isDockerGatewayActive ? 'bg-gradient-to-r from-orange-700/60 via-amber-700/50 to-orange-700/60' : 'bg-slate-700/40'}`}>
+                                    <div className={`relative overflow-hidden rounded-lg p-[1px] transition-all duration-300 ${isDockerGatewayActive ? 'bg-gradient-to-r from-sky-600/60 via-cyan-600/50 to-sky-600/60' : 'bg-slate-700/40'}`}>
                                         <div className="relative bg-slate-900/95 backdrop-blur-sm rounded-lg p-3">
                                             {/* Header */}
                                             <div className="flex items-center justify-between mb-2 relative z-10">
                                                 <div className="flex items-center gap-2">
-                                                    <div className={`p-1 rounded transition-all duration-300 ${isDockerGatewayActive ? 'bg-orange-700/80' : 'bg-slate-700/60'}`}>
-                                                        <svg className={`w-3.5 h-3.5 ${isDockerGatewayActive ? 'text-orange-200' : 'text-slate-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <div className={`p-1 rounded transition-all duration-300 ${isDockerGatewayActive ? 'bg-sky-600/80' : 'bg-slate-700/60'}`}>
+                                                        <svg className={`w-3.5 h-3.5 ${isDockerGatewayActive ? 'text-sky-200' : 'text-slate-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                                                         </svg>
                                                     </div>
-                                                    <h3 className={`text-xs font-medium ${isDockerGatewayActive ? 'text-orange-300' : 'text-slate-400'}`}>
+                                                    <h3 className={`text-xs font-medium ${isDockerGatewayActive ? 'text-sky-300' : 'text-slate-400'}`}>
                                                         Autonomous Mode
                                                     </h3>
                                                 </div>
                                                 {isDockerGatewayActive && (
-                                                    <span className="flex items-center gap-1 text-[9px] font-medium bg-orange-800/60 text-orange-200 px-1.5 py-0.5 rounded-full">
-                                                        <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse"></span>
+                                                    <span className="flex items-center gap-1 text-[9px] font-medium bg-sky-800/60 text-sky-200 px-1.5 py-0.5 rounded-full">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse"></span>
                                                         ACTIVE
                                                     </span>
                                                 )}
@@ -431,7 +431,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                                             onClick={() => toggleMcpTool(tool.label)}
                                                             disabled={!canSelectTools}
                                                             className={`w-full px-3 py-2 text-xs rounded-md transition-all duration-200 border focus:outline-none ${isSelected
-                                                                ? 'bg-orange-800/70 text-orange-100 font-medium border-orange-700/50'
+                                                                ? 'bg-sky-600/70 text-sky-100 font-medium border-sky-500/50'
                                                                 : canSelectTools
                                                                     ? 'bg-slate-800/60 hover:bg-slate-800/80 text-slate-300 border-slate-600/50 hover:border-slate-500/60'
                                                                     : 'bg-slate-800/30 opacity-50 cursor-not-allowed text-slate-500 border-slate-700/30'
