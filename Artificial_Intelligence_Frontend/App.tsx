@@ -901,7 +901,8 @@ const App: React.FC = () => {
             sender: User.USER,
             attachedImages: attachedImages.length > 0 ? attachedImages : undefined,
             attachedAudio: attachedAudio.length > 0 ? attachedAudio : undefined,
-            attachedVideos: attachedVideos.length > 0 ? attachedVideos : undefined
+            attachedVideos: attachedVideos.length > 0 ? attachedVideos : undefined,
+            createdAt: new Date().toISOString()
         };
         setMessages(prev => {
             // Defensive: duplicate check
@@ -934,6 +935,7 @@ const App: React.FC = () => {
                             id: streamingMessageId,
                             text: '',
                             sender: User.ASSISTANT,
+                            createdAt: new Date().toISOString()
                         };
                         setMessages(prev => [...prev, assistantMessage]);
                         // Keep isLoading=true so Avatar stays in thinking/generating mode while text streams
@@ -998,6 +1000,7 @@ const App: React.FC = () => {
                             id: streamingMessageId,
                             text: '',
                             sender: User.ASSISTANT,
+                            createdAt: new Date().toISOString()
                         };
                         setMessages(prev => [...prev, assistantMessage]);
                         // Stop showing loading indicator since we're now streaming
@@ -1117,6 +1120,7 @@ const App: React.FC = () => {
                             id: streamingMessageId,
                             text: '',
                             sender: User.ASSISTANT,
+                            createdAt: new Date().toISOString()
                         };
                         // Add empty message immediately for smooth UX
                         setMessages(prev => [...prev, assistantMessage]);
@@ -1299,6 +1303,7 @@ const App: React.FC = () => {
                     id: crypto.randomUUID(),
                     text: "Sorry, I encountered an error. Please try again.",
                     sender: User.ASSISTANT,
+                    createdAt: new Date().toISOString()
                 };
                 // Remove any empty "thinking" messages before adding error
                 setMessages(prev => [
@@ -1411,6 +1416,7 @@ const App: React.FC = () => {
                     sender: User.ASSISTANT,
                     audioUrl,
                     visemes: data.visemes,
+                    createdAt: new Date().toISOString()
                 };
                 return [...prev, userMessage, assistantMessage];
             });
@@ -1431,6 +1437,7 @@ const App: React.FC = () => {
                     id: crypto.randomUUID(),
                     text: "Sorry, I couldn't process the audio. Please try again.",
                     sender: User.ASSISTANT,
+                    createdAt: new Date().toISOString()
                 };
                 setMessages(prev => [...prev, errorMessage]);
             }

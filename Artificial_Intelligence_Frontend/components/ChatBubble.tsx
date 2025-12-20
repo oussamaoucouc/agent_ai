@@ -80,52 +80,85 @@ const preprocessMarkdown = (text: string): string => {
 
     let processed = text;
 
-    // Fix run-on numbered lists where text immediately precedes a number (e.g., "text1. Item")
-    // We insert two newlines to ensure markdown renders it as a proper list
-    processed = processed.replace(/([^\n])\s*(\d+\.)\s/g, '$1\n\n$2 ');
+    // STEP 0: Normalize unicode characters that look like asterisks but aren't
+    // Various unicode asterisk-like characters: ＊ (fullwidth), ⁎ (low asterisk), ✱, etc.
+    processed = processed.replace(/[＊⁎✱∗⋆]/g, '*');
+    // Normalize unicode hyphens/dashes to ASCII hyphen
+    processed = processed.replace(/[‐‑‒–—―−]/g, '-');
 
-    // Fix run-on bullet points (e.g., "text- Item")
-    processed = processed.replace(/([^\n])\s*([-•])\s/g, '$1\n\n$2 ');
+    // STEP 1: Remove FALSE bullet markers at start of lines
+    // If a line starts with "- " followed by lowercase, it's a continuation, not a bullet
+    // "- from January..." -> "from January..."
+    processed = processed.replace(/^-\s+([a-z])/gm, '$1');
 
-    // Fix headers with no space after # (e.g., "##Title" -> "## Title")
+    // STEP 2: Fix split parentheticals - remove newlines inside parentheses
+    processed = processed.replace(/\(([^)]*)\)/g, (match) => {
+        return match.replace(/\s*\n+\s*/g, ' ');
+    });
+
+    // STEP 3: Unescape escaped asterisks (AI sometimes outputs \* instead of *)
+    processed = processed.replace(/\\\*/g, '*');
+
+    // STEP 4: Strip truly orphan single asterisks (NOT part of ** bold)
+    // Only strip: word* followed by space/punctuation (e.g., "Apprentice* a" -> "Apprentice a")
+    // This preserves **bold** formatting
+    processed = processed.replace(/(\w)\*(\s|[.,!?;:])/g, '$1$2');
+
+    // STEP 4: Fix squashed table rows
+    processed = processed.replace(/\|\|/g, '|\n|');
+
+    // STEP 5: Fix tables starting on same line as text
+    processed = processed.replace(/(^|\n)([^\n|]+)(\|[^|\n]*\|[^|\n]*\|)/g, '$1$2\n\n$3');
+
+    // STEP 6: Fix inline section headers ("Header: - Subheader:" pattern)
+    // Triggers on sentence-ending punctuation OR colon before " - "
+    processed = processed.replace(/([.!?:)])\s*-\s+(\*{0,2}[A-Z])/g, '$1\n\n- $2');
+
+    // STEP 7: Fix run-on sentence spacing (e.g., "Hello.World" -> "Hello. World")
+    processed = processed.replace(/([.!?])([A-Za-z])/g, '$1 $2');
+
+    // STEP 8: Strip stray asterisks after colons (e.g., "Title:*" -> "Title:")
+    processed = processed.replace(/:(\*+)(\s|$)/g, ':$2');
+
+    // STEP 9: Fix headers with no space after #
     processed = processed.replace(/^(#{1,6})([^#\s])/gm, '$1 $2');
 
-    // Fix headers merged with bold (e.g., "##**Title**" -> "## **Title**")
+    // STEP 10: Fix headers merged with bold
     processed = processed.replace(/^(#{1,6})\s*\*\*/gm, '$1 **');
 
-    // CRITICAL: Strip orphan ** markers on each line
-    // If a line has an odd number of **, remove all ** from that line
-    // This prevents raw ** from appearing in output
-    const lines = processed.split('\n');
-    processed = lines.map(line => {
-        const boldMarkers = line.match(/\*\*/g);
-        if (boldMarkers && boldMarkers.length % 2 !== 0) {
-            // Odd number - unbalanced. Remove all ** from this line
+    // STEP 11: Fix orphan ** markers (unbalanced bold)
+    // Process line by line: if a line has odd number of **, strip ALL ** from that line
+    // This handles cases like "**Header:" which has only opening bold
+    processed = processed.split('\n').map(line => {
+        const doubleAsteriskCount = (line.match(/\*\*/g) || []).length;
+        if (doubleAsteriskCount % 2 !== 0) {
+            // Odd count = unbalanced, strip all **
             return line.replace(/\*\*/g, '');
         }
         return line;
     }).join('\n');
 
-    // Also strip single * at end of lines that look orphaned (e.g., "text .*")  
+    // STEP 12: Strip orphan single * at end of lines
     processed = processed.replace(/\s\*\s*$/gm, '');
     processed = processed.replace(/\.\s*\*$/gm, '.');
 
-    // Remove empty bullet points (just "•" or "-" with nothing after)
-    processed = processed.replace(/^[-•]\s*$/gm, '');
+    // STEP 13: Remove empty bullet points
+    processed = processed.replace(/^[-•*]\s*$/gm, '');
 
-    // Fix multiple consecutive blank lines (normalize to max 2)
+    // STEP 14: Normalize multiple consecutive blank lines
     processed = processed.replace(/\n{3,}/g, '\n\n');
 
-    // Ensure code blocks have proper language specifier line breaks
+    // STEP 15: Ensure code blocks have proper line breaks
     processed = processed.replace(/```(\w+)([^\n])/g, '```$1\n$2');
 
-    // Close any trailing incomplete code fence
+    // STEP 16: Close any trailing incomplete code fence
     if ((processed.match(/```/g) || []).length % 2 !== 0) {
         processed = processed + '\n```';
     }
 
     return processed.trim();
 };
+
 
 /**
  * Extract language from code block className
@@ -199,7 +232,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
 
         // Paragraphs
         p: ({ children, ...props }: any) => (
-            <p className="text-slate-200 leading-relaxed mb-3 last:mb-0" {...props}>
+            <p className="text-slate-200 leading-relaxed mb-2 last:mb-0" {...props}>
                 {children}
             </p>
         ),
@@ -233,14 +266,14 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
 
         // Unordered lists
         ul: ({ children, ...props }: any) => (
-            <ul className="list-disc list-outside ml-5 my-3 space-y-1.5 text-slate-200" {...props}>
+            <ul className="list-disc list-outside pl-5 my-2 space-y-1 text-slate-200" {...props}>
                 {children}
             </ul>
         ),
 
         // Ordered lists
         ol: ({ children, ...props }: any) => (
-            <ol className="list-decimal list-outside ml-5 my-3 space-y-1.5 text-slate-200" {...props}>
+            <ol className="list-decimal list-outside pl-6 my-2 space-y-1 text-slate-200" {...props}>
                 {children}
             </ol>
         ),
@@ -264,10 +297,17 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
 
         // Inline code
         code: ({ inline, className, children, ...props }: any) => {
-            if (inline) {
+            const codeString = String(children).replace(/\n$/, '');
+            const hasLanguage = className && className.startsWith('language-');
+            const hasNewlines = codeString.includes('\n');
+
+            // Treat as inline if: explicitly inline, OR no language class AND no newlines
+            const isInline = inline === true || (!hasLanguage && !hasNewlines);
+
+            if (isInline) {
                 return (
                     <code
-                        className="px-1.5 py-0.5 bg-slate-700/80 text-sky-300 rounded text-sm font-mono"
+                        className="px-2 py-1 mx-0.5 bg-slate-700/80 text-sky-300 rounded text-sm font-mono"
                         {...props}
                     >
                         {children}
@@ -286,7 +326,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
                         </span>
                         <button
                             onClick={() => {
-                                navigator.clipboard.writeText(String(children).replace(/\n$/, ''));
+                                navigator.clipboard.writeText(codeString);
                             }}
                             className="text-xs text-slate-400 hover:text-sky-400 transition-colors px-2 py-1 rounded hover:bg-slate-700/50"
                         >
@@ -395,7 +435,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
                     </>
                 ) : (
                     <>
-                        <div className="absolute inset-0 rounded-full bg-gradient-to-r from-sky-400 via-teal-400 to-cyan-400 blur-md opacity-40 animate-pulse"></div>
+                        <div className="absolute inset-1 rounded-full bg-gradient-to-r from-sky-400 via-teal-400 to-cyan-400 blur-sm opacity-20"></div>
                         <div className="absolute inset-0 rounded-full bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-600/50 flex items-center justify-center shadow-xl">
                             <AssistantIcon className="w-5 h-5 text-teal-300" />
                         </div>
@@ -453,7 +493,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
 
                 {/* Message bubble */}
                 <div
-                    className={`relative overflow-hidden w-fit px-5 py-4 rounded-2xl shadow-2xl backdrop-blur-xl border ${isUser
+                    className={`relative overflow-hidden w-fit px-8 py-5 rounded-2xl shadow-2xl backdrop-blur-xl border ${isUser
                         ? 'bg-slate-800/60 border-slate-500/40 rounded-tr-none'
                         : 'bg-slate-800/60 border-slate-500/30 rounded-tl-none'
                         }`}

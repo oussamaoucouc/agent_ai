@@ -19,7 +19,14 @@ export const AvatarView: React.FC<AvatarViewProps> = ({
 }) => {
     return (
         <div className="flex flex-col items-center justify-center p-8 text-center">
-            <Avatar isSpeaking={isSpeaking} currentViseme={currentViseme} isLoading={isLoading} />
+            {/* Avatar wrapper with slow spin animation during loading (Generating Speaking) phase */}
+            <div
+                style={{
+                    animation: isLoading ? 'spin 2s linear infinite' : 'none',
+                }}
+            >
+                <Avatar isSpeaking={isSpeaking} currentViseme={currentViseme} isLoading={isLoading} />
+            </div>
             <h2 className="mt-8 text-2xl font-bold text-slate-200">AI Assistant</h2>
             {isLoading ? (
                 <p className="mt-2 text-sky-300 max-w-sm">Generating Speaking...</p>

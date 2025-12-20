@@ -74,6 +74,8 @@ services:
     environment:
       - OLLAMA_NUM_PARALLEL=2 # Process 2 requests simultaneously
       - OLLAMA_MAX_QUEUE=100 # Queue up to 100 pending requests
+      - OLLAMA_FLASH_ATTENTION=1 # Enable Flash Attention for faster inference
+      - OLLAMA_KEEP_ALIVE=24h # Keep model in memory for 24 hours
     volumes:
       - ollama_data_vol:/root/.ollama
     deploy:

@@ -28,6 +28,7 @@ export interface Message {
     attachedImages?: string[];    // URLs to uploaded images
     attachedAudio?: string[];     // URLs to uploaded audio files
     attachedVideos?: string[];    // URLs to uploaded videos
+    createdAt?: string;           // ISO timestamp for ordering
 }
 
 // Media attachment for frontend state management

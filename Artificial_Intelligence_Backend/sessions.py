@@ -353,23 +353,25 @@ async def create_session(request: CreateSessionRequest, http_request: Request = 
         name = f"Session - {datetime.now().isoformat()}"
         s = SessionDB(id=session_id, user_id=uid, name=name, created_at=now)
         db.add(s)
-        greet_msg = MessageDB(
-            id=str(uuid.uuid4()),
-            session_id=session_id,
-            text="Hello! I am your AI Assistant. How can I help you today?",
-            sender="assistant",
-            created_at=now,
-        )
-        db.add(greet_msg)
         # Ensure user-level settings exist once; do not duplicate per session
         if not db.query(SessionSettingsDB).filter(SessionSettingsDB.user_id == uid).first():
             default_voice = get_default_voice()
             from AI_Agents_Workflows.config import get_default_model_id
             default_model = get_default_model_id()
             db.add(SessionSettingsDB(user_id=uid, voice=default_voice, model_id=default_model, updated_at=now))
+        
+        # Add default welcome message safely (with timestamp)
+        welcome_msg = MessageDB(
+            id=str(uuid.uuid4()),
+            session_id=session_id,
+            text="Hello! How can I assist you today?",
+            sender="assistant",
+            created_at=now
+        )
+        db.add(welcome_msg)
+
         db.commit()
         db.refresh(s)
-        db.refresh(greet_msg)
         try:
             resolved_model = get_session_model_id(db, uid, session_id)
             resolved_voice = get_session_voice(db, uid, session_id)
@@ -500,8 +502,17 @@ async def save_session_messages(session_id: str, request: SaveMessagesRequest, h
 
         db.query(MessageDB).filter(MessageDB.session_id == session_id).delete()
         now = datetime.utcnow()
+        logging.info(f"Saving {len(request.messages)} messages for session {session_id}")
         for msg in request.messages:
-            created_at = datetime.fromisoformat(msg.createdAt) if msg.createdAt else now
+            try:
+                # Handle 'Z' suffix for Python < 3.11 fromisoformat
+                ts_str = msg.createdAt.replace('Z', '+00:00') if msg.createdAt and msg.createdAt.endswith('Z') else msg.createdAt
+                created_at = datetime.fromisoformat(ts_str) if ts_str else now
+                logging.info(f"Message ID {msg.id} | Sender {msg.sender} | Raw {msg.createdAt} | Parsed {created_at}")
+            except Exception as e:
+                logging.error(f"Error parsing timestamp for msg {msg.id}: {e}")
+                created_at = now
+            
             db.add(
                 MessageDB(
                     id=msg.id,
