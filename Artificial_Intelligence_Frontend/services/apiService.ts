@@ -120,11 +120,26 @@ export const query = async (
                     try {
                         const data = JSON.parse(line.slice(6));
                         if (data.content) {
-                            onChunk(data.content);
-                            fullResponse += data.content;
+                            // Clean URLs in streaming chunks by removing spaces
+                            let cleanedContent = data.content;
+                            // Clean URLs inside angle brackets, parens, and brackets (common LLM patterns)
+                            cleanedContent = cleanedContent
+                                .replace(/<(https?:\/\/[^>]+)>/gi, (m, url) => `<${url.replace(/\s+/g, '')}>`)
+                                .replace(/\((https?:\/\/[^)]+)\)/gi, (m, url) => `(${url.replace(/\s+/g, '')})`)
+                                .replace(/\[(https?:\/\/[^\]]+)\]/gi, (m, url) => `[${url.replace(/\s+/g, '')}]`);
+
+                            onChunk(cleanedContent);
+                            fullResponse += cleanedContent;
                         }
                         if (data.done && data.full_response) {
-                            fullResponse = data.full_response;
+                            // Clean URLs in the full response too
+                            let cleanedResponse = data.full_response;
+                            cleanedResponse = cleanedResponse
+                                .replace(/<(https?:\/\/[^>]+)>/gi, (m, url) => `<${url.replace(/\s+/g, '')}>`)
+                                .replace(/\((https?:\/\/[^)]+)\)/gi, (m, url) => `(${url.replace(/\s+/g, '')})`)
+                                .replace(/\[(https?:\/\/[^\]]+)\]/gi, (m, url) => `[${url.replace(/\s+/g, '')}]`);
+
+                            fullResponse = cleanedResponse;
                         }
                         if (data.error) {
                             throw new Error(data.error);

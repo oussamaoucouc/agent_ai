@@ -194,7 +194,34 @@ def _clean_output_artifacts(text: str) -> str:
     for placeholder, url in url_placeholders.items():
         cleaned = cleaned.replace(placeholder, url)
     
-    # 17) Final cleanup - remove duplicate blank lines
+    # 17) URL CLEANING - Fix URLs with internal spaces (LLM tokenization artifact)
+    # Pattern: markdown links [text](url) - clean the URL inside parentheses
+    def strip_url_whitespace(url):
+        return re.sub(r'[\s\u00A0\u200B\u200C\u200D\u2060\uFEFF]+', '', url)
+    
+    cleaned = re.sub(
+        r'\]\(\s*(https?://[^)]+)\s*\)',
+        lambda m: '](' + strip_url_whitespace(m.group(1)) + ')',
+        cleaned,
+        flags=re.IGNORECASE
+    )
+    
+    # Pattern: angle-bracket URLs <url>
+    cleaned = re.sub(
+        r'<\s*(https?://[^>]+)\s*>',
+        lambda m: '<' + strip_url_whitespace(m.group(1)) + '>',
+        cleaned,
+        flags=re.IGNORECASE
+    )
+    
+    # 18) Fix list items that are squashed into previous text without proper line breaks
+    # Pattern: period/colon/etc followed by number and period (numbered list)
+    cleaned = re.sub(r'([.!?:])\s*(\d+)\.\s*([A-Za-z\[])', r'\1\n\n\2. \3', cleaned)
+    
+    # Pattern: markdown list with link squashed into text
+    cleaned = re.sub(r'([.!?:])\s*-\s+\[', r'\1\n\n- [', cleaned)
+    
+    # 19) Final cleanup - remove duplicate blank lines
     cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
     
     # ========== RENUMBER SEQUENTIAL LISTS ==========
@@ -240,7 +267,9 @@ def _clean_output_artifacts(text: str) -> str:
     
     # CRITICAL: Don't strip() individual chunks - this removes leading spaces!
     # Only strip trailing newlines to avoid excessive whitespace
-    return cleaned.rstrip('\n')
+    final_result = cleaned.rstrip('\n')
+    
+    return final_result
 
 
 def run_agent(query, user_id, session_id, images=None, audio=None, videos=None, stream=False):

@@ -421,6 +421,26 @@ const App: React.FC = () => {
             .replace(/\n\s*\n\s*\n/g, '\n\n')
             .trim();
 
+        // === URL CLEANING (CRITICAL - FIX BROKEN URLS) ===
+        // The AI outputs URLs with spaces like "https://finance. yahoo. com/"
+        // Clean URLs inside markdown links [text](url)
+        cleanedText = cleanedText.replace(
+            /\]\(\s*(https?:\/\/[^)]+)\s*\)/gi,
+            (match, url) => `](${url.replace(/[\s\u00A0\u200B\u2060\uFEFF]+/g, '')})`
+        );
+
+        // Clean URLs inside angle brackets <url>
+        cleanedText = cleanedText.replace(
+            /<\s*(https?:\/\/[^>]+)\s*>/gi,
+            (match, url) => `<${url.replace(/[\s\u00A0\u200B\u2060\uFEFF]+/g, '')}>`
+        );
+
+        // === FIX LIST FORMATTING (SQUASHED LIST ITEMS) ===
+        // Pattern: "text.1. Item" or "text:1. Item" -> add line break
+        cleanedText = cleanedText.replace(/([.!?:])\s*(\d+)\.\s*([A-Za-z\[])/g, '$1\n\n$2. $3');
+        // Pattern: "text.- [Link]" -> add line break
+        cleanedText = cleanedText.replace(/([.!?:])\s*-\s+\[/g, '$1\n\n- [');
+
         return cleanedText;
     }, []);
 
@@ -1148,17 +1168,58 @@ const App: React.FC = () => {
                                         .replace(/key_findings/gi, 'Key Points')
                                         .replace(/\bdetails\b/gi, 'Explanation')
                                         .replace(/\bconclusion\b/gi, 'Summary')
-                                        .replace(/(?<!Additional\s)\bnotes\b/gi, 'Additional Notes');
+                                        .replace(/(?<!Additional\s)\bnotes\b/gi, 'Additional Notes')
+                                        // FIX BROKEN URLS - Remove spaces from URLs
+                                        // Angle bracket URLs: <https://finance. yahoo. com/>
+                                        .replace(/<(https?:\/\/[^>]+)>/gi, (m, url) => `<${url.replace(/\s+/g, '')}>`)
+                                        // Markdown links: [text](https://finance. yahoo. com/)
+                                        .replace(/\]\((https?:\/\/[^)]+)\)/gi, (m, url) => `](${url.replace(/\s+/g, '')})`);
                                     return { ...m, text: formatted };
                                 }
                                 return m;
                             }));
                         });
 
+                        // Helper to clean URLs in text (removes spaces inside URLs)
+                        const cleanUrlsInText = (text: string | null | undefined): string => {
+                            if (!text) return '';
+                            let processed = text;
+
+                            // Universal whitespace regex (includes non-breaking spaces, etc.)
+                            const wsRegex = /[\s\u00A0\u200B\u200C\u200D\u2060\uFEFF]+/g;
+
+                            // 1. Angle brackets <url>
+                            processed = processed.replace(/<(https?:\/\/[^>]+)>/gi, (m, url) => {
+                                const clean = url.replace(wsRegex, '');
+                                if (clean !== url) console.log('[URL-CLEAN] Fixed angle bracket URL:', clean);
+                                return `<${clean}>`;
+                            });
+
+                            // 2. Parentheses (url)
+                            processed = processed.replace(/\((https?:\/\/[^)]+)\)/gi, (m, url) => {
+                                const clean = url.replace(wsRegex, '');
+                                if (clean !== url) console.log('[URL-CLEAN] Fixed paren URL:', clean);
+                                return `(${clean})`;
+                            });
+
+                            // 3. Square brackets [url]
+                            processed = processed.replace(/\[(https?:\/\/[^\]]+)\]/gi, (m, url) => {
+                                const clean = url.replace(wsRegex, '');
+                                if (clean !== url) console.log('[URL-CLEAN] Fixed bracket URL:', clean);
+                                return `[${clean}]`;
+                            });
+
+                            return processed;
+                        };
+
                         // Update with final formatted response (full cleanup)
+                        console.log('[FINAL-UPDATE] data.response (first 200):', data.response?.substring(0, 200));
+                        const contextCleanedText = cleanUrlsInText(formatAssistantText(data.response));
+                        console.log('[FINAL-UPDATE] Cleaned Text (first 200):', contextCleanedText?.substring(0, 200));
+
                         setMessages(prev => prev.map(m =>
                             m.id === streamingMessageId
-                                ? { ...m, text: formatAssistantText(data.response) || ' ' }
+                                ? { ...m, text: contextCleanedText || ' ' }
                                 : m
                         ));
 

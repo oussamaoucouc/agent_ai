@@ -97,6 +97,10 @@ def clean_model_output(text: str) -> str:
     import re
     if not text:
         return ""
+    
+    # DEBUG: Log that this function was called
+    logging.info(f"[CLEAN-MODEL-OUTPUT] Function called with text length: {len(text)}")
+    logging.info(f"[CLEAN-MODEL-OUTPUT] First 200 chars: {text[:200]!r}")
 
     # Remove AGNO tool execution logs like "search(query=...) completed in 1.9721s."
     text = re.sub(r"[\w_]+\([^)]*\)\s*completed\s+in\s+[\d.]+s\.?", "", text, flags=re.IGNORECASE)
@@ -123,6 +127,63 @@ def clean_model_output(text: str) -> str:
     # Remove markdown code fences ONLY if they wrap JSON/code blocks (not user content)
     # Only remove fences that start with specific language hints
     text = re.sub(r'```(?:json|python|javascript|bash)\s*(.*?)```', r'\1', text, flags=re.DOTALL)
+
+    # --- URL CLEANING (SIMPLE & AGGRESSIVE) ---
+    # The AI outputs URLs with spaces like "https://finance. yahoo. com/quote/TSLA/"
+    # Strategy: Find markdown links and clean the URL inside them
+    
+    def strip_whitespace_from_url(url):
+        """Remove ALL whitespace from a URL string."""
+        # Match any whitespace character including unicode
+        original = url
+        cleaned = re.sub(r'[\s\u00A0\u200B\u200C\u200D\u2060\uFEFF\u3000\t\n\r ]+', '', url)
+        if original != cleaned:
+            logging.info(f"[URL-CLEAN] Cleaned URL: '{original[:60]}' -> '{cleaned[:60]}'")
+        return cleaned
+    
+    # Pattern 1: Markdown links [text](url) - clean the URL inside parentheses
+    # The URL may contain spaces that we need to remove
+    original_text = text
+    text = re.sub(
+        r'\]\(\s*(https?://[^)]+)\s*\)',
+        lambda m: '](' + strip_whitespace_from_url(m.group(1)) + ')',
+        text,
+        flags=re.IGNORECASE
+    )
+    
+    # Check if any URLs were matched
+    import re as re_module
+    url_matches = list(re_module.finditer(r'\]\(\s*(https?://[^)]+)\s*\)', original_text, re.IGNORECASE))
+    if url_matches:
+        logging.info(f"[URL-CLEAN] Found {len(url_matches)} markdown link(s) to clean")
+        for match in url_matches:
+            logging.info(f"[URL-CLEAN] Match: '{match.group(1)[:80]}'")
+    
+    # Pattern 2: Angle-bracket URLs <url>
+    text = re.sub(
+        r'<\s*(https?://[^>]+)\s*>',
+        lambda m: '<' + strip_whitespace_from_url(m.group(1)) + '>',
+        text,
+        flags=re.IGNORECASE
+    )
+    
+    # NOTE: DO NOT use a "bare URL" pattern here - it's too greedy and corrupts text!
+    # Only clean URLs that are properly bounded by ]( ) or < >
+
+    
+    # --- LIST ITEM FORMATTING ---
+    # The AI outputs lists squashed into a single line like:
+    # "text.- [Link](url)" or "text.1. Item"
+    # We need to insert line breaks before the list markers
+    
+    # Pattern: period/colon/etc followed by dash and bracket (markdown list with link)
+    text = re.sub(r'([.!?:])\s*-\s+\[', r'\1\n\n- [', text)
+    
+    # Pattern: period/colon/etc followed by number and period (numbered list)
+    text = re.sub(r'([.!?:])\s*(\d+)\.\s*\[', r'\1\n\n\2. [', text)
+    text = re.sub(r'([.!?:])\s*(\d+)\.\s*([A-Z])', r'\1\n\n\2. \3', text)
+    
+    # --- END URL CLEANING ---
 
     # Collapse excessive blank lines and trim
     text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
@@ -766,7 +827,9 @@ async def query_agent(request: QueryRequest, http_request: Request):
                     yield f"data: {json.dumps(response_data)}\n\n"
             
             # Send done event with complete response
-            cleaned_response = ensure_response_content(full_response)
+            # Send done event with complete response
+            cleaned_response = clean_model_output(full_response)
+            cleaned_response = ensure_response_content(cleaned_response)
             response_data = {"done": True, 'full_response': cleaned_response}
             yield f"data: {json.dumps(response_data)}\n\n"
             
@@ -811,6 +874,8 @@ async def query_direct(request: QueryRequest, http_request: Request):
 
         # Run RAG agent non-streaming
         response_text = await run_rag_agent(request.query, uid, request.session_id)
+        
+        response_text = clean_model_output(response_text)
         
         return QueryResponse(
             user_id=request.user_id,

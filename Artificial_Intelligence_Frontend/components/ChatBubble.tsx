@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import remarkGfm from 'remark-gfm-configurable';
+import remarkBreaks from 'remark-breaks';
 import { Message, User } from '../types';
 import { AssistantIcon, UserIcon, SpeakerIcon, SpeakerOffIcon } from './icons';
 
@@ -75,99 +76,63 @@ const extractToolUsage = (text: string): { cleanText: string; toolCalls: ToolCal
  * Preprocesses markdown text to fix common malformed patterns from AI output.
  * Key fix: Strip orphan ** markers that don't have a matching pair on the same line.
  */
-const preprocessMarkdown = (text: string): string => {
-    if (!text) return '';
+const preprocessMarkdown = (raw: string): string => {
+    if (!raw) return '';
+    let processed = raw;
 
-    let processed = text;
-
-    // STEP 0: Normalize unicode characters that look like asterisks but aren't
-    // Various unicode asterisk-like characters: ＊ (fullwidth), ⁎ (low asterisk), ✱, etc.
+    // STEP 0: Normalize unicode characters
     processed = processed.replace(/[＊⁎✱∗⋆]/g, '*');
-    // Normalize unicode hyphens/dashes to ASCII hyphen
     processed = processed.replace(/[‐‑‒–—―−]/g, '-');
 
-    // STEP 1: Remove FALSE bullet markers at start of lines
-    // If a line starts with "- " followed by lowercase, it's a continuation, not a bullet
-    // "- from January..." -> "from January..."
-    processed = processed.replace(/^-\s+([a-z])/gm, '$1');
+    // STEP 0.1: GENERALIZED URL REPAIR (Handle "https://site. com" pattern)
+    // Matches "http://" followed by dotted segments, then a dot+space, then more text.
+    // Example: "https://finance. yahoo.com" -> "https://finance.yahoo.com"
+    processed = processed.replace(/(https?:\/\/(?:[\w-]+\.)+)\s+([\w-]+)/gi, '$1$2');
 
-    // STEP 2: Fix split parentheticals - remove newlines inside parentheses
-    processed = processed.replace(/\(([^)]*)\)/g, (match) => {
-        return match.replace(/\s*\n+\s*/g, ' ');
+    // STEP 0.5: FIX BROKEN URLS - NUCLEAR WHITELIST APPROACH (v3.4 - GENERALIZED)
+    // Valid chars: Alphanumeric, - . _ ~ : / ? # [ ] @ ! $ & ' ( ) * + , ; = %
+    const allowedUrlChars = /[^a-zA-Z0-9\-._~:/?#[\]@!$&'()*+,;=%]/g;
+
+    // 1. Specific Markdown Links: [Text](URL) or [Text]( URL )
+    // We allow optional whitespace \s* after (
+    processed = processed.replace(/\]\(\s*(https?:\/\/[^)]+)\)/gi, (match, urlContent) => {
+        const cleanUrl = urlContent.replace(allowedUrlChars, '');
+        return `](${cleanUrl})`;
     });
 
-    // STEP 3: Unescape escaped asterisks (AI sometimes outputs \* instead of *)
-    processed = processed.replace(/\\\*/g, '*');
+    // 2. Generic Parentheses: (https://...)
+    processed = processed.replace(/\(\s*(https?:\/\/[^)]+)\)/gi, (match, urlContent) => {
+        const cleanUrl = urlContent.replace(allowedUrlChars, '');
+        return `(${cleanUrl})`;
+    });
 
-    // STEP 4: Strip truly orphan single asterisks (NOT part of ** bold)
-    // Only strip: word* followed by space/punctuation (e.g., "Apprentice* a" -> "Apprentice a")
-    // This preserves **bold** formatting
-    processed = processed.replace(/(\w)\*(\s|[.,!?;:])/g, '$1$2');
+    // 3. Brackets and Angle Brackets
+    processed = processed.replace(/\[\s*(https?:\/\/[^\]]+)\]/gi, (match, urlContent) => {
+        const cleanUrl = urlContent.replace(allowedUrlChars, '');
+        return `[${cleanUrl}]`;
+    });
+    processed = processed.replace(/<\s*(https?:\/\/[^>]+)>/gi, (match, urlContent) => {
+        const cleanUrl = urlContent.replace(allowedUrlChars, '');
+        return `<${cleanUrl}>`;
+    });
 
-    // STEP 4: Fix squashed table rows
-    processed = processed.replace(/\|\|/g, '|\n|');
-
-    // STEP 5: Fix tables starting on same line as text
-    processed = processed.replace(/(^|\n)([^\n|]+)(\|[^|\n]*\|[^|\n]*\|)/g, '$1$2\n\n$3');
-
-    // STEP 6: Fix inline section headers ("Header: - Subheader:" pattern)
-    // Triggers on sentence-ending punctuation OR colon before " - "
-    processed = processed.replace(/([.!?:)])\s*-\s+(\*{0,2}[A-Z])/g, '$1\n\n- $2');
-
-    // STEP 7: Fix run-on sentence spacing (e.g., "Hello.World" -> "Hello. World")
-    processed = processed.replace(/([.!?])([A-Za-z])/g, '$1 $2');
-
-    // STEP 8: Strip stray asterisks after colons (e.g., "Title:*" -> "Title:")
-    processed = processed.replace(/:(\*+)(\s|$)/g, ':$2');
-
-    // STEP 9: Fix headers with no space after #
-    processed = processed.replace(/^(#{1,6})([^#\s])/gm, '$1 $2');
-
-    // STEP 10: Fix headers merged with bold
-    processed = processed.replace(/^(#{1,6})\s*\*\*/gm, '$1 **');
-
-    // STEP 11: Fix orphan ** markers (unbalanced bold)
-    // Process line by line: if a line has odd number of **, strip ALL ** from that line
-    // This handles cases like "**Header:" which has only opening bold
-    processed = processed.split('\n').map(line => {
-        const doubleAsteriskCount = (line.match(/\*\*/g) || []).length;
-        if (doubleAsteriskCount % 2 !== 0) {
-            // Odd count = unbalanced, strip all **
-            return line.replace(/\*\*/g, '');
-        }
-        return line;
-    }).join('\n');
-
-    // STEP 12: Strip orphan single * at end of lines
-    processed = processed.replace(/\s\*\s*$/gm, '');
-    processed = processed.replace(/\.\s*\*$/gm, '.');
-
-    // STEP 13: Remove empty bullet points
-    processed = processed.replace(/^[-•*]\s*$/gm, '');
-
-    // STEP 14: Normalize multiple consecutive blank lines
-    processed = processed.replace(/\n{3,}/g, '\n\n');
-
-    // STEP 15: Ensure code blocks have proper line breaks
-    processed = processed.replace(/```(\w+)([^\n])/g, '```$1\n$2');
-
-    // STEP 16: Close any trailing incomplete code fence
-    if ((processed.match(/```/g) || []).length % 2 !== 0) {
-        processed = processed + '\n```';
-    }
+    // STEP 4: Sanitize Link Text (Fix for nested parentheses breaking parser)
+    // Remove nested parentheses in link text which might confuse some markdown parsers
+    processed = processed.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/gi, (match, text, url) => {
+        const cleanText = text.replace(/[()]/g, ''); // Remove ( ) from title
+        return `[${cleanText}](${url})`;
+    });
 
     return processed.trim();
 };
-
-
 /**
- * Extract language from code block className
+ * Extract tool usage...
  */
 const getLanguageFromClassName = (className?: string): string => {
-    if (!className) return 'text';
-    const match = className.match(/language-(\w+)/);
-    return match ? match[1] : 'text';
+    // ...
+    return 'text';
 };
+
 
 /**
  * ChatBubble component with comprehensive markdown rendering support.
@@ -194,6 +159,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
         const finalProcessedText = preprocessMarkdown(textWithoutTools);
 
         return { cleanText: finalProcessedText, toolCalls: extractedTools };
+
     }, [message.text, isUser]);
 
     // Custom components for react-markdown
@@ -251,18 +217,23 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
             </em>
         ),
 
-        // Links
-        a: ({ href, children, ...props }: any) => (
-            <a
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sky-400 hover:text-sky-300 underline underline-offset-2 transition-colors duration-200"
-                {...props}
-            >
-                {children}
-            </a>
-        ),
+        // Links - CLEAN URL HERE by removing whitespace (fixes AI-generated broken URLs)
+        a: ({ href, children, ...props }: any) => {
+            // Remove ALL whitespace from the URL - this fixes broken URLs like "https://finance. yahoo. com/"
+            const cleanHref = href ? href.replace(/\s+/g, '') : href;
+
+            return (
+                <a
+                    href={cleanHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sky-400 hover:text-sky-300 underline underline-offset-2 transition-colors duration-200 break-all"
+                    {...props}
+                >
+                    {children}
+                </a>
+            );
+        },
 
         // Unordered lists
         ul: ({ children, ...props }: any) => (
@@ -381,11 +352,132 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
                 {children}
             </th>
         ),
-        td: ({ children, ...props }: any) => (
-            <td className="px-4 py-3 text-sm text-slate-200" {...props}>
-                {children}
-            </td>
-        ),
+        td: ({ children, ...props }: any) => {
+            // Step 1: Pre-clean the entire string to fix malformed URLs with spaces
+            const preCleanContent = (text: string): string => {
+                // Find all URL-like patterns and clean them up in the string
+                // This handles: <https://www. google. com/path> -> <https://www.google.com/path>
+                return text.replace(
+                    /(<?\s*https?:)([^>|\n]*)(>?)/gi,
+                    (match, protocol, rest, closing) => {
+                        // Clean up the URL part
+                        const cleanedRest = rest
+                            .replace(/\s+\.\s+/g, '.')
+                            .replace(/\.\s+/g, '.')
+                            .replace(/\s+\./g, '.')
+                            .replace(/\s+\//g, '/')
+                            .replace(/\/\s+/g, '/')
+                            .replace(/\s+/g, '')
+                            .replace(/-\s+/g, '-')
+                            .replace(/\s+-/g, '-');
+                        const cleanedProtocol = protocol.replace(/\s+/g, '').replace(/^</, '');
+                        return `<${cleanedProtocol}${cleanedRest}>`;
+                    }
+                );
+            };
+
+            // Step 2: Extract domain name dynamically from any URL
+            const getSiteName = (url: string): string => {
+                try {
+                    // Remove angle brackets if present
+                    const cleanUrl = url.replace(/^</, '').replace(/>$/, '');
+                    const urlObj = new URL(cleanUrl);
+                    let hostname = urlObj.hostname.toLowerCase();
+
+                    // Remove www. prefix
+                    hostname = hostname.replace(/^www\./, '');
+
+                    // Get the main domain (first part before TLD)
+                    const parts = hostname.split('.');
+                    const domain = parts[0];
+
+                    // Capitalize first letter
+                    return domain.charAt(0).toUpperCase() + domain.slice(1);
+                } catch {
+                    return 'Link';
+                }
+            };
+
+            // Step 3: Process content and convert URLs to clickable links
+            const processContent = (content: React.ReactNode): React.ReactNode => {
+                if (typeof content === 'string') {
+                    // First, pre-clean the entire string to fix malformed URLs
+                    const cleanedContent = preCleanContent(content);
+
+                    // Now match clean URLs wrapped in angle brackets: <https://...>
+                    const urlPattern = /<(https?:\/\/[^>]+)>/gi;
+                    const parts: React.ReactNode[] = [];
+                    let lastIndex = 0;
+                    let match;
+
+                    while ((match = urlPattern.exec(cleanedContent)) !== null) {
+                        // Add text before the URL
+                        if (match.index > lastIndex) {
+                            const textBefore = cleanedContent.slice(lastIndex, match.index);
+                            if (textBefore.trim()) {
+                                parts.push(textBefore);
+                            }
+                        }
+
+                        const url = match[1]; // The captured URL without angle brackets
+                        const siteName = getSiteName(url);
+
+                        parts.push(
+                            <a
+                                key={match.index}
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-sky-500/20 text-sky-400 hover:text-sky-300 hover:bg-sky-500/30 transition-colors duration-200 text-xs font-medium whitespace-nowrap"
+                            >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                                {siteName}
+                            </a>
+                        );
+
+                        lastIndex = match.index + match[0].length;
+                    }
+
+                    // Add remaining text
+                    if (lastIndex < cleanedContent.length) {
+                        const remaining = cleanedContent.slice(lastIndex);
+                        if (remaining.trim()) {
+                            parts.push(remaining);
+                        }
+                    }
+
+                    return parts.length > 0 ? parts : content;
+                }
+
+                // If it's an array, process each element
+                if (Array.isArray(content)) {
+                    return content.map((item, index) => (
+                        <React.Fragment key={index}>{processContent(item)}</React.Fragment>
+                    ));
+                }
+
+                // If it's a React element with children, check if we should process it
+                if (React.isValidElement(content)) {
+                    const elementProps = content.props as { children?: React.ReactNode };
+                    if (elementProps.children) {
+                        return React.cloneElement(content as React.ReactElement<{ children?: React.ReactNode }>, {
+                            ...elementProps,
+                            children: processContent(elementProps.children)
+                        });
+                    }
+                }
+
+                return content;
+            };
+
+            return (
+                <td className="px-4 py-3 text-sm text-slate-200" {...props}>
+                    {processContent(children)}
+                </td>
+            );
+        },
 
         // Images
         img: ({ src, alt, ...props }: any) => (
@@ -493,10 +585,11 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
 
                 {/* Message bubble */}
                 <div
-                    className={`relative overflow-hidden w-fit px-8 py-5 rounded-2xl shadow-2xl backdrop-blur-xl border ${isUser
+                    className={`relative overflow-hidden w-fit max-w-full px-8 py-5 rounded-2xl shadow-2xl backdrop-blur-xl border break-words ${isUser
                         ? 'bg-slate-800/60 border-slate-500/40 rounded-tr-none'
                         : 'bg-slate-800/60 border-slate-500/30 rounded-tl-none'
                         }`}
+                    style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
                 >
                     {/* Subtle gradient overlay for glassmorphism */}
                     {!isUser && (
@@ -583,7 +676,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
                                 ) : (
                                     // Full markdown rendering
                                     <ReactMarkdown
-                                        remarkPlugins={[remarkGfm]}
+                                        remarkPlugins={[[remarkGfm, { autolinkLiteral: false }], remarkBreaks]}
                                         components={markdownComponents}
                                     >
                                         {cleanText}
