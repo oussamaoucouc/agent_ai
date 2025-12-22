@@ -85,10 +85,11 @@ _TOOL_NAME_CONCATENATION_REGEX = re.compile(
     re.IGNORECASE,
 )
 
-# Pattern to match single API- prefix at the very start of text
+# Pattern to match single API- or web- prefix at the very start of text
 # "API-post-I searched..." -> "I searched..."
+# "web-Here is the link..." -> "Here is the link..."
 _TOOL_NAME_PREFIX_REGEX = re.compile(
-    r"^API-[\w-]+-",  # Match API-xxx- at start of string only
+    r"^(API-|web-)[\w-]+-",  # Match API-xxx- or web-xxx- at start of string only
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -167,11 +168,16 @@ def _clean_output_artifacts(text: str) -> str:
     cleaned = re.sub(r'(\*\*[^*]+:\*\*)([^\n\*])', r'\1\n\2', cleaned)
     
     # 9) Fix bullet lists (- item) - MUST be on their own line
-    cleaned = re.sub(r'([^\n\-])(\-\s+[A-Z])', r'\1\n\2', cleaned)
+    # Only if preceded by punctuation to avoid "word - word" false positives
+    cleaned = re.sub(r'([.!?:])\s*(\-\s+[A-Z])', r'\1\n\2', cleaned)
     
     # 10) Fix numbered lists (1., 2., etc.) - MUST be on their own line
     cleaned = re.sub(r'([^\n\d])(\d+\.\s+)', r'\1\n\n\2', cleaned)
     
+    # 10.5) FIX INTERFERENCE: Break numbers glued to URLs or text (e.g. "...TSLA/2.")
+    # Matches any non-space char, optional space, then "Digit. Space"
+    cleaned = re.sub(r'(\S)(\s*)(\d+\.\s+)', r'\1\n\n\3', cleaned)
+
     # 11) Fix questions followed by content - add line break
     cleaned = re.sub(r'(\?)\s*([A-Z])', r'\1\n\n\2', cleaned)
     

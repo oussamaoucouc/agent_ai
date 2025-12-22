@@ -325,16 +325,20 @@ const App: React.FC = () => {
 
     // Clean and format AI responses for better user experience
     const formatAssistantText = useCallback((text: string): string => {
-        const trimmed = text?.trim();
-        if (!trimmed) return text;
+        let trimmed = text?.trim();
+        if (!trimmed) return text || '';
+
+        // STEP 0: Remove Backend Artifacts (e.g. "web-")
+        trimmed = trimmed.replace(/^(web-|API-[\w-]+-)/i, '');
 
         // First, try to parse as JSON and convert to user-friendly Markdown
         try {
             const obj = JSON.parse(trimmed);
+            // ... (keep existing JSON logic if valid, but usually this fails for "web-..." text)
             const keys = Object.keys(obj || {});
 
             // Handle both old technical format and new user-friendly format
-            if (keys.includes('key_findings') || keys.includes('details') || keys.includes('conclusion') || keys.includes('notes') || keys.includes('summary')) {
+            if (keys.includes('key_findings') || keys.includes('details') || keys.includes('conclusion') || keys.includes('notes') || keys.includes('summary') || keys.includes('title')) {
                 const lines: string[] = [];
 
                 // Clean bullet points and format nicely
@@ -381,6 +385,11 @@ const App: React.FC = () => {
                     lines.push(cleanBullet(obj.conclusion));
                     lines.push('');
                 }
+                // Add summary if different
+                if (obj.summary && obj.summary !== obj.conclusion) {
+                    lines.push('### Summary');
+                    lines.push(cleanBullet(obj.summary));
+                }
 
                 // Convert notes to Additional Notes
                 if (Array.isArray(obj.notes) && obj.notes.length) {
@@ -389,12 +398,6 @@ const App: React.FC = () => {
                         lines.push(`- ${cleanBullet(item)}`);
                     }
                     lines.push('');
-                }
-
-                // Add summary if different from conclusion
-                if (obj.summary && obj.summary !== obj.conclusion) {
-                    lines.push('### Summary');
-                    lines.push(cleanBullet(obj.summary));
                 }
 
                 return lines.join('\n').trim();
@@ -421,18 +424,85 @@ const App: React.FC = () => {
             .replace(/\n\s*\n\s*\n/g, '\n\n')
             .trim();
 
+        // === STRUCTURE INJECTION (USER FRIENDLY FORMATTING) ===
+
+        // 1. Ensure Headers have blank lines before them
+        cleanedText = cleanedText.replace(/([^\n])\s*(###\s+)/g, '$1\n\n$2');
+        // REMOVED: Aggressive bold regex that broke lists (matched **Title** inside "1. **Title**")
+        // cleanedText = cleanedText.replace(/([^\n])\s*(\*\*.*?\*\*)/g, '$1\n\n$2');
+
+        // 2. Ensure Lists have blank lines before them (but NOT between number and content)
+        // Only trigger if preceded by punctuation (sentence end) to match "Sentence. 1. Item"
+        // Avoids matching "Title - Source" or "Item 1- Item 2" (hyphens in text)
+        cleanedText = cleanedText.replace(/([.!?:])\s*(\d+\.\s+)/g, '$1\n$2');
+        cleanedText = cleanedText.replace(/([.!?:])\s*(-\s+)/g, '$1\n$2');
+
+        // 3. Fix "Interfering Numbers" (The User's specific issue: "...TSLA/2.")
+        // If a number-dot-space pattern is glued to previous text (URL or word), force a break.
+        // We use \S (non-whitespace) to catch the end of the URL.
+        // We look for "2. " (digit dot space) to avoid decimals like "2.5".
+        cleanedText = cleanedText.replace(/(\S)(\s*)(\d+\.\s+)/g, '$1\n\n$3');
+
+        // 4. Fix Squashed Sentences after Links
+        // Pattern: [Link](url)Sentence -> [Link](url)\n\nSentence
+        cleanedText = cleanedText.replace(/(\]\(https?:\/\/[^)]+\))\s*([A-Z])/g, '$1\n\n$2');
+
+        // 5. REPAIR SPLIT LIST ITEMS (The "Gemini Studio" Fix)
+        // Fixes: "1.\nTitle" -> "1. Title"
+        cleanedText = cleanedText.replace(/^(\d+\.)\s*\n\s*([^\n]+)/gm, '$1 $2');
+        // Fixes: "- \nTitle" -> "- Title"
+        cleanedText = cleanedText.replace(/^(-\s+)\s*\n\s*([^\n]+)/gm, '$1 $2');
+
+        // 6. FIX FUSED LAST ELEMENT (e.g. ".../quoteThese")
+        // Forces a break if a URL is followed by "These", "The", "Here", "In", even if separated by space
+        cleanedText = cleanedText.replace(/(https?:\/\/\S+?)(\s*)(These|The|Here|This|In|Stock|Sites|Please|Note)\b/g, '$1\n\n$3');
+
+
         // === URL CLEANING (CRITICAL - FIX BROKEN URLS) ===
         // The AI outputs URLs with spaces like "https://finance. yahoo. com/"
+        // BUT it might also output "(https://url These sites...)"
+        // We must separate the text from the URL before cleaning spaces.
+
+        const dumbUrlClean = (urlContext: string): string => {
+            // Check for trailing text (Space + Uppercase) inside the match
+            const splitMatch = urlContext.match(/^(.*?)(\s+[A-Z].*)$/);
+            if (splitMatch) {
+                const urlPart = splitMatch[1];
+                const textPart = splitMatch[2];
+                return urlPart.replace(/[\s\u00A0\u200B\u2060\uFEFF]+/g, '') + ')' + textPart.trim(); // Close paren, add text
+            }
+            return urlContext.replace(/[\s\u00A0\u200B\u2060\uFEFF]+/g, '');
+        };
+
         // Clean URLs inside markdown links [text](url)
         cleanedText = cleanedText.replace(
             /\]\(\s*(https?:\/\/[^)]+)\s*\)/gi,
-            (match, url) => `](${url.replace(/[\s\u00A0\u200B\u2060\uFEFF]+/g, '')})`
+            (match, url) => {
+                // Check for trailing text (Space + Uppercase) inside the match
+                const splitMatch = url.match(/^(.*?)(\s+[A-Z].*)$/);
+                if (splitMatch) {
+                    const urlPart = splitMatch[1].replace(/[\s\u00A0\u200B\u2060\uFEFF]+/g, '');
+                    const textPart = splitMatch[2];
+                    // Reform as: ](URL) Text
+                    return `](${urlPart}) ${textPart.trim()}`;
+                }
+                return `](${url.replace(/[\s\u00A0\u200B\u2060\uFEFF]+/g, '')})`;
+            }
         );
 
         // Clean URLs inside angle brackets <url>
         cleanedText = cleanedText.replace(
             /<\s*(https?:\/\/[^>]+)\s*>/gi,
-            (match, url) => `<${url.replace(/[\s\u00A0\u200B\u2060\uFEFF]+/g, '')}>`
+            (match, url) => {
+                const splitMatch = url.match(/^(.*?)(\s+[A-Z].*)$/);
+                if (splitMatch) {
+                    const urlPart = splitMatch[1].replace(/[\s\u00A0\u200B\u2060\uFEFF]+/g, '');
+                    const textPart = splitMatch[2];
+                    // Reform as: <URL> Text
+                    return `<${urlPart}> ${textPart.trim()}`;
+                }
+                return `<${url.replace(/[\s\u00A0\u200B\u2060\uFEFF]+/g, '')}>`;
+            }
         );
 
         // === FIX LIST FORMATTING (SQUASHED LIST ITEMS) ===
@@ -1188,26 +1258,26 @@ const App: React.FC = () => {
                             // Universal whitespace regex (includes non-breaking spaces, etc.)
                             const wsRegex = /[\s\u00A0\u200B\u200C\u200D\u2060\uFEFF]+/g;
 
+                            // Helper to split "URL Text" patterns inside brackets/parens
+                            const smartClean = (fullMatch: string, urlContent: string, wrapper: [string, string]) => {
+                                // Check for trailing text (Space + Uppercase) inside the match
+                                const splitMatch = urlContent.match(/^(.*?)(\s+[A-Z].*)$/);
+                                if (splitMatch) {
+                                    const urlPart = splitMatch[1].replace(wsRegex, '');
+                                    const textPart = splitMatch[2];
+                                    return `${wrapper[0]}${urlPart}${wrapper[1]}${textPart}`; // Put text OUTSIDE wrapper
+                                }
+                                return `${wrapper[0]}${urlContent.replace(wsRegex, '')}${wrapper[1]}`;
+                            };
+
                             // 1. Angle brackets <url>
-                            processed = processed.replace(/<(https?:\/\/[^>]+)>/gi, (m, url) => {
-                                const clean = url.replace(wsRegex, '');
-                                if (clean !== url) console.log('[URL-CLEAN] Fixed angle bracket URL:', clean);
-                                return `<${clean}>`;
-                            });
+                            processed = processed.replace(/<(https?:\/\/[^>]+)>/gi, (m, url) => smartClean(m, url, ['<', '>']));
 
                             // 2. Parentheses (url)
-                            processed = processed.replace(/\((https?:\/\/[^)]+)\)/gi, (m, url) => {
-                                const clean = url.replace(wsRegex, '');
-                                if (clean !== url) console.log('[URL-CLEAN] Fixed paren URL:', clean);
-                                return `(${clean})`;
-                            });
+                            processed = processed.replace(/\((https?:\/\/[^)]+)\)/gi, (m, url) => smartClean(m, url, ['(', ')']));
 
                             // 3. Square brackets [url]
-                            processed = processed.replace(/\[(https?:\/\/[^\]]+)\]/gi, (m, url) => {
-                                const clean = url.replace(wsRegex, '');
-                                if (clean !== url) console.log('[URL-CLEAN] Fixed bracket URL:', clean);
-                                return `[${clean}]`;
-                            });
+                            processed = processed.replace(/\[(https?:\/\/[^\]]+)\]/gi, (m, url) => smartClean(m, url, ['[', ']']));
 
                             return processed;
                         };
