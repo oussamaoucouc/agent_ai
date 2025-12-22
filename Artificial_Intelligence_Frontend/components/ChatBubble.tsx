@@ -84,6 +84,20 @@ const preprocessMarkdown = (raw: string): string => {
     processed = processed.replace(/[＊⁎✱∗⋆]/g, '*');
     processed = processed.replace(/[‐‑‒–—―−]/g, '-');
 
+    // STEP 0.2: SMART LIST SPLITTING (Informative & Logical)
+    // Detects pattern: "Text - **Title**" or "Text - [Source]" which indicates an inline list.
+    // We convert this to a properly nested sub-list for better readability.
+    // Example: "* Source 1: Desc - **Source 2**: Desc" ->
+    // "* Source 1: Desc
+    //   - **Source 2**: Desc"
+
+    // 1. Split " - **Title**" pattern (Common in citation lists)
+    // SAFEGUARD: Match Word OR closing bracket ] or ) before hyphen
+    processed = processed.replace(/([\w\])])\s+-\s+\*\*/g, '$1\n\n  - **');
+
+    // 2. Split " - [Source]" pattern
+    processed = processed.replace(/([\w\])])\s+-\s+\[/g, '$1\n\n  - [');
+
     // STEP 0.1: GENERALIZED URL REPAIR (Handle "https://site. com" pattern)
     // Matches "http://" followed by dotted segments, then a dot+space, then more text.
     // Example: "https://finance. yahoo.com" -> "https://finance.yahoo.com"
@@ -133,6 +147,19 @@ const getLanguageFromClassName = (className?: string): string => {
     return 'text';
 };
 
+/**
+ * Formats a date string into a localized time string (HH:MM AM/PM)
+ */
+const formatTime = (dateString?: string) => {
+    if (!dateString) return '';
+    try {
+        const date = new Date(dateString);
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+        return '';
+    }
+};
+
 
 /**
  * ChatBubble component with comprehensive markdown rendering support.
@@ -164,70 +191,114 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
 
     // Custom components for react-markdown
     const markdownComponents = useMemo(() => ({
-        // Headers with proper styling and hierarchy
+        // Headers - Distinct sections
         h1: ({ children, ...props }: any) => (
-            <h1 className="text-2xl font-bold text-slate-100 mt-6 mb-4 pb-2 border-b border-slate-600/50" {...props}>
+            <h1 className="text-2xl font-bold text-slate-100 mt-8 mb-4 pb-2 border-b border-slate-700/60 flex items-center gap-2" {...props}>
+                <span className="w-1.5 h-6 bg-sky-500 rounded-full"></span>
                 {children}
             </h1>
         ),
         h2: ({ children, ...props }: any) => (
-            <h2 className="text-xl font-bold text-slate-100 mt-5 mb-3" {...props}>
+            <h2 className="text-xl font-semibold text-slate-100 mt-6 mb-3 flex items-center gap-2" {...props}>
+                <span className="text-sky-400">#</span>
                 {children}
             </h2>
         ),
         h3: ({ children, ...props }: any) => (
-            <h3 className="text-lg font-semibold text-sky-300 mt-4 mb-2" {...props}>
+            <h3 className="text-lg font-semibold text-sky-200 mt-5 mb-2" {...props}>
                 {children}
             </h3>
         ),
         h4: ({ children, ...props }: any) => (
-            <h4 className="text-base font-semibold text-sky-400 mt-3 mb-2" {...props}>
+            <h4 className="text-base font-semibold text-sky-300 mt-4 mb-2" {...props}>
                 {children}
             </h4>
         ),
         h5: ({ children, ...props }: any) => (
-            <h5 className="text-sm font-semibold text-slate-200 mt-2 mb-1" {...props}>
+            <h5 className="text-sm font-semibold text-slate-300 mt-3 mb-1 uppercase tracking-wider" {...props}>
                 {children}
             </h5>
         ),
-        h6: ({ children, ...props }: any) => (
-            <h6 className="text-sm font-medium text-slate-300 mt-2 mb-1" {...props}>
-                {children}
-            </h6>
-        ),
 
-        // Paragraphs
+        // Paragraphs - improved readability
         p: ({ children, ...props }: any) => (
-            <p className="text-slate-200 leading-relaxed mb-2 last:mb-0" {...props}>
+            <p className="text-slate-300 leading-7 mb-4 last:mb-0" {...props}>
                 {children}
             </p>
         ),
 
-        // Strong/Bold
+        // Strong/Bold - high visibility
         strong: ({ children, ...props }: any) => (
-            <strong className="font-semibold text-sky-300" {...props}>
+            <strong className="font-bold text-sky-300 bg-sky-900/10 px-0.5 rounded" {...props}>
                 {children}
             </strong>
         ),
 
-        // Emphasis/Italic
+        // Italic
         em: ({ children, ...props }: any) => (
-            <em className="italic text-slate-300" {...props}>
+            <em className="italic text-slate-400" {...props}>
                 {children}
             </em>
         ),
 
-        // Links - CLEAN URL HERE by removing whitespace (fixes AI-generated broken URLs)
+        // Lists - spaced out and clear
+        ul: ({ children, ...props }: any) => (
+            <ul className="my-4 space-y-2 list-disc list-outside pl-5 marker:text-sky-500" {...props}>
+                {children}
+            </ul>
+        ),
+        ol: ({ children, ...props }: any) => (
+            <ol className="my-4 space-y-2 list-decimal list-outside pl-5 text-slate-300 marker:text-sky-500 marker:font-bold" {...props}>
+                {children}
+            </ol>
+        ),
+        li: ({ children, ...props }: any) => (
+            <li className="leading-7 text-slate-300 pl-1 [&>h3]:mt-0 [&>h3]:mb-1 [&>strong]:text-sky-300" {...props}>
+                {children}
+            </li>
+        ),
+
+        // Blockquotes - Note/Highlight style
+        blockquote: ({ children, ...props }: any) => (
+            <blockquote
+                className="border-l-4 border-sky-500 pl-4 py-2 my-4 bg-slate-800/50 rounded-r-lg italic text-slate-300 shadow-sm"
+                {...props}
+            >
+                {children}
+            </blockquote>
+        ),
+
+        // Links - "Smart Chip" style for better visibility
         a: ({ href, children, ...props }: any) => {
-            // Remove ALL whitespace from the URL - this fixes broken URLs like "https://finance. yahoo. com/"
             const cleanHref = href ? href.replace(/\s+/g, '') : href;
+            const isUtterance = cleanHref && cleanHref.startsWith('http');
+            const domain = isUtterance ? new URL(cleanHref).hostname.replace('www.', '') : '';
+
+            // If the link text is the same as the URL (or very close), treat it as a "Source" citation
+            const isRawUrl = typeof children?.[0] === 'string' && (children[0].includes('http') || children[0].includes('www'));
+
+            if (isRawUrl && isUtterance) {
+                return (
+                    <a
+                        href={cleanHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1 my-1 rounded-full bg-slate-700/50 hover:bg-sky-900/30 border border-slate-600 hover:border-sky-500/50 text-xs text-sky-300 transition-all group no-underline"
+                        {...props}
+                    >
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                        <span className="font-medium text-slate-200">{domain}</span>
+                        <span className="text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity">↗</span>
+                    </a>
+                );
+            }
 
             return (
                 <a
                     href={cleanHref}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sky-400 hover:text-sky-300 underline underline-offset-2 transition-colors duration-200 break-all"
+                    className="text-sky-400 hover:text-sky-300 font-medium underline decoration-sky-500/30 underline-offset-4 hover:decoration-sky-500 transition-all"
                     {...props}
                 >
                     {children}
@@ -235,50 +306,54 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
             );
         },
 
-        // Unordered lists
-        ul: ({ children, ...props }: any) => (
-            <ul className="list-disc list-outside pl-5 my-2 space-y-1 text-slate-200" {...props}>
-                {children}
-            </ul>
+        // Tables - Card-like container
+        table: ({ children, ...props }: any) => (
+            <div className="my-6 overflow-hidden rounded-xl border border-slate-700 shadow-xl bg-slate-900/40">
+                <table className="min-w-full divide-y divide-slate-700" {...props}>
+                    {children}
+                </table>
+            </div>
         ),
-
-        // Ordered lists
-        ol: ({ children, ...props }: any) => (
-            <ol className="list-decimal list-outside pl-6 my-2 space-y-1 text-slate-200" {...props}>
+        thead: ({ children, ...props }: any) => (
+            <thead className="bg-slate-800" {...props}>
                 {children}
-            </ol>
+            </thead>
         ),
-
-        // List items
-        li: ({ children, ...props }: any) => (
-            <li className="leading-relaxed pl-1" {...props}>
+        tbody: ({ children, ...props }: any) => (
+            <tbody className="divide-y divide-slate-700/50 bg-transparent" {...props}>
                 {children}
-            </li>
+            </tbody>
         ),
-
-        // Blockquotes
-        blockquote: ({ children, ...props }: any) => (
-            <blockquote
-                className="border-l-4 border-sky-500/60 pl-4 py-1 my-4 bg-slate-800/40 rounded-r-lg italic text-slate-300"
-                {...props}
-            >
+        tr: ({ children, ...props }: any) => (
+            <tr className="hover:bg-slate-800/40 transition-colors" {...props}>
                 {children}
-            </blockquote>
+            </tr>
         ),
+        th: ({ children, ...props }: any) => (
+            <th className="px-5 py-3 text-left text-xs font-bold text-slate-100 uppercase tracking-wider" {...props}>
+                {children}
+            </th>
+        ),
+        td: ({ children, ...props }: any) => {
+            // Reuse the complex table cell URL extracted logic if needed, but simplified here for generic 
+            return (
+                <td className="px-5 py-4 text-sm text-slate-300 whitespace-pre-wrap leading-relaxed" {...props}>
+                    {children}
+                </td>
+            );
+        },
 
-        // Inline code
+        // Code blocks - Window style
         code: ({ inline, className, children, ...props }: any) => {
             const codeString = String(children).replace(/\n$/, '');
             const hasLanguage = className && className.startsWith('language-');
             const hasNewlines = codeString.includes('\n');
-
-            // Treat as inline if: explicitly inline, OR no language class AND no newlines
             const isInline = inline === true || (!hasLanguage && !hasNewlines);
 
             if (isInline) {
                 return (
                     <code
-                        className="px-2 py-1 mx-0.5 bg-slate-700/80 text-sky-300 rounded text-sm font-mono"
+                        className="px-1.5 py-0.5 mx-0.5 bg-slate-800/80 text-sky-200 rounded-md text-sm font-mono border border-slate-700/50"
                         {...props}
                     >
                         {children}
@@ -286,26 +361,28 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
                 );
             }
 
-            // Block code - with syntax highlighting styling
-            const language = getLanguageFromClassName(className);
+            const language = className ? className.replace('language-', '') : 'text';
             return (
-                <div className="my-4 rounded-xl overflow-hidden border border-slate-600/50 bg-slate-900/80">
-                    {/* Language header */}
-                    <div className="flex items-center justify-between px-4 py-2 bg-slate-800/80 border-b border-slate-600/40">
-                        <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">
-                            {language}
-                        </span>
+                <div className="my-5 rounded-lg overflow-hidden border border-slate-700/60 bg-[#1e1e1e] shadow-2xl">
+                    <div className="flex items-center justify-between px-4 py-2 bg-[#2d2d2d] border-b border-black/20">
+                        <div className="flex items-center gap-2">
+                            <div className="flex gap-1.5">
+                                <div className="w-2.5 h-2.5 rounded-full bg-red-500/20"></div>
+                                <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/20"></div>
+                                <div className="w-2.5 h-2.5 rounded-full bg-green-500/20"></div>
+                            </div>
+                            <span className="text-xs font-medium text-slate-400 ml-2 uppercase tracking-wide">
+                                {language}
+                            </span>
+                        </div>
                         <button
-                            onClick={() => {
-                                navigator.clipboard.writeText(codeString);
-                            }}
-                            className="text-xs text-slate-400 hover:text-sky-400 transition-colors px-2 py-1 rounded hover:bg-slate-700/50"
+                            onClick={() => navigator.clipboard.writeText(codeString)}
+                            className="text-xs text-slate-400 hover:text-white transition-colors px-2 py-1 rounded hover:bg-white/10"
                         >
                             Copy
                         </button>
                     </div>
-                    {/* Code content */}
-                    <pre className="p-4 overflow-x-auto">
+                    <pre className="p-4 overflow-x-auto custom-scrollbar">
                         <code className={`text-sm font-mono text-slate-200 ${className || ''}`} {...props}>
                             {children}
                         </code>
@@ -314,180 +391,32 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
             );
         },
 
-        // Preformatted text wrapper
-        pre: ({ children, ...props }: any) => (
-            <div {...props}>{children}</div>
-        ),
-
-        // Horizontal rule
-        hr: ({ ...props }: any) => (
-            <hr className="my-6 border-slate-600/50" {...props} />
-        ),
-
-        // Tables
-        table: ({ children, ...props }: any) => (
-            <div className="my-4 overflow-x-auto rounded-lg border border-slate-600/50">
-                <table className="min-w-full divide-y divide-slate-600/50" {...props}>
-                    {children}
-                </table>
-            </div>
-        ),
-        thead: ({ children, ...props }: any) => (
-            <thead className="bg-slate-800/60" {...props}>
-                {children}
-            </thead>
-        ),
-        tbody: ({ children, ...props }: any) => (
-            <tbody className="divide-y divide-slate-700/50 bg-slate-800/30" {...props}>
-                {children}
-            </tbody>
-        ),
-        tr: ({ children, ...props }: any) => (
-            <tr className="hover:bg-slate-700/30 transition-colors" {...props}>
-                {children}
-            </tr>
-        ),
-        th: ({ children, ...props }: any) => (
-            <th className="px-4 py-3 text-left text-xs font-semibold text-sky-300 uppercase tracking-wider" {...props}>
-                {children}
-            </th>
-        ),
-        td: ({ children, ...props }: any) => {
-            // Step 1: Pre-clean the entire string to fix malformed URLs with spaces
-            const preCleanContent = (text: string): string => {
-                // Find all URL-like patterns and clean them up in the string
-                // This handles: <https://www. google. com/path> -> <https://www.google.com/path>
-                return text.replace(
-                    /(<?\s*https?:)([^>|\n]*)(>?)/gi,
-                    (match, protocol, rest, closing) => {
-                        // Clean up the URL part
-                        const cleanedRest = rest
-                            .replace(/\s+\.\s+/g, '.')
-                            .replace(/\.\s+/g, '.')
-                            .replace(/\s+\./g, '.')
-                            .replace(/\s+\//g, '/')
-                            .replace(/\/\s+/g, '/')
-                            .replace(/\s+/g, '')
-                            .replace(/-\s+/g, '-')
-                            .replace(/\s+-/g, '-');
-                        const cleanedProtocol = protocol.replace(/\s+/g, '').replace(/^</, '');
-                        return `<${cleanedProtocol}${cleanedRest}>`;
-                    }
-                );
-            };
-
-            // Step 2: Extract domain name dynamically from any URL
-            const getSiteName = (url: string): string => {
-                try {
-                    // Remove angle brackets if present
-                    const cleanUrl = url.replace(/^</, '').replace(/>$/, '');
-                    const urlObj = new URL(cleanUrl);
-                    let hostname = urlObj.hostname.toLowerCase();
-
-                    // Remove www. prefix
-                    hostname = hostname.replace(/^www\./, '');
-
-                    // Get the main domain (first part before TLD)
-                    const parts = hostname.split('.');
-                    const domain = parts[0];
-
-                    // Capitalize first letter
-                    return domain.charAt(0).toUpperCase() + domain.slice(1);
-                } catch {
-                    return 'Link';
-                }
-            };
-
-            // Step 3: Process content and convert URLs to clickable links
-            const processContent = (content: React.ReactNode): React.ReactNode => {
-                if (typeof content === 'string') {
-                    // First, pre-clean the entire string to fix malformed URLs
-                    const cleanedContent = preCleanContent(content);
-
-                    // Now match clean URLs wrapped in angle brackets: <https://...>
-                    const urlPattern = /<(https?:\/\/[^>]+)>/gi;
-                    const parts: React.ReactNode[] = [];
-                    let lastIndex = 0;
-                    let match;
-
-                    while ((match = urlPattern.exec(cleanedContent)) !== null) {
-                        // Add text before the URL
-                        if (match.index > lastIndex) {
-                            const textBefore = cleanedContent.slice(lastIndex, match.index);
-                            if (textBefore.trim()) {
-                                parts.push(textBefore);
-                            }
-                        }
-
-                        const url = match[1]; // The captured URL without angle brackets
-                        const siteName = getSiteName(url);
-
-                        parts.push(
-                            <a
-                                key={match.index}
-                                href={url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-sky-500/20 text-sky-400 hover:text-sky-300 hover:bg-sky-500/30 transition-colors duration-200 text-xs font-medium whitespace-nowrap"
-                            >
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                </svg>
-                                {siteName}
-                            </a>
-                        );
-
-                        lastIndex = match.index + match[0].length;
-                    }
-
-                    // Add remaining text
-                    if (lastIndex < cleanedContent.length) {
-                        const remaining = cleanedContent.slice(lastIndex);
-                        if (remaining.trim()) {
-                            parts.push(remaining);
-                        }
-                    }
-
-                    return parts.length > 0 ? parts : content;
-                }
-
-                // If it's an array, process each element
-                if (Array.isArray(content)) {
-                    return content.map((item, index) => (
-                        <React.Fragment key={index}>{processContent(item)}</React.Fragment>
-                    ));
-                }
-
-                // If it's a React element with children, check if we should process it
-                if (React.isValidElement(content)) {
-                    const elementProps = content.props as { children?: React.ReactNode };
-                    if (elementProps.children) {
-                        return React.cloneElement(content as React.ReactElement<{ children?: React.ReactNode }>, {
-                            ...elementProps,
-                            children: processContent(elementProps.children)
-                        });
-                    }
-                }
-
-                return content;
-            };
-
-            return (
-                <td className="px-4 py-3 text-sm text-slate-200" {...props}>
-                    {processContent(children)}
-                </td>
-            );
-        },
-
-        // Images
+        // Images - Polaroid style
         img: ({ src, alt, ...props }: any) => (
-            <img
-                src={src}
-                alt={alt || 'Image'}
-                className="max-w-full h-auto rounded-lg my-4 shadow-lg"
-                loading="lazy"
-                {...props}
-            />
+            <figure className="my-6 inline-block">
+                <div className="p-2 bg-slate-800 rounded-lg shadow-xl border border-slate-700/50">
+                    <img
+                        src={src}
+                        alt={alt}
+                        className="max-w-full h-auto rounded"
+                        loading="lazy"
+                        {...props}
+                    />
+                </div>
+                {alt && <figcaption className="text-center text-xs text-slate-500 mt-2 italic">{alt}</figcaption>}
+            </figure>
+        ),
+
+        // Horizontal Rule
+        hr: ({ ...props }: any) => (
+            <div className="relative my-8 py-2">
+                <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                    <div className="w-full border-t border-slate-700/50"></div>
+                </div>
+                <div className="relative flex justify-center">
+                    <span className="bg-slate-900 px-2 text-slate-600">***</span>
+                </div>
+            </div>
         ),
 
         // Task lists (GFM)
@@ -508,7 +437,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
 
         // Strikethrough (GFM)
         del: ({ children, ...props }: any) => (
-            <del className="text-slate-500 line-through" {...props}>
+            <del className="text-slate-500 line-through decoration-slate-500/50" {...props}>
                 {children}
             </del>
         ),
@@ -540,6 +469,11 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
                 {/* Sender name */}
                 <div className={`font-semibold text-sm text-slate-200 flex items-center gap-2`}>
                     {isUser ? 'You' : 'Assistant'}
+                    {message.createdAt && (
+                        <span className="text-xs font-normal text-slate-400 ml-1">
+                            {formatTime(message.createdAt)}
+                        </span>
+                    )}
                     {isStreaming && !isUser && (
                         <span className="text-xs font-normal text-sky-400/90 flex items-center gap-2">
                             {/* Modern thinking animation - animated dots with shimmer */}
