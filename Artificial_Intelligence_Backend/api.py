@@ -39,6 +39,19 @@ from users import RefreshTokenDB, store_refresh, revoke_refresh, is_refresh_vali
 from agno.media import Image, Audio, Video
 
 
+# Helper for TTS chunking (replaces deleted tts_chunker module)
+def _split_text_for_tts(text: str):
+    import re
+    if not text:
+        return []
+    # Split by punctuation followed by space or newline
+    _split_pattern = r'(?<=[.!?])\s+'
+    chunks = [c.strip() for c in re.split(_split_pattern, text) if c.strip()]
+    if not chunks and text.strip():
+        return [text]
+    return chunks
+
+
 # Sessions persistence moved to sessions.py
 
 
@@ -1921,10 +1934,9 @@ async def query_assistant_tts_direct(request: QueryRequest, http_request: Reques
                             yield f"data: {json.dumps(response_data)}\n\n"
                             await asyncio.sleep(0.01)
                 
-                from AI_Agents_Workflows.tts_chunker import split_for_tts
                 cleaned_response = clean_model_output(full_response)
                 cleaned_response = ensure_response_content(cleaned_response)
-                chunks = split_for_tts(cleaned_response)
+                chunks = _split_text_for_tts(cleaned_response)
                 logging.info(f"Assistant TTS: Split into {len(chunks)} chunks")
                 
                 sent_count = 0
@@ -2022,10 +2034,9 @@ async def query_mcp_tts_direct_endpoint(request: QueryRequest, http_request: Req
                             yield f"data: {json.dumps(response_data)}\n\n"
                             await asyncio.sleep(0.01)
                 
-                from AI_Agents_Workflows.tts_chunker import split_for_tts
                 cleaned_response = clean_model_output(full_response)
                 cleaned_response = ensure_response_content(cleaned_response)
-                chunks = split_for_tts(cleaned_response)
+                chunks = _split_text_for_tts(cleaned_response)
                 logging.info(f"MCP TTS: Split into {len(chunks)} chunks")
                 
                 sent_count = 0
@@ -2122,10 +2133,9 @@ async def query_tts_direct_endpoint(request: QueryRequest, http_request: Request
                             yield f"data: {json.dumps(response_data)}\n\n"
                             await asyncio.sleep(0.01)
                 
-                from AI_Agents_Workflows.tts_chunker import split_for_tts
                 cleaned_response = clean_model_output(full_response)
                 cleaned_response = ensure_response_content(cleaned_response)
-                chunks = split_for_tts(cleaned_response)
+                chunks = _split_text_for_tts(cleaned_response)
                 logging.info(f"AI TTS: Split into {len(chunks)} chunks")
                 
                 sent_count = 0
@@ -2231,10 +2241,9 @@ async def stt_query_assistant_tts_direct_endpoint(
                             yield f"data: {json.dumps(response_data)}\n\n"
                             await asyncio.sleep(0.01)
                 
-                from AI_Agents_Workflows.tts_chunker import split_for_tts
                 cleaned_response = clean_model_output(full_response)
                 cleaned_response = ensure_response_content(cleaned_response)
-                chunks = split_for_tts(cleaned_response)
+                chunks = _split_text_for_tts(cleaned_response)
                 logging.info(f"STT-Assistant TTS: Split into {len(chunks)} chunks")
                 
                 sent_count = 0
@@ -2306,9 +2315,8 @@ async def stt_query_mcp_tts_direct_endpoint(
                             yield f"data: {json.dumps({'content': cleaned_chunk})}\n\n"
                             await asyncio.sleep(0.01)
                 
-                from AI_Agents_Workflows.tts_chunker import split_for_tts
                 cleaned_response = ensure_response_content(clean_model_output(full_response))
-                chunks = split_for_tts(cleaned_response)
+                chunks = _split_text_for_tts(cleaned_response)
                 
                 sent_count = 0
                 for idx, chunk_text in enumerate(chunks):
@@ -2363,9 +2371,8 @@ async def stt_query_tts_direct_endpoint(
                         full_response += chunk
                         yield f"data: {json.dumps({'content': chunk})}\n\n"
                 
-                from AI_Agents_Workflows.tts_chunker import split_for_tts
                 cleaned_response = ensure_response_content(clean_model_output(full_response))
-                chunks = split_for_tts(cleaned_response)
+                chunks = _split_text_for_tts(cleaned_response)
                 
                 sent_count = 0
                 for idx, chunk_text in enumerate(chunks):

@@ -38,8 +38,18 @@ class KokoroTTS:
             print(f"Kokoro model not found at {MODEL_PATH}. Running setup...", file=sys.stderr)
             # Attempt to run setup if missing (fallback)
             try:
-                from ..setup_tts import setup_tts
-                setup_tts()
+                # Try absolute import first (works if /app is in sys.path)
+                import setup_tts
+                setup_tts.setup_tts()
+            except ImportError:
+                # Fallback: add parent to path
+                try:
+                    sys.path.insert(0, str(Path(__file__).parent.parent))
+                    import setup_tts
+                    setup_tts.setup_tts()
+                except Exception as e:
+                    print(f"Failed to auto-setup Kokoro: {e}", file=sys.stderr)
+                    raise RuntimeError("Kokoro TTS model files missing. Please run setup_tts.py manually.")
             except Exception as e:
                 print(f"Failed to auto-setup Kokoro: {e}", file=sys.stderr)
                 raise RuntimeError("Kokoro TTS model files missing. Please run setup_tts.py.")

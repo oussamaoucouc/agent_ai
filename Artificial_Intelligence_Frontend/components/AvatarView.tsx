@@ -5,6 +5,7 @@ import { SpeakerOffIcon } from './icons';
 interface AvatarViewProps {
     isSpeaking: boolean;
     isLoading: boolean;
+    isGenerating: boolean;
     currentViseme: string;
     isConversationStarted: boolean;
     onStopAudio?: () => void;
@@ -13,23 +14,54 @@ interface AvatarViewProps {
 export const AvatarView: React.FC<AvatarViewProps> = ({
     isSpeaking,
     isLoading,
+    isGenerating,
     currentViseme,
     isConversationStarted,
     onStopAudio
 }) => {
+    // Show processing state when generating audio but not currently speaking
+    // This prevents the UI from showing "idle" during gaps between audio chunks
+    const isProcessingAudio = isGenerating && !isSpeaking && !isLoading;
+
     return (
         <div className="flex flex-col items-center justify-center p-8 text-center">
-            {/* Avatar wrapper with slow spin animation during loading (Generating Speaking) phase */}
+            {/* Avatar wrapper with slow spin animation during loading or processing phase */}
             <div
                 style={{
-                    animation: isLoading ? 'spin 2s linear infinite' : 'none',
+                    animation: (isLoading || isProcessingAudio) ? 'spin 2s linear infinite' : 'none',
                 }}
             >
-                <Avatar isSpeaking={isSpeaking} currentViseme={currentViseme} isLoading={isLoading} />
+                <Avatar isSpeaking={isSpeaking} currentViseme={currentViseme} isLoading={isLoading || isProcessingAudio} />
             </div>
             <h2 className="mt-8 text-2xl font-bold text-slate-200">AI Assistant</h2>
             {isLoading ? (
                 <p className="mt-2 text-sky-300 max-w-sm">Generating Speaking...</p>
+            ) : isProcessingAudio ? (
+                <div className="flex flex-col items-center gap-3 mt-2">
+                    {/* Processing indicator - same style as speaking to hide technical details */}
+                    <div className="flex items-center gap-2">
+                        <div className="flex gap-0.5">
+                            <span className="w-1 h-3 bg-cyan-400 rounded-full animate-pulse" style={{ animationDelay: '0s' }}></span>
+                            <span className="w-1 h-4 bg-teal-400 rounded-full animate-pulse" style={{ animationDelay: '0.15s' }}></span>
+                            <span className="w-1 h-3 bg-cyan-400 rounded-full animate-pulse" style={{ animationDelay: '0.3s' }}></span>
+                        </div>
+                        <p className="text-slate-400 max-w-sm">Speaking...</p>
+                    </div>
+
+                    {/* Stop Audio Button */}
+                    {onStopAudio && (
+                        <button
+                            onClick={onStopAudio}
+                            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium
+                                       bg-slate-700/60 hover:bg-red-600/60 border border-slate-500/40 hover:border-red-400/60
+                                       text-slate-200 hover:text-white transition-all duration-200
+                                       shadow-lg hover:shadow-red-500/20"
+                        >
+                            <SpeakerOffIcon className="w-4 h-4" />
+                            <span>Stop Audio</span>
+                        </button>
+                    )}
+                </div>
             ) : isSpeaking ? (
                 <div className="flex flex-col items-center gap-3 mt-2">
                     {/* Speaking indicator */}

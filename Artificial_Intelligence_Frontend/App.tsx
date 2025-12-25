@@ -1864,6 +1864,7 @@ const App: React.FC = () => {
                             isSpeaking={isSpeaking}
                             currentViseme={currentViseme}
                             isLoading={isLoading}
+                            isGenerating={isGenerating}
                             isConversationStarted={isConversationStarted}
                             onStopAudio={handleStopAudio}
                         />
