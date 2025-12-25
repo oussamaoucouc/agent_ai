@@ -414,7 +414,11 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
                     <div className="w-full border-t border-slate-700/50"></div>
                 </div>
                 <div className="relative flex justify-center">
-                    <span className="bg-slate-900 px-2 text-slate-600">***</span>
+                    <span className="bg-slate-900 px-3 text-slate-500 flex items-center gap-1.5 text-sm">
+                        <span className="text-slate-600">⎯</span>
+                        <span className="text-sky-500/60">●</span>
+                        <span className="text-slate-600">⎯</span>
+                    </span>
                 </div>
             </div>
         ),
