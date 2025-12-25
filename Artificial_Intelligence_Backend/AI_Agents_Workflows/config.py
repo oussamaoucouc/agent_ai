@@ -242,7 +242,19 @@ def _parse_stdio_commands(raw: str) -> list[str]:
 # Catalogs and lists persisted across restarts
 _available_models: list[str] = [_current_model_id]
 _available_models_labeled: list[dict] = []
+# Try to load available voices from voices.json if it exists
 _available_voices: list[str] = [_current_voice]
+try:
+    _voices_path = Path(__file__).parent.parent / "models" / "kokoro" / "voices.json"
+    if _voices_path.exists():
+        with open(_voices_path, "r") as _f:
+            _v_data = json.load(_f)
+            _loaded_voices = sorted(list(_v_data.keys()))
+            if _loaded_voices:
+                _available_voices = _loaded_voices
+except Exception as e:
+    print(f"Failed to load voices.json: {e}")
+
 _available_voices_labeled: list[dict] = []
 _mcp_servers: list[dict] = [{"label": "Default MCP", "url": MCP_SERVER_URL}]
 _mcp_stdio_commands: list[str] = _parse_stdio_commands(_MCP_STDIO_COMMANDS_RAW)

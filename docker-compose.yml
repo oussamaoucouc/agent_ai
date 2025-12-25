@@ -26,13 +26,13 @@ services:
       - tts_cache_vol:/app/tts_cache
       - documents_vol:/app/data # Persist uploaded documents outside container
       - /app/.venv
+      - ./Artificial_Intelligence_Backend/models:/app/models # Persist TTS models
       - ${USERPROFILE}/.docker/mcp:/root/.docker/mcp:ro # Mount user's MCP config for agent to read
     environment:
       - API_HOST=0.0.0.0
       - API_PORT=8000
       - API_RELOAD=1
       - OLLAMA_BASE_URL=http://ollama:11434
-      - KOKORO_TTS_URL=http://kokoro-tts:8880/v1/audio/speech
       - DATABASE_URL=postgresql://ai:ai@postgres:5432/ai?options=-csearch_path=ai
       - VECTOR_DB_URL=postgresql+psycopg://ai:ai@postgres:5432/ai?options=-csearch_path=ai
     extra_hosts:
@@ -41,8 +41,6 @@ services:
       postgres:
         condition: service_healthy
       ollama:
-        condition: service_healthy
-      kokoro-tts:
         condition: service_healthy
     networks:
       - ai-network
@@ -87,18 +85,6 @@ services:
               capabilities: [ gpu ]
     healthcheck:
       test: [ "CMD", "ollama", "list" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    networks:
-      - ai-network
-
-  kokoro-tts:
-    image: ghcr.io/remsky/kokoro-fastapi-cpu:v0.2.2
-    ports:
-      - "8880:8880"
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8880/docs" ]
       interval: 30s
       timeout: 10s
       retries: 3

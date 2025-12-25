@@ -1,25 +1,67 @@
 """
-Text-to-Speech functionality using Kokoro TTS, with integrated viseme generation.
+Text-to-Speech functionality using Kokoro TTS (ONNX), with integrated viseme generation.
+Running in-process for maximum performance.
 """
 import os
 import sys
-import tempfile
-import subprocess
-import functools
-import shutil
 import json
 import re
 import hashlib
 import time
+import shutil
+import subprocess
+import soundfile as sf
 from pathlib import Path
+from kokoro_onnx import Kokoro
+from .config import TTS_CACHE_DIR, TTS_CACHE_KEEP_RECENT, TTS_CACHE_MAX_AGE_HOURS, RHUBARB_PATH, get_current_voice
 
-# Assuming config.py has this, otherwise define it
-try:
-    from .config import TTS_CACHE_DIR, TTS_CACHE_KEEP_RECENT, TTS_CACHE_MAX_AGE_HOURS
-except ImportError:
-    TTS_CACHE_DIR = Path(__file__).parent.parent / "cache" / "tts"
-    TTS_CACHE_KEEP_RECENT = 50
-    TTS_CACHE_MAX_AGE_HOURS = 24
+# Correctly locate the models directory relative to this file
+# This assumes the structure: Artificial_Intelligence_Backend/models/kokoro
+curr_dir = Path(__file__).parent  # AI_Agents_Workflows
+backend_dir = curr_dir.parent      # Artificial_Intelligence_Backend
+MODEL_DIR = backend_dir / "models" / "kokoro"
+MODEL_PATH = MODEL_DIR / "kokoro-v0_19.onnx"
+VOICES_PATH = MODEL_DIR / "voices.json"
+
+class KokoroTTS:
+    _instance = None
+    _model = None
+
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    def __init__(self):
+        if not MODEL_PATH.exists() or not VOICES_PATH.exists():
+            print(f"Kokoro model not found at {MODEL_PATH}. Running setup...", file=sys.stderr)
+            # Attempt to run setup if missing (fallback)
+            try:
+                from ..setup_tts import setup_tts
+                setup_tts()
+            except Exception as e:
+                print(f"Failed to auto-setup Kokoro: {e}", file=sys.stderr)
+                raise RuntimeError("Kokoro TTS model files missing. Please run setup_tts.py.")
+        
+        print(f"Loading Kokoro ONNX model from {MODEL_PATH}...", file=sys.stderr)
+        self._model = Kokoro(str(MODEL_PATH), str(VOICES_PATH))
+        print("Kokoro ONNX model loaded.", file=sys.stderr)
+
+    def generate(self, text, voice="af_sky"):
+        """
+        Generate audio from text.
+        Returns:
+            audio (numpy array): raw float32 audio
+            sample_rate (int): sample rate (usually 24000)
+        """
+        if not self._model:
+            raise RuntimeError("Kokoro model not initialized")
+        
+        # Ensure we're using a valid voice ID
+        # For simplicity, we pass the voice string directly. kokoro-onnx handles validation or throws.
+        # Fallback to af_sky if something goes wrong is handled by the caller or try/except block.
+        return self._model.create(text, voice=voice, speed=1.0, lang="en-us")
 
 # --- Helper functions --- #
 
@@ -35,30 +77,67 @@ def clean_text_for_tts(text):
     text = re.sub(r' +', ' ', text)
     return text
 
-# --- Initialization --- #
+def generate_visemes(audio_path, text):
+    """
+    Generates viseme data for a given audio file and text using Rhubarb Lip Sync.
+    The viseme data is saved to a JSON file with the same name as the audio file.
+    """
+    if not os.path.exists(RHUBARB_PATH):
+        print(f"Rhubarb executable not found at {RHUBARB_PATH}", file=sys.stderr)
+        return None
 
-@functools.lru_cache(maxsize=1)
-def initialize_tts():
-    """Initialize the text-to-speech components."""
-    tts_script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tts_helper.py")
-    os.makedirs(TTS_CACHE_DIR, exist_ok=True)
-    return tts_script_path
+    viseme_output_path = Path(audio_path).with_suffix('.json')
+
+    # Rhubarb requires the dialog text in a file
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt', encoding='utf-8') as temp_dialog_file:
+        temp_dialog_file.write(text)
+        dialog_file_path = temp_dialog_file.name
+
+    # Ensure the executable has permission to run
+    try:
+        current_mode = os.stat(RHUBARB_PATH).st_mode
+        os.chmod(RHUBARB_PATH, current_mode | 0o111)
+    except Exception as e:
+        print(f"Warning: Could not set execute permission on {RHUBARB_PATH}: {e}", file=sys.stderr)
+
+    try:
+        command = [
+            str(RHUBARB_PATH),
+            '-f', 'json',
+            '--dialogFile', dialog_file_path,
+            '-o', str(viseme_output_path),
+            str(audio_path)
+        ]
+        
+        # Run Rhubarb
+        subprocess.run(command, check=True, capture_output=True, text=True)
+        
+        if viseme_output_path.exists():
+            with open(viseme_output_path, 'r') as f:
+                return json.load(f)
+        return None
+
+    except subprocess.CalledProcessError as e:
+        print(f"Error running Rhubarb: {e}\nStderr: {e.stderr}", file=sys.stderr)
+        return None
+    except Exception as e:
+        print(f"An unexpected error occurred in generate_visemes: {e}", file=sys.stderr)
+        return None
+    finally:
+        if os.path.exists(dialog_file_path):
+            os.remove(dialog_file_path)
 
 # --- Cache Cleanup --- #
 
 def cleanup_tts_cache():
-    """Remove old or excess cached TTS files.
-
-    - Keeps the most recent TTS_CACHE_KEEP_RECENT items (pairs of wav/json).
-    - Removes any items older than TTS_CACHE_MAX_AGE_HOURS.
-    - Deletes orphaned files that don't have a matching pair.
-    """
+    """Remove old or excess cached TTS files."""
     try:
         cache_dir = Path(TTS_CACHE_DIR)
         if not cache_dir.exists():
             return
 
-        # Group by stem to treat wav/json as one item
+        # Group by stem
         items = {}
         for p in cache_dir.glob('*'):
             if p.suffix not in {'.wav', '.json'}:
@@ -96,156 +175,62 @@ def cleanup_tts_cache():
             except Exception:
                 continue
 
-        # Orphan cleanup: json without wav, wav without json
-        for json_file in cache_dir.glob('*.json'):
-            wav_file = json_file.with_suffix('.wav')
-            if not wav_file.exists():
-                try:
-                    json_file.unlink(missing_ok=True)
-                except Exception:
-                    pass
-        for wav_file in cache_dir.glob('*.wav'):
-            json_file = wav_file.with_suffix('.json')
-            if not json_file.exists():
-                # Be conservative: only remove if older than max age
-                try:
-                    if now - wav_file.stat().st_mtime > max_age_secs:
-                        wav_file.unlink(missing_ok=True)
-                except Exception:
-                    pass
     except Exception:
-        # Never let cleanup errors affect TTS flow
         pass
-
-# --- Core Subprocess Runner --- #
-
-def run_tts_script(text, tts_script_path):
-    """
-    Runs the TTS helper script to generate speech and visemes.
-    Returns paths to temporary audio and viseme files.
-    """
-    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_audio_file:
-        audio_file_path = temp_audio_file.name
-
-    try:
-        command = [sys.executable, tts_script_path, text, audio_file_path]
-        # Pass selected voice to subprocess so tts_helper can use it
-        try:
-            from .config import get_current_voice
-            current_voice = get_current_voice()
-        except Exception:
-            current_voice = "af_sky"
-        env = os.environ.copy()
-        env["KOKORO_VOICE"] = current_voice
-        # Capture raw bytes to avoid UnicodeDecodeError from helper/Rhubarb outputs
-        result = subprocess.run(command, check=True, capture_output=True, text=False, env=env)
-        
-        if result.stderr:
-            try:
-                print("TTS Helper STDERR:", result.stderr.decode('utf-8', errors='replace'), file=sys.stderr)
-            except Exception:
-                # If decoding fails, skip printing raw bytes
-                pass
-
-        viseme_file_path = Path(audio_file_path).with_suffix('.json')
-
-        if not os.path.exists(audio_file_path) or os.path.getsize(audio_file_path) == 0:
-            print(f"Error: Audio file was not created or is empty at {audio_file_path}", file=sys.stderr)
-            return None, None
-
-        if not os.path.exists(viseme_file_path):
-            print(f"Warning: Viseme file not found at {viseme_file_path}", file=sys.stderr)
-            return audio_file_path, None
-
-        return audio_file_path, viseme_file_path
-
-    except subprocess.CalledProcessError as e:
-        print(f"Error running tts_helper.py: {e}\nStderr: {e.stderr}", file=sys.stderr)
-        if os.path.exists(audio_file_path):
-            os.remove(audio_file_path)
-        return None, None
 
 # --- Main Public Function --- #
 
 def text_to_speech(text):
     """
-    Convert text to speech, generate visemes, and handle caching.
+    Convert text to speech using Kokoro ONNX (in-process).
     
     Returns:
         tuple: (path_to_audio_file, viseme_data_dict) or (None, None)
     """
-    tts_script_path = initialize_tts()
-    if not tts_script_path:
-        raise Exception("TTS initialization failed.")
-
     cleaned_text = clean_text_for_tts(text)
     if not cleaned_text:
-        print("Text is empty after cleaning, skipping TTS.", file=sys.stderr)
         return None, None
     
-    # Include voice in cache key so voice changes reflect in audio
     try:
-        from .config import get_current_voice
-        current_voice = get_current_voice()
+        voice = get_current_voice()
     except Exception:
-        current_voice = "af_sky"
-    text_hash = get_text_hash(f"{current_voice}|{cleaned_text}")
+        voice = "af_sky"
+
+    # Cache key
+    text_hash = get_text_hash(f"{voice}|{cleaned_text}")
     cache_audio_path = os.path.join(TTS_CACHE_DIR, f"{text_hash}.wav")
     cache_viseme_path = os.path.join(TTS_CACHE_DIR, f"{text_hash}.json")
     
-    # Check cache for both audio and visemes
+    # Check cache
     if os.path.exists(cache_audio_path) and os.path.exists(cache_viseme_path):
-        # Validate cache file size
-        try:
-            cache_size = os.path.getsize(cache_audio_path)
-            if cache_size < 1000:
-                print(f"Cached audio file is too small ({cache_size} bytes), purging cache and regenerating: {cleaned_text[:50]}...", file=sys.stderr)
-                os.remove(cache_audio_path)
-                os.remove(cache_viseme_path)
-            else:
-                print(f"Using cached TTS audio and visemes for text: {cleaned_text[:50]}...", file=sys.stderr)
+         try:
+            if os.path.getsize(cache_audio_path) > 1000:
+                print(f"Using cached TTS: {cleaned_text[:30]}...", file=sys.stderr)
+                # Touch files to update mtime
+                Path(cache_audio_path).touch()
                 with open(cache_viseme_path, 'r') as f:
                     viseme_data = json.load(f)
                 return cache_audio_path, viseme_data
-        except Exception as e:
-            print(f"Error reading cache, regenerating: {e}", file=sys.stderr)
-    
-    # If not in cache, generate audio and visemes
-    print(f"Generating new TTS audio and visemes for text: {cleaned_text[:50]}...", file=sys.stderr)
-    temp_audio_path, temp_viseme_path = run_tts_script(cleaned_text, tts_script_path)
-    
-    if not temp_audio_path:
-        return None, None
-        
-    # Validate generated file size
+         except Exception:
+             pass
+
+    # Generate
+    print(f"Generating TTS (Kokoro ONNX): {cleaned_text[:30]}...", file=sys.stderr)
     try:
-        gen_size = os.path.getsize(temp_audio_path)
-        if gen_size < 1000:
-            print(f"Generated audio file is too small ({gen_size} bytes), validation failed: {cleaned_text[:50]}...", file=sys.stderr)
-            os.remove(temp_audio_path)
-            if temp_viseme_path and os.path.exists(temp_viseme_path):
-                os.remove(temp_viseme_path)
-            return None, None
+        tts = KokoroTTS.get_instance()
+        audio, sample_rate = tts.generate(cleaned_text, voice=voice)
+        
+        # Save audio
+        sf.write(cache_audio_path, audio, sample_rate)
+        
+        # Generate visemes
+        viseme_data = generate_visemes(cache_audio_path, cleaned_text)
+        
+        # Cleanup
+        cleanup_tts_cache()
+        
+        return cache_audio_path, viseme_data
+        
     except Exception as e:
-        print(f"Error checking generated file size: {e}", file=sys.stderr)
+        print(f"TTS Generation Error: {e}", file=sys.stderr)
         return None, None
-
-    # Move generated audio to cache and clean up temp file
-    shutil.copy2(temp_audio_path, cache_audio_path)
-    print(f"Cached TTS audio at {cache_audio_path}", file=sys.stderr)
-    os.remove(temp_audio_path)
-    
-    viseme_data = None
-    if temp_viseme_path:
-        # Load viseme data from temp file
-        with open(temp_viseme_path, 'r') as f:
-            viseme_data = json.load(f)
-        # Copy viseme data to cache and clean up temp file
-        shutil.copy2(temp_viseme_path, cache_viseme_path)
-        print(f"Cached visemes at {cache_viseme_path}", file=sys.stderr)
-        os.remove(temp_viseme_path)
-    
-    # Opportunistic cache cleanup after generating output
-    cleanup_tts_cache()
-
-    return cache_audio_path, viseme_data

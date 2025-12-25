@@ -47,14 +47,20 @@ RUN mkdir -p /app/data /app/tts_cache
 # Copy application code (this layer changes most frequently)
 COPY . .
 
-# Expose port
-EXPOSE 8000
-
 # =============================================================================
-# CRITICAL: Add the virtual environment to PATH
-# This ensures the container uses the venv that uv just created
+# CRITICAL: Add the virtual environment to PATH early
+# This ensures subsequent RUN commands use the venv
 # =============================================================================
 ENV PATH="/app/.venv/bin:$PATH"
+
+# =============================================================================
+# SETUP: Runtime Download
+# Models will be downloaded at runtime if using volumes (keeps image light)
+# =============================================================================
+# RUN uv run python setup_tts.py
+
+# Expose port
+EXPOSE 8000
 
 # =============================================================================
 # PRODUCTION RUNNER: Direct uvicorn command
@@ -75,4 +81,4 @@ ENV PATH="/app/.venv/bin:$PATH"
 #   --limit-concurrency 100 : Max 100 concurrent connections (prevents OOM)
 #   --timeout-keep-alive 30 : Close idle connections after 30 seconds
 # =============================================================================
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000", "--limit-concurrency", "200", "--timeout-keep-alive", "30"]
+CMD ["uv", "run", "uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000", "--limit-concurrency", "200", "--timeout-keep-alive", "30"]

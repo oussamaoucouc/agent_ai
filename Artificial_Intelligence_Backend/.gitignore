@@ -115,3 +115,6 @@ tts_cache/
 
 # Data files
 data/pdfs/
+
+# TTS Models (Large binary files)
+models/
