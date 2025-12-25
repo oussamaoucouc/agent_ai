@@ -1,5 +1,5 @@
 """
-Text-to-Speech functionality using Kokoro TTS (ONNX), with integrated viseme generation.
+Text-to-Speech functionality using Kokoro TTS (ONNX) and Piper TTS (Arabic).
 Running in-process for maximum performance.
 """
 import os
@@ -11,6 +11,8 @@ import time
 import shutil
 import subprocess
 import soundfile as sf
+import wave
+import io
 from pathlib import Path
 from kokoro_onnx import Kokoro
 from .config import TTS_CACHE_DIR, TTS_CACHE_KEEP_RECENT, TTS_CACHE_MAX_AGE_HOURS, RHUBARB_PATH, get_current_voice
@@ -22,6 +24,11 @@ backend_dir = curr_dir.parent      # Artificial_Intelligence_Backend
 MODEL_DIR = backend_dir / "models" / "kokoro"
 MODEL_PATH = MODEL_DIR / "kokoro-v1.0.onnx"
 VOICES_PATH = MODEL_DIR / "voices-v1.0.bin"
+
+# Piper TTS paths (for Arabic)
+PIPER_MODEL_DIR = backend_dir / "models" / "piper"
+PIPER_ARABIC_MODEL = PIPER_MODEL_DIR / "ar_JO-kareem-medium.onnx"
+PIPER_ARABIC_CONFIG = PIPER_MODEL_DIR / "ar_JO-kareem-medium.onnx.json"
 
 class KokoroTTS:
     _instance = None
@@ -106,6 +113,83 @@ class KokoroTTS:
         # Create audio
         # Note: speed can be parameterised later if needed
         return self._model.create(text, voice=voice, speed=1.0, lang=lang)
+
+
+class PiperTTS:
+    """Piper TTS for Arabic language support."""
+    _instance = None
+    _voice = None
+
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    def __init__(self):
+        if not PIPER_ARABIC_MODEL.exists() or not PIPER_ARABIC_CONFIG.exists():
+            print(f"Piper Arabic model not found at {PIPER_ARABIC_MODEL}. Running setup...", file=sys.stderr)
+            try:
+                import setup_tts
+                setup_tts.setup_tts()
+            except ImportError:
+                try:
+                    sys.path.insert(0, str(Path(__file__).parent.parent))
+                    import setup_tts
+                    setup_tts.setup_tts()
+                except Exception as e:
+                    print(f"Failed to auto-setup Piper: {e}", file=sys.stderr)
+                    raise RuntimeError("Piper TTS model files missing. Please run setup_tts.py manually.")
+            except Exception as e:
+                print(f"Failed to auto-setup Piper: {e}", file=sys.stderr)
+                raise RuntimeError("Piper TTS model files missing. Please run setup_tts.py.")
+        
+        print(f"Loading Piper Arabic model from {PIPER_ARABIC_MODEL}...", file=sys.stderr)
+        from piper import PiperVoice
+        self._voice = PiperVoice.load(str(PIPER_ARABIC_MODEL), str(PIPER_ARABIC_CONFIG))
+        print("Piper Arabic model loaded.", file=sys.stderr)
+
+    def generate(self, text):
+        """
+        Generate audio from Arabic text.
+        Returns:
+            audio (numpy array): raw audio
+            sample_rate (int): sample rate
+        """
+        if not self._voice:
+            raise RuntimeError("Piper model not initialized")
+        
+        import numpy as np
+        import tempfile
+        from piper.config import SynthesisConfig
+        
+        # Optimized settings for more natural Arabic speech:
+        # - length_scale=0.85: slightly faster, more natural pace
+        # - noise_scale=0.75: more audio variation/expressiveness  
+        # - noise_w_scale=0.9: better phoneme cadence
+        syn_config = SynthesisConfig(
+            length_scale=0.85,
+            noise_scale=0.75,
+            noise_w_scale=0.9
+        )
+        
+        # Piper synthesizes to WAV file
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_wav:
+            temp_path = temp_wav.name
+        
+        try:
+            # Use synthesize_wav with set_wav_format=True 
+            with wave.open(temp_path, 'wb') as wav_file:
+                self._voice.synthesize_wav(text, wav_file, syn_config=syn_config, set_wav_format=True)
+            
+            # Read back the audio
+            audio, sr = sf.read(temp_path)
+            return audio.astype(np.float32), sr
+        finally:
+            # Clean up temp file
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+
 
 # --- Helper functions --- #
 
@@ -226,7 +310,7 @@ def cleanup_tts_cache():
 
 def text_to_speech(text):
     """
-    Convert text to speech using Kokoro ONNX (in-process).
+    Convert text to speech using Kokoro ONNX or Piper TTS (for Arabic).
     
     Returns:
         tuple: (path_to_audio_file, viseme_data_dict) or (None, None)
@@ -239,6 +323,9 @@ def text_to_speech(text):
         voice = get_current_voice()
     except Exception:
         voice = "af_sky"
+
+    # Determine if this is an Arabic voice (uses Piper)
+    is_arabic = voice.startswith("ar_")
 
     # Cache key
     text_hash = get_text_hash(f"{voice}|{cleaned_text}")
@@ -259,10 +346,17 @@ def text_to_speech(text):
              pass
 
     # Generate
-    print(f"Generating TTS (Kokoro ONNX): {cleaned_text[:30]}...", file=sys.stderr)
     try:
-        tts = KokoroTTS.get_instance()
-        audio, sample_rate = tts.generate(cleaned_text, voice=voice)
+        if is_arabic:
+            # Use Piper TTS for Arabic
+            print(f"Generating TTS (Piper Arabic): {cleaned_text[:30]}...", file=sys.stderr)
+            tts = PiperTTS.get_instance()
+            audio, sample_rate = tts.generate(cleaned_text)
+        else:
+            # Use Kokoro TTS for all other languages
+            print(f"Generating TTS (Kokoro ONNX): {cleaned_text[:30]}...", file=sys.stderr)
+            tts = KokoroTTS.get_instance()
+            audio, sample_rate = tts.generate(cleaned_text, voice=voice)
         
         # Save audio
         sf.write(cache_audio_path, audio, sample_rate)
@@ -278,3 +372,4 @@ def text_to_speech(text):
     except Exception as e:
         print(f"TTS Generation Error: {e}", file=sys.stderr)
         return None, None
+
