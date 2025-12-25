@@ -71,18 +71,62 @@ export interface AdminUser {
     createdAt: string;
 }
 
-// Updated voices from Kokoro TTS documentation
+// Complete list of available Kokoro TTS voices
 export enum TTSVoice {
+    // American Female
+    AF_ALLOY = 'af_alloy',
+    AF_AOEDE = 'af_aoede',
     AF_BELLA = 'af_bella',
+    AF_HEART = 'af_heart',
+    AF_JESSICA = 'af_jessica',
+    AF_KORE = 'af_kore',
     AF_NICOLE = 'af_nicole',
+    AF_NOVA = 'af_nova',
+    AF_RIVER = 'af_river',
     AF_SARAH = 'af_sarah',
     AF_SKY = 'af_sky',
+    // American Male
+    AM_ADAM = 'am_adam',
+    AM_ECHO = 'am_echo',
+    AM_ERIC = 'am_eric',
+    AM_FENRIR = 'am_fenrir',
+    AM_LIAM = 'am_liam',
+    AM_MICHAEL = 'am_michael',
+    AM_ONYX = 'am_onyx',
+    AM_PUCK = 'am_puck',
+    AM_SANTA = 'am_santa',
+    // British Female
+    BF_ALICE = 'bf_alice',
     BF_EMMA = 'bf_emma',
     BF_ISABELLA = 'bf_isabella',
-    AM_ADAM = 'am_adam',
-    AM_MICHAEL = 'am_michael',
+    BF_LILY = 'bf_lily',
+    // British Male
+    BM_DANIEL = 'bm_daniel',
+    BM_FABLE = 'bm_fable',
     BM_GEORGE = 'bm_george',
     BM_LEWIS = 'bm_lewis',
+    // European Female (Spanish)
+    EF_DORA = 'ef_dora',
+    // European Male
+    EM_ALEX = 'em_alex',
+    EM_SANTA = 'em_santa',
+    // French Female
+    FF_SIWIS = 'ff_siwis',
+    // Hindi Female
+    HF_ALPHA = 'hf_alpha',
+    HF_BETA = 'hf_beta',
+    // Hindi Male
+    HM_OMEGA = 'hm_omega',
+    HM_PSI = 'hm_psi',
+    // Italian Female
+    IF_SARA = 'if_sara',
+    // Italian Male
+    IM_NICOLA = 'im_nicola',
+    // Japanese Female
+    JF_ALPHA = 'jf_alpha',
+    JF_GONGITSUNE = 'jf_gongitsune',
+    JF_NEZUMI = 'jf_nezumi',
+    JF_TEBUKURO = 'jf_tebukuro',
 }
 
 

@@ -20,8 +20,8 @@ from .config import TTS_CACHE_DIR, TTS_CACHE_KEEP_RECENT, TTS_CACHE_MAX_AGE_HOUR
 curr_dir = Path(__file__).parent  # AI_Agents_Workflows
 backend_dir = curr_dir.parent      # Artificial_Intelligence_Backend
 MODEL_DIR = backend_dir / "models" / "kokoro"
-MODEL_PATH = MODEL_DIR / "kokoro-v0_19.onnx"
-VOICES_PATH = MODEL_DIR / "voices.json"
+MODEL_PATH = MODEL_DIR / "kokoro-v1.0.onnx"
+VOICES_PATH = MODEL_DIR / "voices-v1.0.bin"
 
 class KokoroTTS:
     _instance = None
@@ -58,6 +58,38 @@ class KokoroTTS:
         self._model = Kokoro(str(MODEL_PATH), str(VOICES_PATH))
         print("Kokoro ONNX model loaded.", file=sys.stderr)
 
+    def get_language_code(self, voice):
+        """
+        Determine language code from voice prefix.
+        """
+        if not voice:
+            return "en-us"
+            
+        prefix = voice[:2].lower()
+        
+        # Mapping based on Kokoro model card
+        mapping = {
+            'af': 'en-us', # American Female
+            'am': 'en-us', # American Male
+            'bf': 'en-gb', # British Female
+            'bm': 'en-gb', # British Male
+            'ff': 'fr-fr', # French Female
+            'jf': 'ja',    # Japanese Female
+            'jm': 'ja',    # Japanese Male
+            'hf': 'hi',    # Hindi Female
+            'hm': 'hi',    # Hindi Male
+            'if': 'it',    # Italian Female
+            'im': 'it',    # Italian Male
+            'pf': 'pt-br', # Portuguese Female
+            'pm': 'pt-br', # Portuguese Male
+            'zf': 'zh',    # Chinese Female
+            'zm': 'zh',    # Chinese Male
+            'ef': 'es',    # Spanish Female (Kokoro convention)
+            'em': 'es',    # Spanish Male (Kokoro convention)
+        }
+        
+        return mapping.get(prefix, 'en-us')
+
     def generate(self, text, voice="af_sky"):
         """
         Generate audio from text.
@@ -68,10 +100,12 @@ class KokoroTTS:
         if not self._model:
             raise RuntimeError("Kokoro model not initialized")
         
-        # Ensure we're using a valid voice ID
-        # For simplicity, we pass the voice string directly. kokoro-onnx handles validation or throws.
-        # Fallback to af_sky if something goes wrong is handled by the caller or try/except block.
-        return self._model.create(text, voice=voice, speed=1.0, lang="en-us")
+        # Determine language from voice
+        lang = self.get_language_code(voice)
+        
+        # Create audio
+        # Note: speed can be parameterised later if needed
+        return self._model.create(text, voice=voice, speed=1.0, lang=lang)
 
 # --- Helper functions --- #
 
