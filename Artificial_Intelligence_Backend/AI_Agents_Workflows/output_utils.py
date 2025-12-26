@@ -172,4 +172,4 @@ def _enhance_rag_formatting(text: str) -> str:
     # Format currency amounts
     text = re.sub(r'\$(\d+)\s+USD', r'💵 $\1 USD', text)
     
-    return text.strip()
+    return text.rstrip('\n')

@@ -241,9 +241,9 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
     #knowledge tools reasoning, search, analyze, few shot, instructions
     knowledge_tools = KnowledgeTools(
     knowledge=knowledge_base,
-    think=False,
+    think=True,
     search=True,
-    analyze=False,
+    analyze=True,
     add_few_shot=False,
     add_instructions=False,
     )

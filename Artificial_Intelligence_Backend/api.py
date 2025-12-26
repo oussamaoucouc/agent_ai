@@ -2016,6 +2016,7 @@ async def query_mcp_tts_direct_endpoint(request: QueryRequest, http_request: Req
 
         async def stream_response():
             full_response = ""
+            import re
             tool_log_regex = re.compile(r"[\w_]+\([^)]*\)\s*completed\s+in\s+[\d.]+s\.?", re.IGNORECASE)
             
             try:
@@ -2115,6 +2116,7 @@ async def query_tts_direct_endpoint(request: QueryRequest, http_request: Request
 
         async def stream_response():
             full_response = ""
+            import re
             tool_log_regex = re.compile(r"[\w_]+\([^)]*\)\s*completed\s+in\s+[\d.]+s\.?", re.IGNORECASE)
             
             try:

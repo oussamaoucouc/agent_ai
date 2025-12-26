@@ -137,6 +137,45 @@ const preprocessMarkdown = (raw: string): string => {
         return `[${cleanText}](${url})`;
     });
 
+    // STEP 5: FIX INLINE/MALFORMED TABLES
+    // Markdown tables require:
+    // 1. Header row on its own line: | Col1 | Col2 |
+    // 2. Separator row IMMEDIATELY after (no blank line): |---|---|
+    // 3. Data rows each on their own line
+
+    // Strategy: Find table patterns and reconstruct them properly
+    // Pattern: Look for sequences of | separated content followed by |---| patterns
+
+    // First, normalize multiple pipes to single pipes
+    processed = processed.replace(/\|{2,}/g, '|');
+
+    // Find and fix table structures:
+    // Match: optional text, then header row, then separator, then data rows
+    // The separator pattern is: | followed by dashes/colons and pipes
+    const tableRegex = /(\|[^|\n]+(?:\|[^|\n]+)*\|)\s*(\|[-:\s]+(?:\|[-:\s]+)*\|)((?:\s*\|[^|\n]+(?:\|[^|\n]+)*\|)*)/g;
+
+    processed = processed.replace(tableRegex, (match, header, separator, dataRows) => {
+        // Clean up the header - ensure it's on its own line
+        const cleanHeader = header.trim();
+        // Clean up separator - must be immediately after header
+        const cleanSeparator = separator.trim();
+        // Clean up data rows - each on its own line
+        let cleanDataRows = dataRows.trim();
+
+        // Split data rows by | at the start of a new row and rejoin with newlines
+        // Each row starts with | and ends with |
+        if (cleanDataRows) {
+            // Split on patterns that look like row boundaries
+            cleanDataRows = cleanDataRows.replace(/\|\s*\|/g, '|\n|');
+        }
+
+        return `${cleanHeader}\n${cleanSeparator}${cleanDataRows ? '\n' + cleanDataRows : ''}`;
+    });
+
+    // Ensure there's a blank line BEFORE the table (for markdown to recognize it)
+    // Find header|separator patterns and add blank line before
+    processed = processed.replace(/([^\n])(\n\|[^|\n]+\|[^|\n]*\|)\n(\|[-:\s|]+\|)/g, '$1\n$2\n$3');
+
     return processed.trim();
 };
 /**
