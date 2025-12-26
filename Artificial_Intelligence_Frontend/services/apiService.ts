@@ -34,34 +34,91 @@ const authHeaders = (): Record<string, string> => {
     return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
-const authedFetch = async (url: string, init: RequestInit = {}): Promise<Response> => {
-    const res = await fetch(url, init);
-    if (res.status !== 401) return res;
+// Track if we're currently refreshing to prevent multiple simultaneous refresh attempts
+let isRefreshing = false;
+let refreshPromise: Promise<string | null> | null = null;
+
+const doRefresh = async (): Promise<string | null> => {
     try {
-        const refreshRes = await fetch(`${API_BASE_URL}/users/refresh`, { method: 'POST', credentials: 'include' });
+        console.log('[Auth] Attempting token refresh...');
+        const refreshRes = await fetch(`${API_BASE_URL}/users/refresh`, {
+            method: 'POST',
+            credentials: 'include'
+        });
+
         if (!refreshRes.ok) {
-            // Refresh failed, preventing infinite loop or dead end.
-            // Dispatch event so App.tsx can handle logout/UI.
-            window.dispatchEvent(new CustomEvent("auth:session_expired"));
-            return res;
+            console.error('[Auth] Refresh failed with status:', refreshRes.status);
+            return null;
         }
+
         const data = await refreshRes.json().catch(() => null) as any;
-        // Handle both 'token' (from /users/refresh) and 'access_token' (from /auth/refresh)
         const newToken = data?.token || data?.access_token;
+
         if (!newToken) {
-            window.dispatchEvent(new CustomEvent("auth:session_expired"));
-            return res;
+            console.error('[Auth] Refresh response did not contain token');
+            return null;
         }
+
+        console.log('[Auth] Token refreshed successfully');
         setAuthToken(newToken);
-        const newInit: RequestInit = { ...init, headers: { ...(init.headers as any || {}), ...authHeaders() } };
-        // Retry original request with new token
+        return newToken;
+    } catch (err) {
+        console.error('[Auth] Error during token refresh:', err);
+        return null;
+    }
+};
+
+const authedFetch = async (url: string, init: RequestInit = {}): Promise<Response> => {
+    // Ensure credentials are included for cookie-based auth
+    const enhancedInit: RequestInit = {
+        ...init,
+        credentials: 'include' as RequestCredentials,
+    };
+
+    const res = await fetch(url, enhancedInit);
+    if (res.status !== 401) return res;
+
+    console.warn('[Auth] Got 401, attempting refresh for:', url);
+
+    try {
+        // Prevent multiple simultaneous refresh attempts
+        if (isRefreshing && refreshPromise) {
+            console.log('[Auth] Waiting for existing refresh...');
+            await refreshPromise;
+        } else {
+            isRefreshing = true;
+            refreshPromise = doRefresh();
+            const newToken = await refreshPromise;
+            isRefreshing = false;
+            refreshPromise = null;
+
+            if (!newToken) {
+                console.error('[Auth] Token refresh failed, dispatching session expired');
+                window.dispatchEvent(new CustomEvent("auth:session_expired"));
+                return res;
+            }
+        }
+
+        // Retry with new token
+        const newInit: RequestInit = {
+            ...enhancedInit,
+            headers: {
+                ...(init.headers as any || {}),
+                ...authHeaders()
+            }
+        };
+
+        console.log('[Auth] Retrying request with new token...');
         const retryRes = await fetch(url, newInit);
-        // If retry still fails with 401, then we really are out of luck
+
         if (retryRes.status === 401) {
+            console.error('[Auth] Retry still failed with 401');
             window.dispatchEvent(new CustomEvent("auth:session_expired"));
         }
+
         return retryRes;
-    } catch {
+    } catch (err) {
+        console.error('[Auth] Error during authedFetch refresh flow:', err);
         window.dispatchEvent(new CustomEvent("auth:session_expired"));
         return res;
     }
