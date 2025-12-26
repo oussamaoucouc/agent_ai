@@ -80,9 +80,59 @@ const preprocessMarkdown = (raw: string): string => {
     if (!raw) return '';
     let processed = raw;
 
+    // PROTECT CODE BLOCKS: Replace code blocks with placeholders before processing
+    // This prevents table/list/URL fixes from corrupting JSON, code, etc.
+    const codeBlocks: string[] = [];
+    processed = processed.replace(/```[\s\S]*?```/g, (match) => {
+        const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`;
+        codeBlocks.push(match);
+        return placeholder;
+    });
+
+    // Also protect inline code
+    const inlineCode: string[] = [];
+    processed = processed.replace(/`[^`]+`/g, (match) => {
+        const placeholder = `__INLINE_CODE_${inlineCode.length}__`;
+        inlineCode.push(match);
+        return placeholder;
+    });
+
     // STEP 0: Normalize unicode characters
     processed = processed.replace(/[＊⁎✱∗⋆]/g, '*');
     processed = processed.replace(/[‐‑‒–—―−]/g, '-');
+
+    // STEP 0.1: FIX SPLIT HEADERS - Join headers that are broken across lines
+    // Pattern: "# **Text" on one line, then "more text**" on next line (with possible blank lines between)
+    // This happens when AI outputs break in the middle of a header
+    // Handle single newline
+    processed = processed.replace(/(^#{1,6}\s+\*\*[^\n*]+)\n+([^\n#*]+\*\*)/gm, '$1 $2');
+
+    // Also fix headers with unclosed bold that continue on next line (no closing **)
+    processed = processed.replace(/(^#{1,6}\s+\*\*[^\n*]+)\n+([^\n#*]+$)/gm, '$1 $2');
+
+    // Fix the pattern where "Answer**" is on its own line after a header with unclosed bold
+    // This specifically handles: "# **The Resulting\nAnswer**"
+    processed = processed.replace(/(^#{1,6}\s*\*\*[^\n]+)\n+(\w+\*\*)/gm, '$1 $2');
+
+    // STEP 0.15: CONVERT HASH HEADERS TO STYLED TEXT
+    // Process line by line for more reliable header detection
+    const lines = processed.split('\n');
+    const processedLines = lines.map(line => {
+        // Match lines that start with one or more # characters
+        const headerMatch = line.match(/^(#{1,6})\s*(.*)$/);
+        if (headerMatch) {
+            const content = headerMatch[2].trim();
+            if (!content) return ''; // Empty header, remove
+            // If already bold, just return content without #
+            if (content.startsWith('**') && content.endsWith('**')) {
+                return content;
+            }
+            // Wrap in bold
+            return `**${content}**`;
+        }
+        return line;
+    });
+    processed = processedLines.join('\n');
 
     // STEP 0.2: SMART LIST SPLITTING (Informative & Logical)
     // Detects pattern: "Text - **Title**" or "Text - [Source]" which indicates an inline list.
@@ -164,6 +214,21 @@ const preprocessMarkdown = (raw: string): string => {
     // Step 5d: Final fix - any remaining || patterns should become |\n|
     // This handles row boundaries that weren't caught
     processed = processed.replace(/\|\|/g, '|\n|');
+
+    // STEP 6: CLEANUP - Remove standalone bullets, asterisks, and dashes on their own lines
+    // These are artifacts from malformed markdown (e.g., "• " or "* " without text)
+    processed = processed.replace(/^\s*[•\*\-]\s*$/gm, '');
+
+    // Remove multiple consecutive blank lines (more than 2)
+    processed = processed.replace(/\n{3,}/g, '\n\n');
+
+    // RESTORE CODE BLOCKS: Put back the protected code blocks and inline code
+    inlineCode.forEach((code, i) => {
+        processed = processed.replace(`__INLINE_CODE_${i}__`, code);
+    });
+    codeBlocks.forEach((block, i) => {
+        processed = processed.replace(`__CODE_BLOCK_${i}__`, block);
+    });
 
     return processed.trim();
 };
