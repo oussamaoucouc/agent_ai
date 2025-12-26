@@ -110,12 +110,15 @@ const DocumentManagementModal: React.FC<{
     };
 
     const formatSizeForDisplay = (bytes: number): string => {
-        return (bytes / (1024 * 1024)).toFixed(0);
+        // Convert to MB and limit significant digits if needed, avoiding trailing zeros
+        const mb = bytes / (1024 * 1024);
+        return Number(mb.toFixed(2)).toString();
     };
 
     const parseSizeFromInput = (mbString: string): number => {
-        const mb = parseFloat(mbString) || 0;
-        return Math.max(0, mb) * 1024 * 1024; // Allow 0 to disable uploads
+        const mb = parseFloat(mbString);
+        if (isNaN(mb)) return 0;
+        return Math.floor(Math.max(0, mb) * 1024 * 1024); // Store as integer bytes
     };
 
     const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -250,7 +253,7 @@ const DocumentManagementModal: React.FC<{
                     {loading ? (
                         <div className="flex justify-center p-4"><SpinnerIcon className="w-8 h-8 text-sky-500 animate-spin" /></div>
                     ) : (
-                        <div className="space-y-2">
+                        <div className="space-y-2 mb-6">
                             {documents.length === 0 && <p className="text-center text-slate-500">No documents found.</p>}
                             {documents.map((doc, idx) => (
                                 <div key={idx} className="flex items-center justify-between p-3 bg-slate-800 rounded-lg border border-slate-700">
@@ -261,6 +264,7 @@ const DocumentManagementModal: React.FC<{
                                             <div className="flex items-center gap-2">
                                                 <span className="text-xs text-slate-500 uppercase">{doc.kind}</span>
                                                 {doc.is_admin_uploaded && <span className="text-[10px] bg-sky-900/50 text-sky-200 px-1 rounded border border-sky-700/50">Admin Upload</span>}
+                                                {doc.status === 'error' && <span className="text-[10px] bg-red-900/50 text-red-200 px-1 rounded border border-red-700/50">Failed</span>}
                                             </div>
                                         </div>
                                     </div>
@@ -294,24 +298,29 @@ const DocumentManagementModal: React.FC<{
                                     </div>
                                 ) : (
                                     <>
-                                        <p className="text-xs text-slate-500 mb-3">Set maximum file size (in MB) for each document type.</p>
+                                        <p className="text-xs text-slate-500 mb-3">Set total storage quota (in MB) for each document type.</p>
                                         <div className="grid grid-cols-2 gap-3">
                                             {(['pdf', 'docx', 'text', 'csv'] as const).map((type) => (
                                                 <div key={type} className="flex items-center gap-2">
                                                     <label className="text-xs text-slate-400 uppercase w-12">{type}</label>
-                                                    <input
-                                                        type="number"
-                                                        min="0"
-                                                        max="500"
-                                                        value={formatSizeForDisplay(fileSizeLimits[type])}
-                                                        onChange={(e) => setFileSizeLimits(prev => ({
-                                                            ...prev,
-                                                            [type]: parseSizeFromInput(e.target.value)
-                                                        }))}
-                                                        className="flex-1 px-3 py-1.5 text-sm bg-slate-800 border border-slate-600 rounded-lg focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/50 text-white text-center appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                                        style={{ MozAppearance: 'textfield' }}
-                                                    />
-                                                    <span className="text-xs text-slate-500">MB</span>
+                                                    <div className="flex-1 flex flex-col">
+                                                        <label className="block text-xs font-medium text-slate-400 mb-1">
+                                                            {type.toUpperCase()} Quota (MB)
+                                                        </label>
+                                                        <input
+                                                            type="number"
+                                                            min="0"
+                                                            step="0.1"
+                                                            max="500"
+                                                            value={formatSizeForDisplay(fileSizeLimits[type])}
+                                                            onChange={(e) => setFileSizeLimits(prev => ({
+                                                                ...prev,
+                                                                [type]: parseSizeFromInput(e.target.value)
+                                                            }))}
+                                                            className="w-full px-3 py-1.5 text-sm bg-slate-800 border border-slate-600 rounded-lg focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/50 text-white text-center appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                            style={{ MozAppearance: 'textfield' }}
+                                                        />
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>

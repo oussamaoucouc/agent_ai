@@ -492,22 +492,41 @@ async def upload_document_endpoint(
             target_dir = str(get_user_csv_dir(effective_user_id))
             kind = "csv"
         
-        # Check file size against user's limits
-        from users import get_user_file_size_limits
-        file_limits = get_user_file_size_limits(effective_user_id)
-        max_size = file_limits.get(kind, 10 * 1024 * 1024)  # Default 10MB
-        
-        # Get actual file size by reading content length or seeking to end
+        # Check file size against user's quotas
+        from users import get_user_file_size_limits, get_user_storage_usage
+
+        # Get actual file size first
         file.file.seek(0, 2)  # Seek to end
         file_size = file.file.tell()
         file.file.seek(0)  # Reset to beginning
+
+        # Calculate current usage and check quota
+        # _UserSessionLocal is available globally in api.py (from line 37)
+        with _UserSessionLocal() as db:
+            file_limits = get_user_file_size_limits(effective_user_id, db)
+            usage_stats = get_user_storage_usage(effective_user_id, db)
+            
+        current_usage = usage_stats.get(kind, 0)
+        max_size = file_limits.get(kind, 10 * 1024 * 1024)  # Default 10MB quota
+
+        # If limit is 0, it means blocked/disabled
+        if max_size == 0:
+             raise HTTPException(
+                status_code=413,
+                detail=f"Uploads for {kind.upper()} files are currently disabled for your account. Please contact your administrator."
+            )
+
+        new_total_usage = current_usage + file_size
         
-        if file_size > max_size:
+        if new_total_usage > max_size:
             max_mb = max_size / (1024 * 1024)
+            current_mb = current_usage / (1024 * 1024)
             file_mb = file_size / (1024 * 1024)
+            remaining_mb = max((max_size - current_usage) / (1024 * 1024), 0)
+            
             raise HTTPException(
                 status_code=413,
-                detail=f"File size ({file_mb:.1f} MB) exceeds the allowed limit ({max_mb:.0f} MB) for {kind.upper()} files. Please contact your administrator to increase your file size limit."
+                detail=f"Storage quota exceeded for {kind.upper()}. Your quota is {max_mb:.0f} MB. You are using {current_mb:.1f} MB. Uploading this file ({file_mb:.1f} MB) would exceed the limit. Available: {remaining_mb:.1f} MB. Please contact your administrator to increase your storage quota."
             )
         
         os.makedirs(target_dir, exist_ok=True)

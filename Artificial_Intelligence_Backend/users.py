@@ -56,6 +56,7 @@ class DocumentMetadata(Base):
     file_type = Column(String(32), nullable=False)  # pdf, docx, etc.
     uploaded_by = Column(String(64), nullable=False)  # User ID of uploader (admin or user)
     is_admin_uploaded = Column(Integer, default=0)  # 0=False, 1=True
+    file_size = Column(Integer, default=0)  # Size in bytes
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -99,9 +100,45 @@ try:
         with engine.connect() as conn:
             conn.exec_driver_sql("ALTER TABLE app_users ADD COLUMN file_size_limits JSON")
             conn.commit()
-            print("file_size_limits column added.")
+            print("Migration complete.")
 except Exception as e:
-    print(f"file_size_limits migration error: {e}")
+    print(f"User schema migration error (file_size_limits): {e}")
+
+# Runtime migration: Add file_size column to document_metadata if missing
+try:
+    from sqlalchemy import inspect
+    insp = inspect(engine)
+    # Check if table exists (it should, but safety first)
+    if insp.has_table("document_metadata", schema="rag"):
+        cols = [c.get('name') for c in insp.get_columns('document_metadata', schema='rag')]
+        if 'file_size' not in cols:
+            print("Migrating document_metadata: adding file_size column...")
+            with engine.connect() as conn:
+                conn.exec_driver_sql("ALTER TABLE rag.document_metadata ADD COLUMN file_size INTEGER DEFAULT 0")
+                conn.commit()
+                
+                # Backfill file attributes
+                print("Backfilling file_size for existing documents...")
+                rows = conn.exec_driver_sql("SELECT id, file_path FROM rag.document_metadata").fetchall()
+                params = []
+                for r in rows:
+                    doc_id, fpath = r
+                    size = 0
+                    if os.path.exists(fpath):
+                        try:
+                            size = os.path.getsize(fpath)
+                        except:
+                            pass
+                    params.append({"sz": size, "did": doc_id})
+                
+                if params:
+                    # Batch update might be tricky with raw SQL driver varies, strict loop is safer for simple migration
+                    for p in params:
+                        conn.exec_driver_sql("UPDATE rag.document_metadata SET file_size = %s WHERE id = %s", (p["sz"], p["did"]))
+                    conn.commit()
+                print("Migration complete (file_size).")
+except Exception as e:
+    print(f"Document schema migration error: {e}")
 
 
 def get_db():
@@ -197,23 +234,52 @@ class FileSizeLimitsUpdateRequest(BaseModel):
     file_size_limits: FileSizeLimitsModel
 
 
-def get_user_file_size_limits(user_id: str, db: SASession | None = None) -> dict:
-    """Get file size limits for a user. Returns defaults if not set."""
-    should_close = False
-    if db is None:
-        db = SessionLocal()
-        should_close = True
-    try:
-        user = db.query(UserDB).filter(UserDB.id == user_id).first()
-        if user and user.file_size_limits:
-            # Merge with defaults to ensure all keys exist
-            limits = dict(DEFAULT_FILE_SIZE_LIMITS)
-            limits.update(user.file_size_limits)
-            return limits
-        return dict(DEFAULT_FILE_SIZE_LIMITS)
-    finally:
-        if should_close:
-            db.close()
+def get_user_file_size_limits(user_id: str, db: SASession = None) -> dict:
+    """
+    Returns a dict of file_type -> max_size_bytes for the user.
+    Falls back to defaults if not set.
+    NOW INTERPRETED AS STORAGE QUOTA.
+    """
+    defaults = DEFAULT_FILE_SIZE_LIMITS.copy()
+    if not db:
+        return defaults
+    
+    user = db.query(UserDB).filter(UserDB.id == user_id).first()
+    if user and user.file_size_limits:
+        # Merge user limits over defaults
+        # If a limit is explicitly 0, it means disabled/no quota.
+        for k, v in user.file_size_limits.items():
+            defaults[k] = int(v)
+    return defaults
+
+
+def get_user_storage_usage(user_id: str, db: SASession) -> dict:
+    """
+    Returns a dict of file_type -> total_size_bytes used by the user.
+    """
+    from sqlalchemy import func
+    # Group by file_type and sum file_size
+    results = db.query(
+        DocumentMetadata.file_type,
+        func.sum(DocumentMetadata.file_size)
+    ).filter(
+        DocumentMetadata.user_id == user_id
+    ).group_by(DocumentMetadata.file_type).all()
+    
+    usage = {
+        "pdf": 0,
+        "docx": 0,
+        "text": 0,
+        "csv": 0
+    }
+    for file_type, total_size in results:
+        if file_type in usage and total_size:
+            usage[file_type] = int(total_size)
+        elif total_size:
+             # handle case where file_type might differ slightly or be new
+             usage[file_type] = int(total_size)
+             
+    return usage
 
 
 def _hash_password_sha256(password: str) -> str:
