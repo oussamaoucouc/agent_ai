@@ -138,43 +138,32 @@ const preprocessMarkdown = (raw: string): string => {
     });
 
     // STEP 5: FIX INLINE/MALFORMED TABLES
-    // Markdown tables require:
-    // 1. Header row on its own line: | Col1 | Col2 |
-    // 2. Separator row IMMEDIATELY after (no blank line): |---|---|
-    // 3. Data rows each on their own line
+    // AI outputs tables completely inline without newlines
+    // Example: "Text| Col1 | Col2 |---|---| Data1 | Data2 |"
 
-    // Strategy: Find table patterns and reconstruct them properly
-    // Pattern: Look for sequences of | separated content followed by |---| patterns
+    // Step 5a: Find table separator pattern and add newlines around it
+    // Separator: |---| or |:---| or |:---:| etc.
+    // The separator MUST have at least 3 dashes/colons
+    processed = processed.replace(
+        /(\|[^|]*\|)\s*(\|[-:\s]{2,}\|(?:[-:\s]*\|)*)\s*(\|)/g,
+        '$1\n$2\n$3'
+    );
 
-    // First, normalize multiple pipes to single pipes
-    processed = processed.replace(/\|{2,}/g, '|');
+    // Step 5b: After separator row, add newline before each data row
+    // Data rows start with | and end with |
+    // Pattern: end of row (|) followed by start of another row (|) with content
+    processed = processed.replace(/\|\s*\|\s*(?=[^-:\s|])/g, '|\n|');
 
-    // Find and fix table structures:
-    // Match: optional text, then header row, then separator, then data rows
-    // The separator pattern is: | followed by dashes/colons and pipes
-    const tableRegex = /(\|[^|\n]+(?:\|[^|\n]+)*\|)\s*(\|[-:\s]+(?:\|[-:\s]+)*\|)((?:\s*\|[^|\n]+(?:\|[^|\n]+)*\|)*)/g;
+    // Step 5c: Ensure blank line before the table starts (for markdown to recognize)
+    // Find the header row pattern (| text | text |) followed by separator
+    processed = processed.replace(
+        /([^\n])(\s*\|[^|\n]+\|[^|\n]*\|)\s*\n\s*(\|[-:\s]+)/g,
+        '$1\n\n$2\n$3'
+    );
 
-    processed = processed.replace(tableRegex, (match, header, separator, dataRows) => {
-        // Clean up the header - ensure it's on its own line
-        const cleanHeader = header.trim();
-        // Clean up separator - must be immediately after header
-        const cleanSeparator = separator.trim();
-        // Clean up data rows - each on its own line
-        let cleanDataRows = dataRows.trim();
-
-        // Split data rows by | at the start of a new row and rejoin with newlines
-        // Each row starts with | and ends with |
-        if (cleanDataRows) {
-            // Split on patterns that look like row boundaries
-            cleanDataRows = cleanDataRows.replace(/\|\s*\|/g, '|\n|');
-        }
-
-        return `${cleanHeader}\n${cleanSeparator}${cleanDataRows ? '\n' + cleanDataRows : ''}`;
-    });
-
-    // Ensure there's a blank line BEFORE the table (for markdown to recognize it)
-    // Find header|separator patterns and add blank line before
-    processed = processed.replace(/([^\n])(\n\|[^|\n]+\|[^|\n]*\|)\n(\|[-:\s|]+\|)/g, '$1\n$2\n$3');
+    // Step 5d: Final fix - any remaining || patterns should become |\n|
+    // This handles row boundaries that weren't caught
+    processed = processed.replace(/\|\|/g, '|\n|');
 
     return processed.trim();
 };
