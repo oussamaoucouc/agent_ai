@@ -637,6 +637,7 @@ async def upload_document_endpoint(
                     filename=safe_name,
                     file_path=file_path,
                     file_type=kind,
+                    file_size=file_size,
                     uploaded_by=auth_user_id or user_id,
                     is_admin_uploaded=1 if is_admin_upload else 0
                 )
