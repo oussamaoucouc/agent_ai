@@ -491,6 +491,25 @@ async def upload_document_endpoint(
         else:
             target_dir = str(get_user_csv_dir(effective_user_id))
             kind = "csv"
+        
+        # Check file size against user's limits
+        from users import get_user_file_size_limits
+        file_limits = get_user_file_size_limits(effective_user_id)
+        max_size = file_limits.get(kind, 10 * 1024 * 1024)  # Default 10MB
+        
+        # Get actual file size by reading content length or seeking to end
+        file.file.seek(0, 2)  # Seek to end
+        file_size = file.file.tell()
+        file.file.seek(0)  # Reset to beginning
+        
+        if file_size > max_size:
+            max_mb = max_size / (1024 * 1024)
+            file_mb = file_size / (1024 * 1024)
+            raise HTTPException(
+                status_code=413,
+                detail=f"File size ({file_mb:.1f} MB) exceeds the allowed limit ({max_mb:.0f} MB) for {kind.upper()} files. Please contact your administrator to increase your file size limit."
+            )
+        
         os.makedirs(target_dir, exist_ok=True)
         safe_name = os.path.basename(file.filename)
         file_path = os.path.join(target_dir, safe_name)

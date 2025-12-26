@@ -1625,6 +1625,8 @@ const App: React.FC = () => {
                     })
                     .catch(err => {
                         console.error("File upload failed:", err);
+                        const errorMessage = err instanceof Error ? err.message : "Unknown error occurred";
+                        showAlert('Upload Failed', errorMessage);
                         setUploadedFiles(prev => prev.map(f => f.id === upload.id ? { ...f, status: 'error' } : f));
                     });
             });
@@ -1637,12 +1639,20 @@ const App: React.FC = () => {
 
     const handleDeleteDocument = async (filename: string, kind?: UploadedFile['kind']) => {
         if (!currentUser) return;
+
+        // Check if the file is in an error or uploading state (i.e. not yet persisted or failed to persist)
+        const fileToDelete = uploadedFiles.find(f => f.file.name === filename && (kind ? f.kind === kind : true));
+        const isLocalOnly = fileToDelete?.status === 'error' || fileToDelete?.status === 'uploading';
+
         showConfirmation(
             'Delete Document',
             `Are you sure you want to delete ${filename}?`,
             async () => {
                 try {
-                    await deleteDocument({ user_id: currentUser, filename, kind });
+                    // Only call backend if it was successfully uploaded
+                    if (!isLocalOnly) {
+                        await deleteDocument({ user_id: currentUser, filename, kind });
+                    }
                     setUploadedFiles(prev => prev.filter(f => !(f.file.name === filename && (kind ? f.kind === kind : true))));
                 } catch (err) {
                     console.error('Delete document failed:', err);

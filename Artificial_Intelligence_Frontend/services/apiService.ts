@@ -26,7 +26,9 @@ import {
     ModelsCatalogResponse,
     ConfigPathResponse,
     SessionSettingsResponse,
-    VisemeData
+    VisemeData,
+    FileSizeLimits,
+    FileSizeLimitsResponse
 } from '../types';
 
 const authHeaders = (): Record<string, string> => {
@@ -788,6 +790,7 @@ export const loginUser = async (username: string, password: string, signal?: Abo
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
+        credentials: 'include', // Required to accept Set-Cookie header from backend
         signal,
     });
     return handleResponse<{ user_id: string; session_id: string; username: string; role: string; token?: string }>(response);
@@ -907,4 +910,26 @@ export const setMcpTools = async (payload: SetMcpToolsRequest, signal?: AbortSig
         signal,
     });
     return handleResponse<{ success: boolean }>(response);
+};
+
+// --- File Size Limits API ---
+export const getUserFileSizeLimits = async (user_id: string, signal?: AbortSignal): Promise<FileSizeLimitsResponse> => {
+    const url = new URL(`${API_BASE_URL}/users/${user_id}/file_size_limits`);
+    url.searchParams.set('ts', Date.now().toString());
+    const response = await authedFetch(url.toString(), { method: 'GET', headers: authHeaders(), signal, cache: 'no-store' });
+    return handleResponse<FileSizeLimitsResponse>(response);
+};
+
+export const updateUserFileSizeLimits = async (
+    user_id: string,
+    limits: FileSizeLimits,
+    signal?: AbortSignal
+): Promise<{ success: boolean; file_size_limits: FileSizeLimits }> => {
+    const response = await authedFetch(`${API_BASE_URL}/users/${user_id}/file_size_limits`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ file_size_limits: limits }),
+        signal,
+    });
+    return handleResponse<{ success: boolean; file_size_limits: FileSizeLimits }>(response);
 };

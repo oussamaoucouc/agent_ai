@@ -69,6 +69,20 @@ export interface AdminUser {
     mcpWebTools?: number;
     mcpLocalTools?: number;
     createdAt: string;
+    fileSizeLimits?: FileSizeLimits;
+}
+
+// Per-file-type upload size limits in bytes
+export interface FileSizeLimits {
+    pdf: number;   // bytes
+    docx: number;  // bytes
+    text: number;  // bytes
+    csv: number;   // bytes
+}
+
+// Response from file size limits endpoint
+export interface FileSizeLimitsResponse {
+    file_size_limits: FileSizeLimits;
 }
 
 // Complete list of available Kokoro TTS voices

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, constr
 import json as _json
-from sqlalchemy import create_engine, Column, String, DateTime, Integer, UniqueConstraint, text
+from sqlalchemy import create_engine, Column, String, DateTime, Integer, UniqueConstraint, text, JSON
 from sqlalchemy.orm import sessionmaker, declarative_base, Session as SASession
 from datetime import datetime
 import uuid
@@ -31,6 +31,8 @@ class UserDB(Base):
     )
     # Store the full table name for the user's RAG combined documents (e.g. rag.combined_documents_u_...)
     rag_combined_table_name = Column(String(256), nullable=True)
+    # Per-file-type max upload size in bytes: {"pdf": 10485760, "docx": 10485760, "text": 5242880, "csv": 52428800}
+    file_size_limits = Column(JSON, nullable=True)
 
 
 class RefreshTokenDB(Base):
@@ -86,6 +88,20 @@ try:
             print("Migration complete.")
 except Exception as e:
     print(f"User schema migration error: {e}")
+
+# Runtime migration: Add file_size_limits column if missing
+try:
+    from sqlalchemy import inspect
+    insp = inspect(engine)
+    cols = [c.get('name') for c in insp.get_columns('app_users')]
+    if 'file_size_limits' not in cols:
+        print("Migrating app_users: adding file_size_limits column...")
+        with engine.connect() as conn:
+            conn.exec_driver_sql("ALTER TABLE app_users ADD COLUMN file_size_limits JSON")
+            conn.commit()
+            print("file_size_limits column added.")
+except Exception as e:
+    print(f"file_size_limits migration error: {e}")
 
 
 def get_db():
@@ -159,6 +175,45 @@ class UserStatsModel(BaseModel):
     mcpWebTools: int
     mcpLocalTools: int
     createdAt: str
+
+
+# Default file size limits in bytes per file type
+DEFAULT_FILE_SIZE_LIMITS = {
+    "pdf": 10 * 1024 * 1024,    # 10 MB
+    "docx": 10 * 1024 * 1024,   # 10 MB
+    "text": 5 * 1024 * 1024,    # 5 MB
+    "csv": 50 * 1024 * 1024,    # 50 MB
+}
+
+
+class FileSizeLimitsModel(BaseModel):
+    pdf: int = DEFAULT_FILE_SIZE_LIMITS["pdf"]
+    docx: int = DEFAULT_FILE_SIZE_LIMITS["docx"]
+    text: int = DEFAULT_FILE_SIZE_LIMITS["text"]
+    csv: int = DEFAULT_FILE_SIZE_LIMITS["csv"]
+
+
+class FileSizeLimitsUpdateRequest(BaseModel):
+    file_size_limits: FileSizeLimitsModel
+
+
+def get_user_file_size_limits(user_id: str, db: SASession | None = None) -> dict:
+    """Get file size limits for a user. Returns defaults if not set."""
+    should_close = False
+    if db is None:
+        db = SessionLocal()
+        should_close = True
+    try:
+        user = db.query(UserDB).filter(UserDB.id == user_id).first()
+        if user and user.file_size_limits:
+            # Merge with defaults to ensure all keys exist
+            limits = dict(DEFAULT_FILE_SIZE_LIMITS)
+            limits.update(user.file_size_limits)
+            return limits
+        return dict(DEFAULT_FILE_SIZE_LIMITS)
+    finally:
+        if should_close:
+            db.close()
 
 
 def _hash_password_sha256(password: str) -> str:
@@ -611,3 +666,66 @@ def user_stats(request: Request, db: SASession = Depends(get_db)):
         return stats
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error computing user stats: {str(e)}")
+
+
+@router.get("/{user_id}/file_size_limits")
+def get_file_size_limits_endpoint(user_id: str, request: Request, db: SASession = Depends(get_db)):
+    """Get file size limits for a specific user. Admin only."""
+    try:
+        # Admin-only or self
+        payload = get_user_from_auth_header(request.headers.get("Authorization"))
+        if not payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = payload.get("uid")
+        role = payload.get("role")
+        
+        # Allow admins or the user themselves
+        if uid != user_id and role != "admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
+        
+        user = db.query(UserDB).filter(UserDB.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        limits = get_user_file_size_limits(user_id, db)
+        return {"file_size_limits": limits}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching file size limits: {str(e)}")
+
+
+@router.put("/{user_id}/file_size_limits")
+def update_file_size_limits_endpoint(
+    user_id: str, 
+    payload: FileSizeLimitsUpdateRequest, 
+    request: Request, 
+    db: SASession = Depends(get_db)
+):
+    """Update file size limits for a specific user. Admin only."""
+    try:
+        # Admin-only
+        auth_payload = get_user_from_auth_header(request.headers.get("Authorization"))
+        if not auth_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = auth_payload.get("uid")
+        role = auth_payload.get("role")
+        u_admin = db.query(UserDB).filter(UserDB.id == uid).first()
+        if not u_admin or role != "admin" or u_admin.role != "admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
+        
+        user = db.query(UserDB).filter(UserDB.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Update file size limits
+        user.file_size_limits = payload.file_size_limits.model_dump()
+        db.commit()
+        
+        return {"success": True, "file_size_limits": user.file_size_limits}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error updating file size limits: {str(e)}")
+

@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { AdminUser, UploadedFile } from '../types';
+import { AdminUser, UploadedFile, FileSizeLimits } from '../types';
 import { LogoutIcon, UserOutlineIcon, ChatIcon, FolderOpenIcon, PlusIcon, TrashIcon, SearchIcon, EditIcon, SettingsIcon, DocumentIcon, UploadIcon, SpinnerIcon, CloseIcon } from './icons';
 import { CustomDropdown } from './CustomDropdown';
-import { listDocuments, uploadDocument, deleteDocument } from '../services/apiService';
+import { listDocuments, uploadDocument, deleteDocument, getUserFileSizeLimits, updateUserFileSizeLimits } from '../services/apiService';
 import * as storage from '../services/storageService';
 
 interface DashboardPageProps {
@@ -36,6 +36,17 @@ const DocumentManagementModal: React.FC<{
     const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
 
+    // File size limits state
+    const [fileSizeLimits, setFileSizeLimits] = useState<FileSizeLimits>({
+        pdf: 10 * 1024 * 1024,
+        docx: 10 * 1024 * 1024,
+        text: 5 * 1024 * 1024,
+        csv: 50 * 1024 * 1024
+    });
+    const [limitsExpanded, setLimitsExpanded] = useState(false);
+    const [savingLimits, setSavingLimits] = useState(false);
+    const [limitsLoading, setLimitsLoading] = useState(true);
+
     // Clear notification after 3 seconds
     useEffect(() => {
         if (notification) {
@@ -44,9 +55,10 @@ const DocumentManagementModal: React.FC<{
         }
     }, [notification]);
 
-    // Fetch documents on mount
+    // Fetch documents and file size limits on mount
     useEffect(() => {
         loadDocuments();
+        loadFileSizeLimits();
     }, [user.id]);
 
     const loadDocuments = async () => {
@@ -70,6 +82,40 @@ const DocumentManagementModal: React.FC<{
         } finally {
             setLoading(false);
         }
+    };
+
+    const loadFileSizeLimits = async () => {
+        try {
+            setLimitsLoading(true);
+            const res = await getUserFileSizeLimits(user.id);
+            setFileSizeLimits(res.file_size_limits);
+        } catch (e) {
+            console.error('Failed to load file size limits:', e);
+        } finally {
+            setLimitsLoading(false);
+        }
+    };
+
+    const handleSaveLimits = async () => {
+        try {
+            setSavingLimits(true);
+            await updateUserFileSizeLimits(user.id, fileSizeLimits);
+            setNotification({ message: 'File size limits saved successfully.', type: 'success' });
+        } catch (e) {
+            console.error('Failed to save file size limits:', e);
+            setNotification({ message: 'Failed to save file size limits.', type: 'error' });
+        } finally {
+            setSavingLimits(false);
+        }
+    };
+
+    const formatSizeForDisplay = (bytes: number): string => {
+        return (bytes / (1024 * 1024)).toFixed(0);
+    };
+
+    const parseSizeFromInput = (mbString: string): number => {
+        const mb = parseFloat(mbString) || 0;
+        return Math.max(0, mb) * 1024 * 1024; // Allow 0 to disable uploads
     };
 
     const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -114,17 +160,26 @@ const DocumentManagementModal: React.FC<{
 
             // Refresh list to get correct metadata
             await loadDocuments();
-        } catch (e) {
+        } catch (e: any) {
             console.error(e);
-            setNotification({ message: `Failed to upload "${file.name}".`, type: 'error' });
-            // Remove optimistic update on error
-            setDocuments(prev => prev.filter(d => d.file.name !== file.name));
+            // Extract error message from the exception if possible
+            const errorMsg = e.message || `Failed to upload "${file.name}".`;
+            setNotification({ message: errorMsg, type: 'error' });
+
+            // On error, update the document status to 'error' so the user sees it failed
+            // tailored to the user's request: "delete the file after the message" implies it stays there
+            setDocuments(prev => prev.map(d => d.file.name === file.name ? { ...d, status: 'error' } : d));
         } finally {
             setUploading(false);
         }
     };
 
     const handleDelete = async (filename: string, kind?: UploadedFile['kind']) => {
+        // Check if file is in error status locally
+        const docToDelete = documents.find(d => d.file.name === filename);
+        // If it's an error state (red icon) or uploading, we just remove locally
+        const isLocalOnly = docToDelete?.status === 'error' || docToDelete?.status === 'uploading';
+
         onShowConfirmation(
             'Delete Document',
             `Are you sure you want to delete ${filename}?`,
@@ -133,11 +188,14 @@ const DocumentManagementModal: React.FC<{
                     const currentUserId = storage.getCurrentUser();
                     if (!currentUserId) return;
 
-                    await deleteDocument({
-                        user_id: user.id, // Target user ID
-                        filename: filename,
-                        kind: kind
-                    });
+                    // Only call backend if it was a successful upload
+                    if (!isLocalOnly) {
+                        await deleteDocument({
+                            user_id: user.id, // Target user ID
+                            filename: filename,
+                            kind: kind
+                        });
+                    }
 
                     setDocuments(prev => prev.filter(d => d.file.name !== filename));
                     setNotification({ message: `File "${filename}" deleted.`, type: 'success' });
@@ -155,8 +213,8 @@ const DocumentManagementModal: React.FC<{
                 {/* Notification Toast */}
                 {notification && (
                     <div className={`absolute top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded-lg shadow-lg text-sm font-medium transition-all duration-300 z-10 ${notification.type === 'success' ? 'bg-green-500/90 text-white' :
-                            notification.type === 'error' ? 'bg-red-500/90 text-white' :
-                                'bg-blue-500/90 text-white'
+                        notification.type === 'error' ? 'bg-red-500/90 text-white' :
+                            'bg-blue-500/90 text-white'
                         }`}>
                         {notification.message}
                     </div>
@@ -217,6 +275,59 @@ const DocumentManagementModal: React.FC<{
                             ))}
                         </div>
                     )}
+
+                    {/* File Size Limits Section */}
+                    <div className="mt-6 pt-4 border-t border-slate-700">
+                        <button
+                            onClick={() => setLimitsExpanded(!limitsExpanded)}
+                            className="flex items-center justify-between w-full text-left"
+                        >
+                            <span className="text-sm font-semibold text-slate-300">File Size Limits</span>
+                            <span className={`text-slate-400 transform transition-transform ${limitsExpanded ? 'rotate-180' : ''}`}>▼</span>
+                        </button>
+
+                        {limitsExpanded && (
+                            <div className="mt-4 space-y-3">
+                                {limitsLoading ? (
+                                    <div className="flex justify-center py-4">
+                                        <SpinnerIcon className="w-5 h-5 text-sky-500 animate-spin" />
+                                    </div>
+                                ) : (
+                                    <>
+                                        <p className="text-xs text-slate-500 mb-3">Set maximum file size (in MB) for each document type.</p>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {(['pdf', 'docx', 'text', 'csv'] as const).map((type) => (
+                                                <div key={type} className="flex items-center gap-2">
+                                                    <label className="text-xs text-slate-400 uppercase w-12">{type}</label>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        max="500"
+                                                        value={formatSizeForDisplay(fileSizeLimits[type])}
+                                                        onChange={(e) => setFileSizeLimits(prev => ({
+                                                            ...prev,
+                                                            [type]: parseSizeFromInput(e.target.value)
+                                                        }))}
+                                                        className="flex-1 px-3 py-1.5 text-sm bg-slate-800 border border-slate-600 rounded-lg focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/50 text-white text-center appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                        style={{ MozAppearance: 'textfield' }}
+                                                    />
+                                                    <span className="text-xs text-slate-500">MB</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <button
+                                            onClick={handleSaveLimits}
+                                            disabled={savingLimits}
+                                            className="mt-3 w-full px-4 py-2 text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 disabled:bg-slate-600 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center justify-center gap-2"
+                                        >
+                                            {savingLimits && <SpinnerIcon className="w-4 h-4 animate-spin" />}
+                                            {savingLimits ? 'Saving...' : 'Save Limits'}
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>
