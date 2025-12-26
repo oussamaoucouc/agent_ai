@@ -832,7 +832,13 @@ const App: React.FC = () => {
         if (session) {
             setActiveSessionId(session.id);
             storage.setActiveSessionId(session.id);
-            setMessages(session.messages);
+            // Sort messages by createdAt timestamp to ensure proper ordering
+            const sortedMessages = [...session.messages].sort((a, b) => {
+                const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                return timeA - timeB;
+            });
+            setMessages(sortedMessages);
         }
     };
 
