@@ -99,6 +99,7 @@ export enum TTSVoice {
     AF_RIVER = 'af_river',
     AF_SARAH = 'af_sarah',
     AF_SKY = 'af_sky',
+
     // American Male
     AM_ADAM = 'am_adam',
     AM_ECHO = 'am_echo',
@@ -109,38 +110,67 @@ export enum TTSVoice {
     AM_ONYX = 'am_onyx',
     AM_PUCK = 'am_puck',
     AM_SANTA = 'am_santa',
+
     // British Female
     BF_ALICE = 'bf_alice',
     BF_EMMA = 'bf_emma',
     BF_ISABELLA = 'bf_isabella',
     BF_LILY = 'bf_lily',
+
     // British Male
     BM_DANIEL = 'bm_daniel',
     BM_FABLE = 'bm_fable',
     BM_GEORGE = 'bm_george',
     BM_LEWIS = 'bm_lewis',
+
     // European Female (Spanish)
     EF_DORA = 'ef_dora',
-    // European Male
+    // European Male (Spanish)
     EM_ALEX = 'em_alex',
     EM_SANTA = 'em_santa',
+
     // French Female
     FF_SIWIS = 'ff_siwis',
+
     // Hindi Female
     HF_ALPHA = 'hf_alpha',
     HF_BETA = 'hf_beta',
     // Hindi Male
     HM_OMEGA = 'hm_omega',
     HM_PSI = 'hm_psi',
+
     // Italian Female
     IF_SARA = 'if_sara',
     // Italian Male
     IM_NICOLA = 'im_nicola',
+
     // Japanese Female
     JF_ALPHA = 'jf_alpha',
     JF_GONGITSUNE = 'jf_gongitsune',
     JF_NEZUMI = 'jf_nezumi',
     JF_TEBUKURO = 'jf_tebukuro',
+    // Japanese Male
+    JM_KUMO = 'jm_kumo',
+
+    // Brazilian Portuguese Female
+    PF_DORA = 'pf_dora',
+    // Brazilian Portuguese Male
+    PM_ALEX = 'pm_alex',
+    PM_SANTA = 'pm_santa',
+
+    // Chinese Female
+    ZF_XIAOBEI = 'zf_xiaobei',
+    ZF_XIAONI = 'zf_xiaoni',
+    ZF_XIAOXIAO = 'zf_xiaoxiao',
+    ZF_XIAOYI = 'zf_xiaoyi',
+    // Chinese Male
+    ZM_YUNJIAN = 'zm_yunjian',
+    ZM_YUNXIA = 'zm_yunxia',
+    ZM_YUNXI = 'zm_yunxi',
+    ZM_YUNYANG = 'zm_yunyang',
+
+    // Arabic (Piper TTS)
+    AR_KAREEM = 'ar_kareem',
 }
 
 
