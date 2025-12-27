@@ -623,12 +623,44 @@ async def upload_document_endpoint(
                 msg = str(e).lower()
                 if "not found" in msg or "does not exist" in msg or "no such" in msg:
                     logging.info(f"Upsert failed; recreating collection for user {effective_user_id} (upload)")
-                    await kb.aload(recreate=True, upsert=False)
-                    logging.info(f"KB recreate load complete for user {effective_user_id} (upload)")
+                    try:
+                        await kb.aload(recreate=True, upsert=False)
+                        logging.info(f"KB recreate load complete for user {effective_user_id} (upload)")
+                    except Exception as recreate_err:
+                        # Serious failure
+                        try:
+                            if os.path.exists(file_path):
+                                os.remove(file_path)
+                        except: pass
+                        raise HTTPException(status_code=500, detail=f"Failed to initialize knowledge base: {str(recreate_err)}")
+                
+                elif "expected 768 dimensions" in msg or "dimensions" in msg:
+                    # STRICT MODE: If RAG fails due to invalid content (0 dimensions), 
+                    # we must REJECT the upload to prevent storing useless files.
+                    logging.warning(f"RAG Indexing failed (invalid content): {e}. Deleting file and rejecting upload.")
+                    
+                    # Cleanup: Delete the file from disk so it doesn't take up space
+                    try:
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                    except Exception as cleanup_err:
+                        logging.error(f"Failed to cleanup file after RAG failure: {cleanup_err}")
+                        
+                    # Raise friendly error to user
+                    raise HTTPException(
+                        status_code=422,
+                        detail="The uploaded file could not be processed (likely empty or unreadable text). Upload cancelled."
+                    )
                 else:
-                    raise
+                    logging.error(f"RAG Indexing unexpected error: {e}")
+                    # For other unexpected errors, we also reject to be safe
+                    try:
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                    except: pass
+                    raise HTTPException(status_code=500, detail=f"Knowledge base indexing failed: {str(e)}")
 
-        # Save metadata
+        # Save metadata (Only reached if RAG succeeds)
         try:
             with _UserSessionLocal() as db:
                 doc_meta = DocumentMetadata(
