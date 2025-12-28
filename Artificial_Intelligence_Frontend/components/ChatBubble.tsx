@@ -187,32 +187,51 @@ const preprocessMarkdown = (raw: string): string => {
         return `[${cleanText}](${url})`;
     });
 
-    // STEP 5: FIX INLINE/MALFORMED TABLES
-    // AI outputs tables completely inline without newlines
-    // Example: "Text| Col1 | Col2 |---|---| Data1 | Data2 |"
+    // STEP 5: SIMPLE TABLE ROW MERGING
+    // Markdown tables require each row on a single line
+    // Strategy: Merge lines that start with | but don't end with | with subsequent lines
 
-    // Step 5a: Find table separator pattern and add newlines around it
-    // Separator: |---| or |:---| or |:---:| etc.
-    // The separator MUST have at least 3 dashes/colons
-    processed = processed.replace(
-        /(\|[^|]*\|)\s*(\|[-:\s]{2,}\|(?:[-:\s]*\|)*)\s*(\|)/g,
-        '$1\n$2\n$3'
-    );
+    const tableLines = processed.split('\n');
+    const mergedLines: string[] = [];
+    let pendingLine = '';
 
-    // Step 5b: After separator row, add newline before each data row
-    // Data rows start with | and end with |
-    // Pattern: end of row (|) followed by start of another row (|) with content
-    processed = processed.replace(/\|\s*\|\s*(?=[^-:\s|])/g, '|\n|');
+    for (let i = 0; i < tableLines.length; i++) {
+        const line = tableLines[i].trim();
 
-    // Step 5c: Ensure blank line before the table starts (for markdown to recognize)
-    // Find the header row pattern (| text | text |) followed by separator
-    processed = processed.replace(
-        /([^\n])(\s*\|[^|\n]+\|[^|\n]*\|)\s*\n\s*(\|[-:\s]+)/g,
-        '$1\n\n$2\n$3'
-    );
+        // If we have a pending partial line
+        if (pendingLine) {
+            if (line.startsWith('|')) {
+                // Merge: remove leading | from continuation and append
+                pendingLine = pendingLine + ' ' + line.substring(1);
+            } else {
+                // Not a table continuation, flush pending and add current
+                mergedLines.push(pendingLine);
+                pendingLine = '';
+                mergedLines.push(line);
+                continue;
+            }
 
-    // Step 5d: Final fix - any remaining || patterns should become |\n|
-    // This handles row boundaries that weren't caught
+            // Check if now complete (ends with |)
+            if (pendingLine.endsWith('|')) {
+                mergedLines.push(pendingLine);
+                pendingLine = '';
+            }
+        } else if (line.startsWith('|') && !line.endsWith('|')) {
+            // Start of a partial table row
+            pendingLine = line;
+        } else {
+            mergedLines.push(line);
+        }
+    }
+
+    // Flush any remaining pending line
+    if (pendingLine) {
+        mergedLines.push(pendingLine);
+    }
+
+    processed = mergedLines.join('\n');
+
+    // Fix || patterns (should be row boundaries)
     processed = processed.replace(/\|\|/g, '|\n|');
 
     // STEP 6: CLEANUP - Remove standalone bullets, asterisks, and dashes on their own lines
