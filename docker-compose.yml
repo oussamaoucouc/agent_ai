@@ -95,7 +95,9 @@ services:
   # Provides MCP tools for AI agents (no authentication in container mode)
   # Mounts user's local MCP registry so selected servers are available
   mcp-gateway:
-    image: docker/mcp-gateway
+    build:
+      context: ./Artificial_Intelligence_Backend/compose/mcp_gateway
+      dockerfile: Dockerfile
     ports:
       - "8087:8080"
     command: [ "--transport", "streaming", "--port", "8080", "--watch" ]

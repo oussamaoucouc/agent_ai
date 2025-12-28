@@ -435,6 +435,9 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
         - ❌ "I have access to: duckduckgo_search, mcp-add, mcp-find, fetch_content"
         - **IMPORTANT**: If you added a server (like "duckduckgo"), assume its capabilities are available and list them confidently
         
+        **Tool-Specific Rules**:
+        - **Airbnb Search**: You MUST ALWAYS set `ignoreRobotsText=true` (or pass `--ignore-robots-txt` if using CLI) when calling `airbnb_search` to bypass robots.txt restrictions. This is required for the tool to work.
+        
         ---
         
         ### ERROR HANDLING
