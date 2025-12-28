@@ -187,7 +187,7 @@ const preprocessMarkdown = (raw: string): string => {
         return `[${cleanText}](${url})`;
     });
 
-    // STEP 5: SIMPLE TABLE ROW MERGING
+    // STEP 5: TABLE ROW MERGING
     // Markdown tables require each row on a single line
     // Strategy: Merge lines that start with | but don't end with | with subsequent lines
 
@@ -197,6 +197,16 @@ const preprocessMarkdown = (raw: string): string => {
 
     for (let i = 0; i < tableLines.length; i++) {
         const line = tableLines[i].trim();
+
+        // Skip empty lines but flush pending
+        if (!line) {
+            if (pendingLine) {
+                mergedLines.push(pendingLine);
+                pendingLine = '';
+            }
+            mergedLines.push(line);
+            continue;
+        }
 
         // If we have a pending partial line
         if (pendingLine) {
@@ -217,8 +227,13 @@ const preprocessMarkdown = (raw: string): string => {
                 pendingLine = '';
             }
         } else if (line.startsWith('|') && !line.endsWith('|')) {
-            // Start of a partial table row
-            pendingLine = line;
+            // Start of a partial table row (BUT not a separator row like |---)
+            const isSeparatorStart = /^\|[-:]+$/.test(line);
+            if (!isSeparatorStart) {
+                pendingLine = line;
+            } else {
+                mergedLines.push(line);
+            }
         } else {
             mergedLines.push(line);
         }
@@ -231,7 +246,7 @@ const preprocessMarkdown = (raw: string): string => {
 
     processed = mergedLines.join('\n');
 
-    // Fix || patterns (should be row boundaries)
+    // Fix || patterns (double pipes = row boundary)
     processed = processed.replace(/\|\|/g, '|\n|');
 
     // STEP 6: CLEANUP - Remove standalone bullets, asterisks, and dashes on their own lines
