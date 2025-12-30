@@ -80,6 +80,10 @@ const preprocessMarkdown = (raw: string): string => {
     if (!raw) return '';
     let processed = raw;
 
+    // NORMALIZE LINE ENDINGS (fixes Windows \r\n issues)
+    processed = processed.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+
     // PROTECT CODE BLOCKS: Replace code blocks with placeholders before processing
     // This prevents table/list/URL fixes from corrupting JSON, code, etc.
     const codeBlocks: string[] = [];
@@ -186,6 +190,54 @@ const preprocessMarkdown = (raw: string): string => {
         const cleanText = text.replace(/[()]/g, ''); // Remove ( ) from title
         return `[${cleanText}](${url})`;
     });
+
+    // STEP 4.5: DETACH TABLE HEADERS (AGGRESSIVE APPROACH)
+    // If a line has text followed by a pipe table pattern, split it.
+    // This works regardless of whether we can detect the separator row.
+    const splitLines = processed.split('\n');
+
+    for (let i = 0; i < splitLines.length; i++) {
+        const current = splitLines[i];
+
+        // Skip if line is empty or already starts with |
+        if (!current.trim() || current.trim().startsWith('|')) continue;
+
+        // Look for pattern: "text:| Header |" or "text | Header |" 
+        // The key is finding a pipe followed by more pipes (indicating a table row)
+        const pipeMatches = current.match(/^(.+?)(\|[^|]+\|.*)$/);
+
+        if (pipeMatches) {
+            const textBefore = pipeMatches[1].trim();
+            const tableRow = pipeMatches[2];
+
+            // Only split if the "table row" part has at least 2 pipes (indicating header)
+            const pipeCount = (tableRow.match(/\|/g) || []).length;
+
+            if (textBefore.length > 0 && pipeCount >= 2) {
+                splitLines[i] = textBefore + '\n\n' + tableRow;
+            }
+        }
+    }
+
+    // STEP 4.6: DETACH TABLE FOOTERS
+    // If a table row has text after the last pipe, split it.
+    for (let i = 0; i < splitLines.length; i++) {
+        const current = splitLines[i];
+
+        // Only process lines that start with | (table rows)
+        if (!current.trim().startsWith('|')) continue;
+
+        // Find the last | and check if there's significant text after it
+        const lastPipeIndex = current.lastIndexOf('|');
+        const textAfter = current.substring(lastPipeIndex + 1).trim();
+
+        // Only split if textAfter is substantial (not just whitespace or dashes)
+        if (textAfter.length > 2 && !/^[-\s:]+$/.test(textAfter)) {
+            splitLines[i] = current.substring(0, lastPipeIndex + 1) + '\n\n' + textAfter;
+        }
+    }
+
+    processed = splitLines.join('\n');
 
     // STEP 5: TABLE ROW MERGING
     // Markdown tables require each row on a single line
