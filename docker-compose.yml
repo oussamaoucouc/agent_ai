@@ -103,6 +103,7 @@ services:
     command: [ "--transport", "streaming", "--port", "8080", "--watch" ]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ${USERPROFILE}/.docker/mcp:/root/.docker/mcp:ro # Mount MCP config for active servers
     networks:
       - ai-network
 
