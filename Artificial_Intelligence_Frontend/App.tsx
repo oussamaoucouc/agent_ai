@@ -832,8 +832,13 @@ const App: React.FC = () => {
         if (session) {
             setActiveSessionId(session.id);
             storage.setActiveSessionId(session.id);
-            // Sort messages by createdAt timestamp to ensure proper ordering
+            // Sort messages by sortIndex (if available) or createdAt timestamp to ensure proper ordering
             const sortedMessages = [...session.messages].sort((a, b) => {
+                // Primary sort: explicit index from backend
+                if (a.sortIndex !== undefined && b.sortIndex !== undefined) {
+                    return a.sortIndex - b.sortIndex;
+                }
+                // Fallback sort: timestamp
                 const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
                 const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
                 return timeA - timeB;

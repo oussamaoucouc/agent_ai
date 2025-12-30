@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, constr
 from typing import Optional
-from sqlalchemy import create_engine, Column, String, Text, DateTime, ForeignKey, inspect, text
+from sqlalchemy import create_engine, Column, String, Text, DateTime, ForeignKey, inspect, text, Integer
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship, Session as SASession
 from datetime import datetime
 from AI_Agents_Workflows.config import DB_URL, get_current_voice, set_voice, get_runtime_config, get_default_voice
@@ -23,7 +23,7 @@ class SessionDB(Base):
         "MessageDB",
         cascade="all, delete-orphan",
         back_populates="session",
-        order_by="MessageDB.created_at",
+        order_by="MessageDB.sort_index, MessageDB.created_at",
     )
 
 
@@ -47,6 +47,7 @@ class MessageDB(Base):
     text = Column(Text, nullable=False)
     sender = Column(String(32), nullable=False)  # 'user' or 'assistant'
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    sort_index = Column(Integer, default=0)
     session = relationship("SessionDB", back_populates="messages")
     attached_images = Column(Text, nullable=True)
     attached_audio = Column(Text, nullable=True)
@@ -93,10 +94,14 @@ try:
             conn.commit()
             logging.info("Added attached_audio column to app_messages (runtime migration)")
     if 'attached_videos' not in msg_cols:
-        with engine.connect() as conn:
             conn.exec_driver_sql("ALTER TABLE app_messages ADD COLUMN attached_videos TEXT")
             conn.commit()
             logging.info("Added attached_videos column to app_messages (runtime migration)")
+    if 'sort_index' not in msg_cols:
+        with engine.connect() as conn:
+            conn.exec_driver_sql("ALTER TABLE app_messages ADD COLUMN sort_index INTEGER DEFAULT 0")
+            conn.commit()
+            logging.info("Added sort_index column to app_messages (runtime migration)")
 
     # Migrate away from session_id if present to user-level PK
     if 'session_id' in cols:
@@ -148,6 +153,7 @@ class MessageModel(BaseModel):
     attachedImages: Optional[list[str]] = None
     attachedAudio: Optional[list[str]] = None
     attachedVideos: Optional[list[str]] = None
+    sortIndex: Optional[int] = None
 
 
 class SessionModel(BaseModel):
@@ -171,6 +177,7 @@ def _db_to_session_model(s: SessionDB) -> SessionModel:
                 attachedImages=_json.loads(m.attached_images) if m.attached_images else None,
                 attachedAudio=_json.loads(m.attached_audio) if m.attached_audio else None,
                 attachedVideos=_json.loads(m.attached_videos) if m.attached_videos else None,
+                sortIndex=m.sort_index,
             )
             for m in s.messages
         ],
@@ -503,7 +510,7 @@ async def save_session_messages(session_id: str, request: SaveMessagesRequest, h
         db.query(MessageDB).filter(MessageDB.session_id == session_id).delete()
         now = datetime.utcnow()
         logging.info(f"Saving {len(request.messages)} messages for session {session_id}")
-        for msg in request.messages:
+        for idx, msg in enumerate(request.messages):
             try:
                 # Handle 'Z' suffix for Python < 3.11 fromisoformat
                 ts_str = msg.createdAt.replace('Z', '+00:00') if msg.createdAt and msg.createdAt.endswith('Z') else msg.createdAt
@@ -523,6 +530,7 @@ async def save_session_messages(session_id: str, request: SaveMessagesRequest, h
                     attached_images=_json.dumps(msg.attachedImages) if msg.attachedImages else None,
                     attached_audio=_json.dumps(msg.attachedAudio) if msg.attachedAudio else None,
                     attached_videos=_json.dumps(msg.attachedVideos) if msg.attachedVideos else None,
+                    sort_index=idx,
                 )
             )
         db.commit()
