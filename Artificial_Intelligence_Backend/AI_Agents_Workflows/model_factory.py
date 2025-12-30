@@ -64,9 +64,14 @@ def create_model(
     
     else:
         # Ollama model (default fallback)
+        # Performance optimizations: force GPU layers and lock model in memory
         return Ollama(
             id=model_id,
-            host=ollama_base_url
+            host=ollama_base_url,
+            options={
+                "num_gpu": 999,      # Offload all layers to GPU for max speed
+                "use_mlock": True,   # Lock model in RAM to prevent swapping
+            }
         )
 
 
