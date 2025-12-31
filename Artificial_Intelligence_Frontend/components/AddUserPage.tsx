@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { CustomDropdown } from './CustomDropdown';
 
 interface AddUserPageProps {
     onAddUser: (newUser: { name: string; password: string; role: 'user' | 'admin' }) => void;
@@ -69,21 +70,16 @@ export const AddUserPage: React.FC<AddUserPageProps> = ({ onAddUser, onCancel })
                         </div>
                         <div>
                             <label htmlFor="role" className="block text-sm font-medium text-slate-300 mb-2">Role</label>
-                             <select
-                                id="role"
-                                name="role"
+                            <CustomDropdown
                                 value={role}
-                                onChange={(e) => setRole(e.target.value as 'user' | 'admin')}
-                                className="w-full appearance-none px-3 py-3 text-sm rounded-lg transition-colors bg-slate-800/50 text-white border border-slate-600 focus:outline-none focus:border-sky-500"
-                            >
-                                <option value="user">User</option>
-                                <option value="admin">Admin</option>
-                            </select>
+                                onChange={(value) => setRole(value as 'user' | 'admin')}
+                                options={['user', 'admin']}
+                            />
                         </div>
                     </div>
 
                     <div className="flex items-center justify-end gap-4 pt-2">
-                         <button
+                        <button
                             type="button"
                             onClick={onCancel}
                             className="group relative flex justify-center py-3 px-6 border border-slate-600 text-sm font-medium rounded-lg text-slate-300 bg-slate-800/40 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 focus:ring-offset-slate-900 transition-colors"
