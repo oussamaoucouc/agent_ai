@@ -243,7 +243,7 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
     knowledge=knowledge_base,
     think=True,
     search=True,
-    analyze=True,
+    analyze=False,
     add_few_shot=False,
     add_instructions=False,
     )

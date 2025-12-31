@@ -7,6 +7,7 @@ import re
 import os
 import logging
 import asyncio
+from datetime import datetime
 from agno.agent import Agent, RunResponse
 from agno.storage.postgres import PostgresStorage
 from agno.tools.mcp import MultiMCPTools, MCPTools
@@ -342,12 +343,25 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
     agent_common_kwargs = dict(
         model=session_model,
         name="mcp_llm_agent",
-        instructions=dedent("""\
+        instructions=dedent(f"""\
         <role>
         You are an expert AI assistant with MCP (Model Context Protocol) tools.
         Help users efficiently with a warm, professional, concise tone.
         Your superpower: intelligently selecting and combining tools to get the BEST results.
+        Current Date: {datetime.now().strftime("%Y-%m-%d")}
         </role>
+
+        <temporal_awareness>
+        **Handling Time-Relative Queries ("Today", "Yesterday", "Recently"):**
+        1. **Check the Date First**: Always reference "Current Date" in your <role>.
+        2. **Search Strategy**: When users ask for "news from today" or "recent events":
+           - Calculate the specific date(s) based on the "Current Date".
+           - Use these specific dates in your search queries (e.g., "AI news 2025-12-31").
+           - DO NOT just search for "today" as this is ambiguous to search engines.
+        3. **Training Data Cutoff**: Remember you cannot know events after your training cutoff WITHOUT tools.
+           - If asked about "today" or recent events, you MUST use search tools.
+           - Never assume you know recent info without verifying via tools first.
+        </temporal_awareness>
 
         <critical_rules>
         NEVER start with filler: "That's a great question", "Let me demonstrate"
