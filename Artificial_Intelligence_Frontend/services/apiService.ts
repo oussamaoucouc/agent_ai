@@ -241,7 +241,15 @@ const authedFetch = async (url: string, init: RequestInit = {}): Promise<Respons
 const handleResponse = async <T,>(response: Response): Promise<T> => {
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({ detail: 'Unknown error occurred' }));
-        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        const errorMessage = errorData.detail || `HTTP error! status: ${response.status}`;
+
+        // Check for session-related errors (session not found, invalid session, etc.)
+        if (response.status === 404 && errorMessage.toLowerCase().includes('session')) {
+            console.warn('[API] Session not found error, dispatching session:invalid event');
+            window.dispatchEvent(new CustomEvent("session:invalid", { detail: { error: errorMessage } }));
+        }
+
+        throw new Error(errorMessage);
     }
     // For POST requests that might not return a body but indicate success
     const contentType = response.headers.get("content-type");

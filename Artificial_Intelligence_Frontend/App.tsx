@@ -215,6 +215,34 @@ const App: React.FC = () => {
         return () => window.removeEventListener('auth:session_expired', handleSessionExpired);
     }, []);
 
+    // Handle invalid session events (e.g., after token refresh when session doesn't match)
+    useEffect(() => {
+        const handleSessionInvalid = async () => {
+            if (!currentUser || isAdmin) return;
+            console.warn('[App] Session invalid, reloading sessions...');
+            try {
+                // Reload sessions from backend
+                const userSessions = await getSessions(currentUser);
+                if (userSessions.length > 0) {
+                    const sortedSessions = [...userSessions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                    setSessions(sortedSessions);
+                    // Select the most recent session
+                    handleSelectSession(sortedSessions[0].id, sortedSessions);
+                    showAlert("Session Reset", "Your current session was invalid. A new session has been selected.");
+                } else {
+                    // Create a new session if none exist
+                    handleNewSession();
+                }
+            } catch (err) {
+                console.error('[App] Failed to reload sessions after invalid session:', err);
+                showAlert("Session Error", "There was an issue with your session. Please try logging out and back in.");
+            }
+        };
+
+        window.addEventListener('session:invalid', handleSessionInvalid);
+        return () => window.removeEventListener('session:invalid', handleSessionInvalid);
+    }, [currentUser, isAdmin]);
+
     // ** Consolidated Configuration Loading **
     // Fetches all configuration catalogs (models, voices, tools) in a single, atomic API call
     // to prevent race conditions and ensure UI consistency.
