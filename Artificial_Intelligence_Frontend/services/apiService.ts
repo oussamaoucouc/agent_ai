@@ -40,6 +40,118 @@ const authHeaders = (): Record<string, string> => {
 let isRefreshing = false;
 let refreshPromise: Promise<string | null> | null = null;
 
+// Token validation interval reference for cleanup
+let tokenCheckInterval: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Parse a JWT token and extract its payload (without verification).
+ * Returns null if the token is malformed.
+ */
+const parseJwtPayload = (token: string): { exp?: number; iat?: number; uid?: string; role?: string } | null => {
+    try {
+        const parts = token.split('.');
+        if (parts.length !== 2 && parts.length !== 3) {
+            // Our custom tokens have 2 parts: payload.signature
+            // Standard JWTs have 3 parts: header.payload.signature
+            return null;
+        }
+        // For our 2-part tokens, payload is the first part
+        // For standard 3-part JWTs, payload is the second part
+        const payloadPart = parts.length === 2 ? parts[0] : parts[1];
+
+        // Add padding if needed for base64url decoding
+        const padded = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+        const padding = '='.repeat((4 - (padded.length % 4)) % 4);
+        const decoded = atob(padded + padding);
+        return JSON.parse(decoded);
+    } catch (e) {
+        console.error('[Auth] Failed to parse JWT:', e);
+        return null;
+    }
+};
+
+/**
+ * Check if the access token is expired or will expire within the given buffer (in seconds).
+ * Returns true if token is expired or missing.
+ */
+const isTokenExpired = (token: string | null, bufferSeconds: number = 60): boolean => {
+    if (!token) return true;
+
+    const payload = parseJwtPayload(token);
+    if (!payload || !payload.exp) return true;
+
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    // Token is "expired" if it expires within the buffer period
+    return payload.exp <= nowSeconds + bufferSeconds;
+};
+
+/**
+ * Proactive token refresh check.
+ * Called periodically to ensure the token stays valid.
+ */
+const checkAndRefreshToken = async (): Promise<void> => {
+    const token = getAuthToken();
+
+    // No token means not logged in, skip
+    if (!token) return;
+
+    // Check if token is expired or about to expire (within 60 seconds)
+    if (!isTokenExpired(token, 60)) {
+        // Token is still valid with enough buffer, no action needed
+        return;
+    }
+
+    console.log('[Auth] Token expired or expiring soon, attempting proactive refresh...');
+
+    // Avoid duplicate refresh attempts
+    if (isRefreshing && refreshPromise) {
+        await refreshPromise;
+        return;
+    }
+
+    isRefreshing = true;
+    refreshPromise = doRefresh();
+    const newToken = await refreshPromise;
+    isRefreshing = false;
+    refreshPromise = null;
+
+    if (!newToken) {
+        console.warn('[Auth] Proactive token refresh failed, session expired');
+        window.dispatchEvent(new CustomEvent("auth:session_expired"));
+    }
+};
+
+/**
+ * Start the proactive token expiration check.
+ * Should be called when a user logs in.
+ */
+export const startTokenExpirationCheck = (): void => {
+    // Stop any existing interval first
+    stopTokenExpirationCheck();
+
+    // Check immediately on start
+    checkAndRefreshToken();
+
+    // Check every 30 seconds
+    tokenCheckInterval = setInterval(() => {
+        checkAndRefreshToken();
+    }, 30 * 1000);
+
+    console.log('[Auth] Started proactive token expiration check');
+};
+
+/**
+ * Stop the proactive token expiration check.
+ * Should be called when a user logs out.
+ */
+export const stopTokenExpirationCheck = (): void => {
+    if (tokenCheckInterval) {
+        clearInterval(tokenCheckInterval);
+        tokenCheckInterval = null;
+        console.log('[Auth] Stopped proactive token expiration check');
+    }
+};
+
 const doRefresh = async (): Promise<string | null> => {
     try {
         console.log('[Auth] Attempting token refresh...');

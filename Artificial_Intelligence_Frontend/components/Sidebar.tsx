@@ -279,7 +279,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             <PlusIcon className="w-5 h-5" />
                         </button>
                     </div>
-                    <div className="space-y-1.5">
+                    <div className="max-h-[280px] overflow-y-auto space-y-1.5 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent">
                         {sessions.map(session => (
                             <div key={session.id} className="relative group">
                                 <button

@@ -14,7 +14,7 @@ import { AddUserPage } from './components/AddUserPage';
 import { EditUserPage } from './components/EditUserPage';
 import { Modal } from './components/Modal';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
-import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, listUserStats, createUser, deleteUser, loginUser, updateUser, getSessionSettings, getMcpToolsCatalog, setMcpTools, getMcpStdioCatalog, setMcpStdioTools, getConfig, getModelsLabeledCatalog, getVoicesLabeledCatalog } from './services/apiService';
+import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, listUserStats, createUser, deleteUser, loginUser, updateUser, getSessionSettings, getMcpToolsCatalog, setMcpTools, getMcpStdioCatalog, setMcpStdioTools, getConfig, getModelsLabeledCatalog, getVoicesLabeledCatalog, startTokenExpirationCheck, stopTokenExpirationCheck } from './services/apiService';
 import * as storage from './services/storageService';
 import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice, QueryMode, AdminUser, McpToolItem, McpStdioItem, LabeledItem, MediaAttachment } from './types';
 import { API_BASE_URL } from './constants';
@@ -174,6 +174,8 @@ const App: React.FC = () => {
             setCurrentUser(userId);
             if (username) setCurrentUsername(username);
             setIsAdmin(role === 'admin');
+            // Start proactive token expiration check for existing session
+            startTokenExpirationCheck();
         }
         setIsInitialized(true);
     }, []);
@@ -618,6 +620,8 @@ const App: React.FC = () => {
                 await refreshAdminUsers();
                 setAdminView('dashboard');
             }
+            // Start proactive token expiration check after successful login
+            startTokenExpirationCheck();
         } catch (err) {
             showAlert('Login Failed', 'Please check your credentials.');
             console.error('Login failed:', err);
@@ -665,6 +669,8 @@ const App: React.FC = () => {
     }, [currentUser, activeSessionId]);
 
     const handleLogout = () => {
+        // Stop proactive token expiration check
+        stopTokenExpirationCheck();
         handleStopAudio();
         storage.clearCurrentUser();
         setCurrentUser(null);
