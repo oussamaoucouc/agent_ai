@@ -335,6 +335,10 @@ async def cancel_endpoint(request: CancelRequest, http_request: Request):
     task = active_tasks.pop(key, None)
     if task and not task.done():
         task.cancel()
+        # Note: We intentionally do NOT unload the Ollama model here because:
+        # 1. Other users might be using the same model
+        # 2. Slot management handles concurrent requests
+        # 3. Ollama's keepalive will naturally unload idle models
         return {"status": "cancelled"}
     return {"status": "idle"}
 

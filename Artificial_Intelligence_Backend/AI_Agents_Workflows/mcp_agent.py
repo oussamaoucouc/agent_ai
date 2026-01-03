@@ -781,6 +781,11 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
                             cleaned_chunk = _clean_output_artifacts(chunk.content)
                             if cleaned_chunk:  # Only yield if there's content after cleaning
                                 yield cleaned_chunk
+                except asyncio.CancelledError:
+                    # User cancelled - re-raise to ensure httpx closes the connection
+                    # This tells Ollama to stop THIS specific generation (not others)
+                    logger.info("MCP streaming cancelled by user - closing connection to abort Ollama")
+                    raise
                 except Exception as e:
                     logger.error(f"Error in MCP streaming: {type(e).__name__}: {str(e)}")
                     raise

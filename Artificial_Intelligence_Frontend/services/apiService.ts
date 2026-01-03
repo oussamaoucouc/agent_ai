@@ -173,6 +173,18 @@ const doRefresh = async (): Promise<string | null> => {
             return null;
         }
 
+        // CRITICAL: Validate that the new token's uid matches the stored currentUser
+        // If they don't match, there's a user mismatch - force logout to prevent ghost sessions
+        const newPayload = parseJwtPayload(newToken);
+        const storedUserId = getAuthToken() ? parseJwtPayload(getAuthToken()!)?.uid : null;
+
+        if (newPayload?.uid && storedUserId && newPayload.uid !== storedUserId) {
+            console.error('[Auth] Token refresh returned different user! Stored:', storedUserId, 'New:', newPayload.uid);
+            // Force logout - user mismatch detected
+            window.dispatchEvent(new CustomEvent("auth:session_expired"));
+            return null;
+        }
+
         console.log('[Auth] Token refreshed successfully');
         setAuthToken(newToken);
         return newToken;

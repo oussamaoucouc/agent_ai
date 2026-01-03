@@ -170,6 +170,33 @@ const App: React.FC = () => {
         const userId = storage.getCurrentUser();
         const username = storage.getCurrentUsername();
         const role = storage.getCurrentUserRole();
+        const token = storage.getAuthToken();
+
+        // Validate that stored user matches token - prevents ghost sessions after backend restart
+        if (userId && token) {
+            try {
+                // Parse the token to get the uid (simple base64 decode of first part)
+                const parts = token.split('.');
+                if (parts.length >= 1) {
+                    const payloadPart = parts.length === 2 ? parts[0] : parts[1];
+                    const padded = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+                    const padding = '='.repeat((4 - (padded.length % 4)) % 4);
+                    const decoded = JSON.parse(atob(padded + padding));
+                    const tokenUid = decoded?.uid;
+
+                    if (tokenUid && tokenUid !== userId) {
+                        console.error('[App] Stored userId does not match token uid! Stored:', userId, 'Token:', tokenUid);
+                        // Force logout - state mismatch detected
+                        storage.clearCurrentUser();
+                        setIsInitialized(true);
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn('[App] Could not validate token uid, continuing with stored user');
+            }
+        }
+
         if (userId) {
             setCurrentUser(userId);
             if (username) setCurrentUsername(username);

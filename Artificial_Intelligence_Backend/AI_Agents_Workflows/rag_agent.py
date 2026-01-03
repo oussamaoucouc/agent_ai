@@ -6,6 +6,7 @@ import tempfile
 from textwrap import dedent
 import os
 import logging
+import asyncio
 import pickle
 from agno.agent import Agent
 from agno.embedder.ollama import OllamaEmbedder
@@ -388,6 +389,11 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
                                 cleaned_chunk = clean_agent_output(chunk.content, agent_type="rag")
                                 if cleaned_chunk:  # Only yield non-empty chunks
                                     yield cleaned_chunk
+                    except asyncio.CancelledError:
+                        # User cancelled - re-raise to ensure httpx closes the connection
+                        # This tells Ollama to stop THIS specific generation (not others)
+                        logging.info("RAG streaming cancelled by user - closing connection to abort Ollama")
+                        raise
                     except Exception as e:
                         logging.error(f"Error in RAG streaming: {type(e).__name__}: {str(e)}")
                         raise
