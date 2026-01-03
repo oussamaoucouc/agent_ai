@@ -380,9 +380,13 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
         
         **You MUST call this tool for ANY database question!**
         
-        📋 SELF-DISCOVERY APPROACH (works for ANY database):
+        ⚠️ THIS IS POSTGRESQL - NOT MySQL!
+        - ❌ WRONG: SHOW TABLES (MySQL syntax - WILL FAIL!)
+        - ✅ CORRECT: SELECT table_name FROM information_schema.tables
         
-        **Step 1: Discover available tables**
+        📋 SELF-DISCOVERY APPROACH (PostgreSQL):
+        
+        **Step 1: List all tables**
         query(sql="SELECT table_name FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema')")
         
         **Step 2: Discover columns for a table**
@@ -392,8 +396,8 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
         Build your query based on the discovered schema.
         
         ⚠️ CRITICAL RULES:
-        - ALWAYS explore schema first before querying data
-        - NEVER assume table/column names - discover them!
+        - This is PostgreSQL - use PostgreSQL syntax only!
+        - NEVER use SHOW TABLES or DESCRIBE - those are MySQL!
         - NEVER say "I don't have access" - USE THE TOOL!
         - When user asks about database → IMMEDIATELY call `query`
         </QUERY_TOOL_GUIDE>

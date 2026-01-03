@@ -46,6 +46,7 @@ const DocumentManagementModal: React.FC<{
     const [limitsExpanded, setLimitsExpanded] = useState(false);
     const [savingLimits, setSavingLimits] = useState(false);
     const [limitsLoading, setLimitsLoading] = useState(true);
+    const [docFilter, setDocFilter] = useState<'all' | 'user' | 'admin'>('all');
 
     // Clear notification after 3 seconds
     useEffect(() => {
@@ -249,13 +250,61 @@ const DocumentManagementModal: React.FC<{
                         </label>
                     </div>
 
+                    {/* File category filter tabs */}
+                    {documents.length > 0 && (
+                        <div className="mb-3 flex justify-center border-b border-slate-700/50">
+                            {(['all', 'user', 'admin'] as const).map((filter) => {
+                                const isActive = docFilter === filter;
+                                const count = filter === 'all'
+                                    ? documents.length
+                                    : filter === 'admin'
+                                        ? documents.filter(f => f.is_admin_uploaded).length
+                                        : documents.filter(f => !f.is_admin_uploaded).length;
+                                const label = filter === 'all' ? 'All' : filter === 'admin' ? 'Admin' : 'User';
+
+                                return (
+                                    <button
+                                        key={filter}
+                                        onClick={() => setDocFilter(filter)}
+                                        className={`relative px-4 py-2 text-xs transition-colors ${isActive
+                                                ? 'text-sky-400'
+                                                : 'text-slate-500 hover:text-slate-300'
+                                            }`}
+                                    >
+                                        <span className="flex items-center gap-1.5">
+                                            {label}
+                                            <span className={`text-[10px] ${isActive ? 'text-sky-400/70' : 'text-slate-600'}`}>
+                                                {count}
+                                            </span>
+                                        </span>
+                                        {isActive && (
+                                            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-500 rounded-full" />
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+
                     {/* Document List */}
                     {loading ? (
                         <div className="flex justify-center p-4"><SpinnerIcon className="w-8 h-8 text-sky-500 animate-spin" /></div>
                     ) : (
-                        <div className="space-y-2 mb-6">
-                            {documents.length === 0 && <p className="text-center text-slate-500">No documents found.</p>}
-                            {documents.map((doc, idx) => (
+                        <div className="space-y-2 mb-6 max-h-[250px] overflow-y-auto">
+                            {documents.filter(doc => {
+                                if (docFilter === 'all') return true;
+                                if (docFilter === 'admin') return doc.is_admin_uploaded;
+                                return !doc.is_admin_uploaded;
+                            }).length === 0 && (
+                                    <p className="text-center text-slate-500 py-4">
+                                        {documents.length === 0 ? 'No documents found.' : `No ${docFilter === 'admin' ? 'admin' : 'user'} documents.`}
+                                    </p>
+                                )}
+                            {documents.filter(doc => {
+                                if (docFilter === 'all') return true;
+                                if (docFilter === 'admin') return doc.is_admin_uploaded;
+                                return !doc.is_admin_uploaded;
+                            }).map((doc, idx) => (
                                 <div key={idx} className="flex items-center justify-between p-3 bg-slate-800 rounded-lg border border-slate-700">
                                     <div className="flex items-center gap-3 overflow-hidden">
                                         <DocumentIcon className="w-5 h-5 text-sky-400 flex-shrink-0" />
