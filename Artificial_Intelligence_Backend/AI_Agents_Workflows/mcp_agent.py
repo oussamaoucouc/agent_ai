@@ -373,6 +373,31 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
         - `sendMessage(to, subject, body)` - Gmail: send (confirm first!)
         </tools>
 
+        <QUERY_TOOL_GUIDE>
+        🔧 HOW TO USE THE `query` TOOL:
+        
+        **Syntax:** query(sql="YOUR SQL HERE")
+        
+        **You MUST call this tool for ANY database question!**
+        
+        📋 SELF-DISCOVERY APPROACH (works for ANY database):
+        
+        **Step 1: Discover available tables**
+        query(sql="SELECT table_name FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema')")
+        
+        **Step 2: Discover columns for a table**
+        query(sql="SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'TABLE_NAME'")
+        
+        **Step 3: Query the data**
+        Build your query based on the discovered schema.
+        
+        ⚠️ CRITICAL RULES:
+        - ALWAYS explore schema first before querying data
+        - NEVER assume table/column names - discover them!
+        - NEVER say "I don't have access" - USE THE TOOL!
+        - When user asks about database → IMMEDIATELY call `query`
+        </QUERY_TOOL_GUIDE>
+
         <database_rules>
         ⚡ CRITICAL: Before ANY database query, you MUST call `sequential-thinking` first to plan.
 

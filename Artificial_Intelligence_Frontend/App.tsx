@@ -233,9 +233,16 @@ const App: React.FC = () => {
                     // Create a new session if none exist
                     handleNewSession();
                 }
-            } catch (err) {
+            } catch (err: any) {
                 console.error('[App] Failed to reload sessions after invalid session:', err);
-                showAlert("Session Error", "There was an issue with your session. Please try logging out and back in.");
+                // Check if auth error - force logout instead of creating sessions
+                const errMsg = err?.message?.toLowerCase() || '';
+                if (errMsg.includes('401') || errMsg.includes('unauthorized') || errMsg.includes('token') || errMsg.includes('expired')) {
+                    handleLogout();
+                    showAlert("Session Expired", "Your session has expired. Please log in again.");
+                } else {
+                    showAlert("Session Error", "There was an issue with your session. Please try logging out and back in.");
+                }
             }
         };
 
