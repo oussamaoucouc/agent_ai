@@ -243,9 +243,9 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
     knowledge=knowledge_base,
     think=True,
     search=True,
-    analyze=False,
-    add_few_shot=False,
-    add_instructions=False,
+    analyze=True,
+    add_few_shot=True,
+    add_instructions=True,
     )
 
     # Resolve per-session model preference

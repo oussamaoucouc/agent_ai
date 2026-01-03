@@ -445,11 +445,7 @@ const App: React.FC = () => {
             .replace(/^\s*"[^"]*":\s*"([^"]*)"[,]?\s*$/gm, '$1')
             .replace(/^\s*\]\s*[,]?\s*$/gm, '')
             .replace(/^\s*[,]\s*$/gm, '')
-            // Clean up technical field names if they appear in text
-            .replace(/key_findings/gi, 'Key Points')
-            .replace(/\bdetails\b/gi, 'Explanation')
-            .replace(/\bconclusion\b/gi, 'Summary')
-            .replace(/\bnotes\b/gi, 'Additional Notes')
+            // NOTE: Removed word replacements (details→Explanation, etc) as they corrupt normal sentences
             // Remove excessive whitespace
             .replace(/\n\s*\n\s*\n/g, '\n\n')
             .trim();
@@ -559,8 +555,16 @@ const App: React.FC = () => {
                     } else {
                         handleNewSession();
                     }
-                } catch (err) {
+                } catch (err: any) {
                     console.error('Failed to load sessions:', err);
+                    // If the error message suggests auth failure, the session may have expired
+                    // The auth:session_expired event should have fired, but ensure we handle it gracefully
+                    const errMsg = err?.message?.toLowerCase() || '';
+                    if (errMsg.includes('401') || errMsg.includes('unauthorized') || errMsg.includes('token') || errMsg.includes('expired')) {
+                        // Force logout and show message - the event may have raced
+                        handleLogout();
+                        showAlert('Session Expired', 'Your session has expired. Please log in again.');
+                    }
                 }
             })();
         }

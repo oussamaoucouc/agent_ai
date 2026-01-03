@@ -89,7 +89,9 @@ def clean_agent_output(text: str, agent_type: str = "general") -> str:
     # STEP 8: Fix concatenated text issues (e.g., "managementCould" -> "management Could")
     # Ensure spacing between sentences that might be concatenated
     # Match: lowercase letter followed by uppercase letter (no space between)
-    cleaned = re.sub(r'([a-z])([A-Z])', r'\1 \2', cleaned)
+    # BUT protect acronyms like ML, DL, AI, API - only split if uppercase is followed by lowercase
+    # This ensures "Machine Learning (ML)" stays intact while "managementCould" becomes "management Could"
+    cleaned = re.sub(r'([a-z])([A-Z][a-z])', r'\1 \2', cleaned)
     
     # Ensure spacing after periods, colons, question marks, and exclamations if missing
     cleaned = re.sub(r'([.!?:])([A-Z])', r'\1 \2', cleaned)

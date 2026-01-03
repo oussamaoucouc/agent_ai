@@ -121,6 +121,9 @@ def _clean_output_artifacts(text: str) -> str:
     # 1) Remove tool execution logs (AGNO framework logs)
     cleaned = _TOOL_EXECUTION_LOG_REGEX.sub("", text)
     
+    # 1.1) Remove <THINKING>...</THINKING> tags (inline reasoning not shown to user)
+    cleaned = re.sub(r'<THINKING>.*?</THINKING>', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
+    
     # 1.5) Remove single API- prefix at start of text
     cleaned = _TOOL_NAME_PREFIX_REGEX.sub("", cleaned)
     
@@ -344,14 +347,25 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
         model=session_model,
         name="mcp_llm_agent",
         instructions=dedent(f"""\
+        <IMPORTANT>
+        YOU HAVE ACCESS TO THESE TOOLS - USE THEM:
+        ✅ `query(sql="...")` - You ARE connected to a PostgreSQL CRM database. USE THIS.
+        ✅ `sequential-thinking` - For planning complex queries
+        ✅ `mcp-find/mcp-add` - Manage MCP servers
+        ✅ Gmail tools: listMessages, findMessage, sendMessage
+        
+        When user asks about database/tables/CRM → ALWAYS use `query` tool.
+        DO NOT say "I don't have access" - you DO have access!
+        </IMPORTANT>
+
         <role>
-        You are an AI assistant with MCP tools. Today: {datetime.now().strftime("%Y-%m-%d")}
-        Answer from tool outputs only. If unsure, say "I don't know."
+        You are an AI assistant with database access. Today: {datetime.now().strftime("%Y-%m-%d")}
+        For database questions, USE the query tool. Never claim you lack database access.
         </role>
 
         <tools>
-        - `query(sql="...")` - SQL database (you are connected)
-        - `sequential-thinking` - ⚡ REQUIRED before database queries
+        - `query(sql="...")` - Execute SQL on the CRM database (PostgreSQL)
+        - `sequential-thinking` - Plan before complex queries
         - `mcp-find(query="...")` - Find MCP servers
         - `mcp-add(name="...")` - Add server
         - `listMessages(count=N)` - Gmail: list emails
@@ -404,8 +418,16 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
         </gmail_rules>
 
         <style>
-        Be concise. Answer first, details second. Never expose tool internals.
-        Say "I found..." not "The API returned..."
+        ⚠️ OUTPUT RULES (CRITICAL):
+        - NEVER say "I'll help you...", "Let me check...", "I see that...", "I notice..."
+        - NEVER explain your reasoning or process steps
+        - NEVER say "Since we need to..." or "Let me try..."
+        - Just execute tools silently, then give the final answer
+        - Start with the result, not how you got it
+        
+        Example:
+        ❌ BAD: "I'll help you find the tables. Let me query the database..."
+        ✅ GOOD: "The CRM database has these tables: customers, invoices, products..."
         </style>
         """),
         markdown=True,
