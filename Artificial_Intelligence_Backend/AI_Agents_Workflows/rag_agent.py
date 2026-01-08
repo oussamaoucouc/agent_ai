@@ -88,8 +88,8 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
 
 
     embedder = OllamaEmbedder(
-            id="nomic-embed-text",
-            dimensions=768,
+            id="bge-m3_ctx",
+            dimensions=1024,
             host=cfg.OLLAMA_BASE_URL
         )
     def _uid_suffix(uid: str) -> str:
