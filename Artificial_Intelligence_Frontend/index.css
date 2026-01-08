@@ -69,3 +69,12 @@ body {
         background-position: -200% 50%;
     }
 }
+
+/* ========== TABLE COLUMN WIDTH FIX ==========
+ * Prevents the first column (e.g., STEP) from being too narrow
+ */
+table th:first-child,
+table td:first-child {
+    min-width: 60px;
+    white-space: nowrap;
+}

@@ -509,14 +509,14 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
             </tr>
         ),
         th: ({ children, ...props }: any) => (
-            <th className="px-5 py-3 text-left text-xs font-bold text-slate-100 uppercase tracking-wider whitespace-nowrap min-w-[80px] first:text-center" {...props}>
+            <th className="px-5 py-3 text-left text-xs font-bold text-slate-100 uppercase tracking-wider" {...props}>
                 {children}
             </th>
         ),
         td: ({ children, ...props }: any) => {
             // Reuse the complex table cell URL extracted logic if needed, but simplified here for generic 
             return (
-                <td className="px-5 py-4 text-sm text-slate-300 whitespace-pre-wrap leading-relaxed first:whitespace-nowrap first:min-w-[80px] first:text-center" {...props}>
+                <td className="px-5 py-4 text-sm text-slate-300 whitespace-pre-wrap leading-relaxed" {...props}>
                     {children}
                 </td>
             );

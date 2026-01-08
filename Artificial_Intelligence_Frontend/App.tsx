@@ -1004,11 +1004,36 @@ const App: React.FC = () => {
         }
     };
 
+    // Stop audio playback only (without cancelling the active stream)
+    const stopAudioOnly = useCallback(() => {
+        if (animationFrameIdRef.current) {
+            cancelAnimationFrame(animationFrameIdRef.current);
+            animationFrameIdRef.current = null;
+        }
+        if (activeAudioRef.current) {
+            activeAudioRef.current.pause();
+            activeAudioRef.current.onplay = null;
+            activeAudioRef.current.onended = null;
+            activeAudioRef.current.onerror = null;
+            activeAudioRef.current = null;
+        }
+
+        // Stop Web Audio Queue
+        if (webAudioQueueRef.current) {
+            webAudioQueueRef.current.stop();
+        }
+
+        setCurrentViseme('X');
+        setActiveAudio(null);
+        setPlayingAudioId(null);
+    }, []);
+
     const handleSpokenResponsesToggle = (enabled: boolean) => {
         setSpokenResponses(enabled);
         storage.setSpokenResponses(enabled);
         if (!enabled) {
-            handleStopAudio();
+            // Only stop audio playback, don't cancel the active stream
+            stopAudioOnly();
         }
     };
 
