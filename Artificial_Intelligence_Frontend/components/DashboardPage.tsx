@@ -40,6 +40,8 @@ const DocumentManagementModal: React.FC<{
     const [fileSizeLimits, setFileSizeLimits] = useState<FileSizeLimits>({
         pdf: 10 * 1024 * 1024,
         docx: 10 * 1024 * 1024,
+        pptx: 20 * 1024 * 1024,
+        images: 20 * 1024 * 1024,
         text: 5 * 1024 * 1024,
         csv: 50 * 1024 * 1024
     });
@@ -238,7 +240,7 @@ const DocumentManagementModal: React.FC<{
                             <div className="flex flex-col items-center justify-center pt-5 pb-6">
                                 <UploadIcon className="w-8 h-8 mb-3 text-slate-400" />
                                 <p className="mb-2 text-sm text-slate-400"><span className="font-semibold">Click to upload</span> or drag and drop</p>
-                                <p className="text-xs text-slate-500">PDF, DOCX, TXT, CSV</p>
+                                <p className="text-xs text-slate-500">PDF, DOCX, PPTX, TXT, CSV, Images</p>
                             </div>
                             <input
                                 ref={fileInputRef}
@@ -267,8 +269,8 @@ const DocumentManagementModal: React.FC<{
                                         key={filter}
                                         onClick={() => setDocFilter(filter)}
                                         className={`relative px-4 py-2 text-xs transition-colors ${isActive
-                                                ? 'text-sky-400'
-                                                : 'text-slate-500 hover:text-slate-300'
+                                            ? 'text-sky-400'
+                                            : 'text-slate-500 hover:text-slate-300'
                                             }`}
                                     >
                                         <span className="flex items-center gap-1.5">
@@ -348,10 +350,10 @@ const DocumentManagementModal: React.FC<{
                                 ) : (
                                     <>
                                         <p className="text-xs text-slate-500 mb-3">Set total storage quota (in MB) for each document type.</p>
-                                        <div className="grid grid-cols-2 gap-3">
-                                            {(['pdf', 'docx', 'text', 'csv'] as const).map((type) => (
+                                        <div className="grid grid-cols-3 gap-3">
+                                            {(['pdf', 'docx', 'pptx', 'images', 'text', 'csv'] as const).map((type) => (
                                                 <div key={type} className="flex items-center gap-2">
-                                                    <label className="text-xs text-slate-400 uppercase w-12">{type}</label>
+                                                    <label className="text-xs text-slate-400 uppercase w-14">{type}</label>
                                                     <div className="flex-1 flex flex-col">
                                                         <label className="block text-xs font-medium text-slate-400 mb-1">
                                                             {type.toUpperCase()} Quota (MB)

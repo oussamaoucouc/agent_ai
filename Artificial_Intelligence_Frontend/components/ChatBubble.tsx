@@ -101,6 +101,24 @@ const preprocessMarkdown = (raw: string): string => {
         return placeholder;
     });
 
+    // CONVERT <br> TAGS: Replace HTML line breaks with bullet separators for cleaner display
+    // These often come from PDF parsing and look ugly when shown as raw HTML
+    processed = processed.replace(/<br\s*\/?>/gi, ' • ');
+
+    // PROTECT TABLE ROWS: Lines starting with | are table rows - protect them from preprocessing
+    // This prevents SMART LIST SPLITTING and other steps from breaking table cells
+    const tableRows: string[] = [];
+    processed = processed.split('\n').map((line, idx) => {
+        const trimmed = line.trim();
+        // Protect lines that look like table rows (start with |) or separators (|---|)
+        if (trimmed.startsWith('|') || /^\|[-:\s|]+\|$/.test(trimmed)) {
+            const placeholder = `__TABLE_ROW_${tableRows.length}__`;
+            tableRows.push(line);
+            return placeholder;
+        }
+        return line;
+    }).join('\n');
+
     // STEP 0: Normalize unicode characters
     processed = processed.replace(/[＊⁎✱∗⋆]/g, '*');
     processed = processed.replace(/[‐‑‒–—―−]/g, '-');
@@ -191,115 +209,10 @@ const preprocessMarkdown = (raw: string): string => {
         return `[${cleanText}](${url})`;
     });
 
-    // STEP 4.5: DETACH TABLE HEADERS (AGGRESSIVE APPROACH)
-    // If a line has text followed by a pipe table pattern, split it.
-    // This works regardless of whether we can detect the separator row.
-    const splitLines = processed.split('\n');
 
-    for (let i = 0; i < splitLines.length; i++) {
-        const current = splitLines[i];
-
-        // Skip if line is empty or already starts with |
-        if (!current.trim() || current.trim().startsWith('|')) continue;
-
-        // Look for pattern: "text:| Header |" or "text | Header |" 
-        // The key is finding a pipe followed by more pipes (indicating a table row)
-        const pipeMatches = current.match(/^(.+?)(\|[^|]+\|.*)$/);
-
-        if (pipeMatches) {
-            const textBefore = pipeMatches[1].trim();
-            const tableRow = pipeMatches[2];
-
-            // Only split if the "table row" part has at least 2 pipes (indicating header)
-            const pipeCount = (tableRow.match(/\|/g) || []).length;
-
-            if (textBefore.length > 0 && pipeCount >= 2) {
-                splitLines[i] = textBefore + '\n\n' + tableRow;
-            }
-        }
-    }
-
-    // STEP 4.6: DETACH TABLE FOOTERS
-    // If a table row has text after the last pipe, split it.
-    for (let i = 0; i < splitLines.length; i++) {
-        const current = splitLines[i];
-
-        // Only process lines that start with | (table rows)
-        if (!current.trim().startsWith('|')) continue;
-
-        // Find the last | and check if there's significant text after it
-        const lastPipeIndex = current.lastIndexOf('|');
-        const textAfter = current.substring(lastPipeIndex + 1).trim();
-
-        // Only split if textAfter is substantial (not just whitespace or dashes)
-        if (textAfter.length > 2 && !/^[-\s:]+$/.test(textAfter)) {
-            splitLines[i] = current.substring(0, lastPipeIndex + 1) + '\n\n' + textAfter;
-        }
-    }
-
-    processed = splitLines.join('\n');
-
-    // STEP 5: TABLE ROW MERGING
-    // Markdown tables require each row on a single line
-    // Strategy: Merge lines that start with | but don't end with | with subsequent lines
-
-    const tableLines = processed.split('\n');
-    const mergedLines: string[] = [];
-    let pendingLine = '';
-
-    for (let i = 0; i < tableLines.length; i++) {
-        const line = tableLines[i].trim();
-
-        // Skip empty lines but flush pending
-        if (!line) {
-            if (pendingLine) {
-                mergedLines.push(pendingLine);
-                pendingLine = '';
-            }
-            mergedLines.push(line);
-            continue;
-        }
-
-        // If we have a pending partial line
-        if (pendingLine) {
-            if (line.startsWith('|')) {
-                // Merge: remove leading | from continuation and append
-                pendingLine = pendingLine + ' ' + line.substring(1);
-            } else {
-                // Not a table continuation, flush pending and add current
-                mergedLines.push(pendingLine);
-                pendingLine = '';
-                mergedLines.push(line);
-                continue;
-            }
-
-            // Check if now complete (ends with |)
-            if (pendingLine.endsWith('|')) {
-                mergedLines.push(pendingLine);
-                pendingLine = '';
-            }
-        } else if (line.startsWith('|') && !line.endsWith('|')) {
-            // Start of a partial table row (BUT not a separator row like |---)
-            const isSeparatorStart = /^\|[-:]+$/.test(line);
-            if (!isSeparatorStart) {
-                pendingLine = line;
-            } else {
-                mergedLines.push(line);
-            }
-        } else {
-            mergedLines.push(line);
-        }
-    }
-
-    // Flush any remaining pending line
-    if (pendingLine) {
-        mergedLines.push(pendingLine);
-    }
-
-    processed = mergedLines.join('\n');
-
-    // Fix || patterns (double pipes = row boundary)
-    processed = processed.replace(/\|\|/g, '|\n|');
+    // NOTE: Table processing steps (4.5, 4.6, 5) have been removed
+    // These were causing valid markdown tables to break after streaming.
+    // The react-markdown parser handles tables correctly without preprocessing.
 
     // STEP 6: CLEANUP - Remove standalone bullets, asterisks, and dashes on their own lines
     // These are artifacts from malformed markdown (e.g., "• " or "* " without text)
@@ -314,6 +227,10 @@ const preprocessMarkdown = (raw: string): string => {
     });
     codeBlocks.forEach((block, i) => {
         processed = processed.replace(`__CODE_BLOCK_${i}__`, block);
+    });
+    // RESTORE TABLE ROWS: Put back the protected table rows
+    tableRows.forEach((row, i) => {
+        processed = processed.replace(`__TABLE_ROW_${i}__`, row);
     });
 
     return processed.trim();

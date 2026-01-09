@@ -47,7 +47,7 @@ export interface UploadedFile {
     id: string;
     file: File;
     status: UploadStatus;
-    kind?: 'pdf' | 'docx' | 'text' | 'csv';
+    kind?: 'pdf' | 'docx' | 'pptx' | 'images' | 'text' | 'csv';
     is_admin_uploaded?: boolean;
     uploaded_by?: string;
 }
@@ -75,10 +75,12 @@ export interface AdminUser {
 
 // Per-file-type upload size limits in bytes
 export interface FileSizeLimits {
-    pdf: number;   // bytes
-    docx: number;  // bytes
-    text: number;  // bytes
-    csv: number;   // bytes
+    pdf: number;    // bytes
+    docx: number;   // bytes
+    pptx: number;   // bytes
+    images: number; // bytes
+    text: number;   // bytes
+    csv: number;    // bytes
 }
 
 // Response from file size limits endpoint
@@ -232,13 +234,13 @@ export interface UploadDocumentResponse {
     filename: string;
     path?: string;
     duplicate?: boolean;
-    kind?: 'pdf' | 'docx' | 'text' | 'csv';
+    kind?: 'pdf' | 'docx' | 'pptx' | 'images' | 'text' | 'csv';
 }
 
 export interface DeleteDocumentRequest {
     user_id: string;
     filename: string;
-    kind?: 'pdf' | 'docx' | 'text' | 'csv';
+    kind?: 'pdf' | 'docx' | 'pptx' | 'images' | 'text' | 'csv';
 }
 
 export interface DeleteDocumentResponse {
@@ -288,7 +290,7 @@ export interface ListDocumentsResponse {
     documents: {
         filename: string;
         path: string;
-        kind?: 'pdf' | 'docx' | 'text' | 'csv';
+        kind?: 'pdf' | 'docx' | 'pptx' | 'images' | 'text' | 'csv';
         is_admin_uploaded?: boolean;
         uploaded_by?: string;
     }[];

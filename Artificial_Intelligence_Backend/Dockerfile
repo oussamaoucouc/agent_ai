@@ -1,4 +1,8 @@
-FROM python:3.11-slim
+# =============================================================================
+# CUDA-ENABLED BASE IMAGE for GPU acceleration (Docling, PyTorch)
+# Using CUDA 12.4 + cuDNN 9 for best compatibility with modern GPUs
+# =============================================================================
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
 
 WORKDIR /app
 
@@ -11,11 +15,28 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV UV_PROJECT_ENVIRONMENT=/app/.venv
+# CUDA environment variables
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 # =============================================================================
-# Install system dependencies (single layer, cleaned for smaller image)
+# Install Python 3.11 and system dependencies (single layer, cleaned for smaller image)
+# DEBIAN_FRONTEND=noninteractive prevents interactive prompts (like timezone)
 # =============================================================================
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    tzdata \
+    && ln -fs /usr/share/zoneinfo/UTC /etc/localtime \
+    && dpkg-reconfigure -f noninteractive tzdata \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-venv \
+    python3.11-dev \
+    python3-pip \
     wget \
     unzip \
     build-essential \
@@ -25,6 +46,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
+
+# Set Python 3.11 as default
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
+
+# Install pip for Python 3.11
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
 
 # Install uv (no cache for smaller image)
 RUN pip install --no-cache-dir uv
@@ -37,6 +65,14 @@ COPY pyproject.toml uv.lock ./
 
 # Install dependencies into a persistent virtualenv inside the container
 RUN uv sync --frozen --no-cache
+
+# =============================================================================
+# CRITICAL: Install PyTorch with CUDA support AFTER uv sync
+# This ensures we get the GPU-accelerated version
+# Using 'uv pip' since uv-managed venvs may not have pip in standard location
+# =============================================================================
+RUN uv pip install --no-cache \
+    torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 
 # =============================================================================
 # OPTIMIZATION: Pre-create directories for Docker volumes

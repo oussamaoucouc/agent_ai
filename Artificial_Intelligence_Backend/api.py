@@ -16,7 +16,7 @@ from pydub import AudioSegment
 from AI_Agents_Workflows.rag_agent import run_rag_agent, initialize_knowledge_base
 from AI_Agents_Workflows.locks import get_user_kb_lock
 from AI_Agents_Workflows.ai_agent_assistant import run_assistant_agent
-from AI_Agents_Workflows.config import get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir
+from AI_Agents_Workflows.config import get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir, get_user_pptx_dir, get_user_images_dir
 from AI_Agents_Workflows.mcp_agent import run_agent_async as run_mcp_agent, reset_mcp_gateway_state
 from AI_Agents_Workflows.tts import text_to_speech
 from AI_Agents_Workflows.sentence_buffer import SentenceBuffer
@@ -478,21 +478,36 @@ async def upload_document_endpoint(
             is_admin_upload = True
 
         file_extension = os.path.splitext(file.filename)[1].lower()
-        allowed = {".pdf", ".docx", ".doc", ".txt", ".md", ".csv"}
+        # Allowed file types: documents (PDF, DOCX, PPTX), text (TXT, MD, CSV), images
+        allowed = {
+            ".pdf", ".docx", ".doc",  # Documents
+            ".pptx", ".ppt",  # Presentations
+            ".txt", ".md", ".csv",  # Text/data
+            ".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".gif"  # Images (OCR)
+        }
         if file_extension not in allowed:
-            raise HTTPException(status_code=400, detail="Only pdf, docx, doc, txt, md, csv files are allowed")
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Only pdf, docx, pptx, txt, md, csv, and image files (png, jpg, tiff, bmp, gif) are allowed"
+            )
 
-        # Save the uploaded file to the per-user PDFs directory (using effective_user_id)
+        # Route files to appropriate directories
         if file_extension == ".pdf":
             target_dir = str(get_user_pdf_dir(effective_user_id))
             kind = "pdf"
         elif file_extension in {".doc", ".docx"}:
             target_dir = str(get_user_docx_dir(effective_user_id))
             kind = "docx"
+        elif file_extension in {".ppt", ".pptx"}:
+            target_dir = str(get_user_pptx_dir(effective_user_id))
+            kind = "pptx"
+        elif file_extension in {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".gif"}:
+            target_dir = str(get_user_images_dir(effective_user_id))
+            kind = "images"
         elif file_extension in {".txt", ".md"}:
             target_dir = str(get_user_text_dir(effective_user_id))
             kind = "text"
-        else:
+        else:  # .csv
             target_dir = str(get_user_csv_dir(effective_user_id))
             kind = "csv"
         
@@ -712,6 +727,8 @@ async def list_documents(user_id: Optional[str] = None, request: Request = None,
         dirs = [
             (str(get_user_pdf_dir(effective_user_id)), "pdf", {".pdf"}),
             (str(get_user_docx_dir(effective_user_id)), "docx", {".doc", ".docx"}),
+            (str(get_user_pptx_dir(effective_user_id)), "pptx", {".ppt", ".pptx"}),
+            (str(get_user_images_dir(effective_user_id)), "images", {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".gif"}),
             (str(get_user_text_dir(effective_user_id)), "text", {".txt", ".md"}),
             (str(get_user_csv_dir(effective_user_id)), "csv", {".csv"}),
         ]
@@ -784,6 +801,12 @@ async def delete_document(user_id: Optional[str] = None, filename: str = "", kin
         elif kind == "docx":
             d = str(get_user_docx_dir(user_id))
             candidates.append(os.path.join(d, safe_name))
+        elif kind == "pptx":
+            d = str(get_user_pptx_dir(user_id))
+            candidates.append(os.path.join(d, safe_name))
+        elif kind == "images":
+            d = str(get_user_images_dir(user_id))
+            candidates.append(os.path.join(d, safe_name))
         elif kind == "text":
             d = str(get_user_text_dir(user_id))
             candidates.append(os.path.join(d, safe_name))
@@ -791,7 +814,15 @@ async def delete_document(user_id: Optional[str] = None, filename: str = "", kin
             d = str(get_user_csv_dir(user_id))
             candidates.append(os.path.join(d, safe_name))
         else:
-            for d in [str(get_user_pdf_dir(user_id)), str(get_user_docx_dir(user_id)), str(get_user_text_dir(user_id)), str(get_user_csv_dir(user_id))]:
+            # Search all directories
+            for d in [
+                str(get_user_pdf_dir(user_id)), 
+                str(get_user_docx_dir(user_id)), 
+                str(get_user_pptx_dir(user_id)),
+                str(get_user_images_dir(user_id)),
+                str(get_user_text_dir(user_id)), 
+                str(get_user_csv_dir(user_id))
+            ]:
                 candidates.append(os.path.join(d, safe_name))
         file_path = next((p for p in candidates if os.path.isfile(p)), None)
         if not file_path:
@@ -847,10 +878,11 @@ async def delete_document(user_id: Optional[str] = None, filename: str = "", kin
             import hashlib
             uid = f"u_{hashlib.sha1(str(user_id).encode('utf-8')).hexdigest()[:12]}"
             tables_base = [f"combined_documents_{uid}"]
-            if kind == "pdf":
-                tables_base.append(f"pdf_documents_{uid}")
-            elif kind == "docx":
-                tables_base.append(f"docx_documents_{uid}")
+            # Route to correct vector DB table based on file type
+            # Docling handles: PDF, DOCX, PPTX, images
+            # AGNO handles: text, csv
+            if kind in {"pdf", "docx", "pptx", "images"}:
+                tables_base.append(f"docling_documents_{uid}")
             elif kind == "text":
                 tables_base.append(f"text_documents_{uid}")
             elif kind == "csv":

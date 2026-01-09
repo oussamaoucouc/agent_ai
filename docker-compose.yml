@@ -37,6 +37,14 @@ services:
       - VECTOR_DB_URL=postgresql+psycopg://ai:ai@postgres:5432/ai?options=-csearch_path=ai
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # NVIDIA GPU support for Docling acceleration
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
     depends_on:
       postgres:
         condition: service_healthy

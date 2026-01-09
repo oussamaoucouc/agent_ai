@@ -194,10 +194,14 @@ USER_PDFS_ROOT = DOCS_BASE_DIR / "pdfs"
 USER_DOCX_ROOT = DOCS_BASE_DIR / "docs"
 USER_TEXT_ROOT = DOCS_BASE_DIR / "texts"
 USER_CSV_ROOT = DOCS_BASE_DIR / "csv"
+USER_PPTX_ROOT = DOCS_BASE_DIR / "pptx"
+USER_IMAGES_ROOT = DOCS_BASE_DIR / "images"
 os.makedirs(USER_PDFS_ROOT, exist_ok=True)
 os.makedirs(USER_DOCX_ROOT, exist_ok=True)
 os.makedirs(USER_TEXT_ROOT, exist_ok=True)
 os.makedirs(USER_CSV_ROOT, exist_ok=True)
+os.makedirs(USER_PPTX_ROOT, exist_ok=True)
+os.makedirs(USER_IMAGES_ROOT, exist_ok=True)
 
 # Persist non-secret runtime config in dedicated config directory
 CONFIG_DIR = BASE_DIR / "config"
@@ -759,7 +763,7 @@ __all__ = [
     'KOKORO_TTS_HEADERS', 'KOKORO_TTS_TIMEOUT', 'RHUBARB_PATH',
     'MCP_TRANSPORT', 'MCP_SERVER_URL', 'MCP_STDIO_COMMAND', 'MCP_STDIO_ARGS',
     'get_current_model', 'get_current_model_id', 'get_default_model_id', 'set_model_id', 
-    'get_current_voice', 'get_default_voice', 'set_voice', 'get_user_pdf_dir', 'get_user_docx_dir', 'get_user_text_dir', 'get_user_csv_dir',
+    'get_current_voice', 'get_default_voice', 'set_voice', 'get_user_pdf_dir', 'get_user_docx_dir', 'get_user_text_dir', 'get_user_csv_dir', 'get_user_pptx_dir', 'get_user_images_dir',
     'get_runtime_config', 'update_runtime_config', 'set_ollama_base_url', 'set_openai_base_url',
     'set_mcp_transport', 'set_mcp_server_url', 'set_mcp_stdio_command', 'set_mcp_stdio_args', 'set_mcp_stdio_commands'
     , 'set_mcp_stdio_tools'
@@ -798,6 +802,18 @@ def get_user_text_dir(user_id: str) -> Path:
 
 def get_user_csv_dir(user_id: str) -> Path:
     user_dir = USER_CSV_ROOT / str(user_id)
+    os.makedirs(user_dir, exist_ok=True)
+    return user_dir
+
+def get_user_pptx_dir(user_id: str) -> Path:
+    """Return the per-user PPTX directory and ensure it exists."""
+    user_dir = USER_PPTX_ROOT / str(user_id)
+    os.makedirs(user_dir, exist_ok=True)
+    return user_dir
+
+def get_user_images_dir(user_id: str) -> Path:
+    """Return the per-user images directory and ensure it exists."""
+    user_dir = USER_IMAGES_ROOT / str(user_id)
     os.makedirs(user_dir, exist_ok=True)
     return user_dir
 

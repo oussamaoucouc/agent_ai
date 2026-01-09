@@ -11,7 +11,7 @@ import binascii
 import secrets
 import os
 
-from AI_Agents_Workflows.config import DB_URL, get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir
+from AI_Agents_Workflows.config import DB_URL, get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir, get_user_pptx_dir, get_user_images_dir
 import sessions as session_mod
 from auth import issue_token, get_user_from_auth_header, issue_access_token, issue_refresh_token, verify_refresh_token, APP_ENV
 # Local SQLAlchemy base separate from sessions.py to avoid circular import
@@ -216,16 +216,20 @@ class UserStatsModel(BaseModel):
 
 # Default file size limits in bytes per file type
 DEFAULT_FILE_SIZE_LIMITS = {
-    "pdf": 10 * 1024 * 1024,    # 10 MB
-    "docx": 10 * 1024 * 1024,   # 10 MB
-    "text": 5 * 1024 * 1024,    # 5 MB
-    "csv": 50 * 1024 * 1024,    # 50 MB
+    "pdf": 10 * 1024 * 1024,     # 10 MB
+    "docx": 10 * 1024 * 1024,    # 10 MB
+    "pptx": 20 * 1024 * 1024,    # 20 MB (presentations tend to be larger)
+    "images": 20 * 1024 * 1024,  # 20 MB (images for OCR)
+    "text": 5 * 1024 * 1024,     # 5 MB
+    "csv": 50 * 1024 * 1024,     # 50 MB
 }
 
 
 class FileSizeLimitsModel(BaseModel):
     pdf: int = DEFAULT_FILE_SIZE_LIMITS["pdf"]
     docx: int = DEFAULT_FILE_SIZE_LIMITS["docx"]
+    pptx: int = DEFAULT_FILE_SIZE_LIMITS["pptx"]
+    images: int = DEFAULT_FILE_SIZE_LIMITS["images"]
     text: int = DEFAULT_FILE_SIZE_LIMITS["text"]
     csv: int = DEFAULT_FILE_SIZE_LIMITS["csv"]
 
@@ -269,6 +273,8 @@ def get_user_storage_usage(user_id: str, db: SASession) -> dict:
     usage = {
         "pdf": 0,
         "docx": 0,
+        "pptx": 0,
+        "images": 0,
         "text": 0,
         "csv": 0
     }
@@ -345,7 +351,7 @@ def ensure_admin_seed():
         db.commit()
         # Ensure document directory exists
         try:
-            for f in (get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir):
+            for f in (get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir, get_user_pptx_dir, get_user_images_dir):
                 d = f(user_id)
                 os.makedirs(d, exist_ok=True)
         except Exception:
@@ -421,7 +427,7 @@ def create_user(request: UserCreateRequest, http_request: Request, db: SASession
         db.refresh(u)
         # Ensure user has a document folder created
         try:
-            for f in (get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir):
+            for f in (get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir, get_user_pptx_dir, get_user_images_dir):
                 d = f(user_id)
                 os.makedirs(d, exist_ok=True)
         except Exception:
@@ -550,7 +556,7 @@ def delete_user(user_id: str, http_request: Request, db: SASession = Depends(get
                     db.commit()
             except Exception:
                 db.rollback()
-        for base in ["combined_documents", "pdf_documents", "docx_documents", "text_documents", "csv_documents"]:
+        for base in ["combined_documents", "pdf_documents", "docx_documents", "text_documents", "csv_documents", "docling_documents", "pptx_documents", "image_documents"]:
             for schema in ["ai", "public", "rag"]:
                 _drop_table_if_exists(f"{schema}.{base}_{uid}")
 
@@ -559,7 +565,7 @@ def delete_user(user_id: str, http_request: Request, db: SASession = Depends(get
         # Optionally remove user document directory and per-user agent memory DB files
         try:
             import shutil
-            for f in (get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir):
+            for f in (get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir, get_user_pptx_dir, get_user_images_dir):
                 user_dir = f(user_id)
                 if os.path.isdir(user_dir):
                     try:
@@ -693,7 +699,7 @@ def user_stats(request: Request, db: SASession = Depends(get_db)):
             sess_count = db.query(session_mod.SessionDB).filter(session_mod.SessionDB.user_id == u.id).count()
             docs_count = 0
             try:
-                for f in (get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir):
+                for f in (get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir, get_user_pptx_dir, get_user_images_dir):
                     d = f(u.id)
                     if os.path.isdir(d):
                         docs_count += len([fpath for fpath in os.listdir(d) if os.path.isfile(os.path.join(d, fpath))])

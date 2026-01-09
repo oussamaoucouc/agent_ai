@@ -1,5 +1,6 @@
 """
 RAG Agent functionality using AGNO framework.
+Enhanced with Docling for superior PDF/DOCX/PPTX/Image parsing.
 """
 from pathlib import Path
 import tempfile
@@ -20,6 +21,8 @@ from agno.knowledge.docx import DocxKnowledgeBase
 from agno.knowledge.text import TextKnowledgeBase
 from agno.knowledge.csv import CSVKnowledgeBase
 from agno.knowledge.combined import CombinedKnowledgeBase
+from agno.knowledge.document import DocumentKnowledgeBase
+from agno.document.base import Document
 from agno.vectordb.pgvector import PgVector, SearchType
 from agno.models.groq import Groq
 from agno.models.ollama import Ollama
@@ -39,6 +42,17 @@ import re
 import logging
 logging.basicConfig(level=logging.INFO)
 
+# Try to import Docling reader - graceful fallback if not installed
+try:
+    from .docling_reader import DoclingReader, get_docling_reader
+    HAS_DOCLING = True
+    logging.info("Docling reader available - enhanced document parsing enabled")
+except ImportError:
+    HAS_DOCLING = False
+    logging.info("Docling not installed - using AGNO's default readers")
+
+# Import custom CSV row reader for better tabular data handling
+from .csv_reader import get_csv_row_reader
 
 from .output_utils import clean_agent_output
 from .ollama_queue import local_llm_rate_limit
@@ -75,16 +89,20 @@ def run_rag_agent(query, user_id, session_id, images=None, audio=None, videos=No
 
 async def initialize_knowledge_base(user_id: str, only_path: str | None = None, only_kind: str | None = None):
     """
-    Initialize the per-user knowledge base and let AGNO/Chroma manage persistence.
+    Initialize the per-user knowledge base and let AGNO/PgVector manage persistence.
+    Uses Docling for PDF/DOCX/PPTX/Image parsing when available, falls back to AGNO otherwise.
     """
     user_pdf_dir = cfg.get_user_pdf_dir(user_id)
     user_docx_dir = cfg.get_user_docx_dir(user_id)
     user_text_dir = cfg.get_user_text_dir(user_id)
     user_csv_dir = cfg.get_user_csv_dir(user_id)
+    user_pptx_dir = cfg.get_user_pptx_dir(user_id)
+    user_images_dir = cfg.get_user_images_dir(user_id)
 
     logging.info("Initializing knowledge base")
     logging.info(f"Using Ollama URL for embedder: {cfg.OLLAMA_BASE_URL}")
     logging.info(f"OpenAI-compatible base URL (embeddings): {cfg.get_openai_base_url()}")
+    logging.info(f"Docling enabled: {HAS_DOCLING}")
 
 
     embedder = OllamaEmbedder(
@@ -99,15 +117,9 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
     def _tbl(base: str) -> str:
         return f"{base}_{_uid_suffix(user_id)}"
 
-    pdf_vector_db = PgVector(
-        table_name=_tbl("pdf_documents"),
-        db_url=cfg.VECTOR_DB_URL,
-        embedder=embedder,
-        search_type=SearchType.hybrid,
-        schema="rag"
-    )
-    docx_vector_db = PgVector(
-        table_name=_tbl("docx_documents"),
+    # Vector DBs for each document type
+    docling_vector_db = PgVector(
+        table_name=_tbl("docling_documents"),
         db_url=cfg.VECTOR_DB_URL,
         embedder=embedder,
         search_type=SearchType.hybrid,
@@ -134,33 +146,83 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
         search_type=SearchType.hybrid,
         schema="rag"
     )
-    logging.info("Initialized PgVector user-scoped tables for pdf, docx, text, csv, combined")
+    logging.info("Initialized PgVector user-scoped tables for docling, text, csv, combined")
 
-    logging.info(f"Using user-specific directories: pdf={user_pdf_dir}, docx={user_docx_dir}, text={user_text_dir}, csv={user_csv_dir}")
-    try:
-        pdf_files_for_kb = list(Path(user_pdf_dir).glob("*.pdf"))
-    except Exception:
-        pdf_files_for_kb = []
-    try:
-        docx_files_for_kb = list(Path(user_docx_dir).glob("*.docx")) + list(Path(user_docx_dir).glob("*.doc"))
-    except Exception:
-        docx_files_for_kb = []
-    try:
-        text_files_for_kb = list(Path(user_text_dir).glob("*.txt")) + list(Path(user_text_dir).glob("*.md"))
-    except Exception:
-        text_files_for_kb = []
-    try:
-        csv_files_for_kb = list(Path(user_csv_dir).glob("*.csv"))
-    except Exception:
-        csv_files_for_kb = []
+    # Helper function to get existing file hashes from the database
+    # NOTE: AGNO's CombinedKnowledgeBase stores all documents in the combined table
+    combined_table_name = _tbl("combined_documents")
+    _cached_indexed_hashes = None  # Cache to avoid repeated queries
+    
+    def _get_indexed_hashes() -> set:
+        """Query the combined vector DB table to get already-indexed file SHA256 hashes."""
+        nonlocal _cached_indexed_hashes
+        if _cached_indexed_hashes is not None:
+            return _cached_indexed_hashes
+            
+        from sqlalchemy import create_engine, text
+        try:
+            engine = create_engine(cfg.VECTOR_DB_URL)
+            with engine.connect() as conn:
+                # Query existing file hashes from the combined_documents table
+                result = conn.execute(text(f"""
+                    SELECT DISTINCT meta_data->>'file_sha256' as hash
+                    FROM rag."{combined_table_name}"
+                    WHERE meta_data->>'file_sha256' IS NOT NULL
+                """))
+                hashes = {row[0] for row in result if row[0]}
+                logging.info(f"Found {len(hashes)} already-indexed file hashes in {combined_table_name}")
+                _cached_indexed_hashes = hashes
+                return hashes
+        except Exception as e:
+            logging.warning(f"Could not query existing hashes from {combined_table_name}: {e}")
+            return set()
 
+    logging.info(f"Using user-specific directories: pdf={user_pdf_dir}, docx={user_docx_dir}, pptx={user_pptx_dir}, images={user_images_dir}, text={user_text_dir}, csv={user_csv_dir}")
+    
+    # Gather all file paths
+    try:
+        pdf_files = list(Path(user_pdf_dir).glob("*.pdf"))
+    except Exception:
+        pdf_files = []
+    try:
+        docx_files = list(Path(user_docx_dir).glob("*.docx")) + list(Path(user_docx_dir).glob("*.doc"))
+    except Exception:
+        docx_files = []
+    try:
+        pptx_files = list(Path(user_pptx_dir).glob("*.pptx")) + list(Path(user_pptx_dir).glob("*.ppt"))
+    except Exception:
+        pptx_files = []
+    try:
+        image_files = (
+            list(Path(user_images_dir).glob("*.png")) +
+            list(Path(user_images_dir).glob("*.jpg")) +
+            list(Path(user_images_dir).glob("*.jpeg")) +
+            list(Path(user_images_dir).glob("*.tiff")) +
+            list(Path(user_images_dir).glob("*.tif")) +
+            list(Path(user_images_dir).glob("*.bmp")) +
+            list(Path(user_images_dir).glob("*.gif"))
+        )
+    except Exception:
+        image_files = []
+    try:
+        text_files = list(Path(user_text_dir).glob("*.txt")) + list(Path(user_text_dir).glob("*.md"))
+    except Exception:
+        text_files = []
+    try:
+        csv_files = list(Path(user_csv_dir).glob("*.csv"))
+    except Exception:
+        csv_files = []
+
+    # Handle single-file processing mode
     if only_path and only_kind:
         p = Path(only_path)
         kind = only_kind.lower()
-        pdf_files_for_kb = [p] if kind == "pdf" and p.suffix.lower() == ".pdf" else []
-        docx_files_for_kb = [p] if kind == "docx" and p.suffix.lower() in {".doc", ".docx"} else []
-        text_files_for_kb = [p] if kind == "text" and p.suffix.lower() in {".txt", ".md"} else []
-        csv_files_for_kb = [p] if kind == "csv" and p.suffix.lower() == ".csv" else []
+        pdf_files = [p] if kind == "pdf" and p.suffix.lower() == ".pdf" else []
+        docx_files = [p] if kind == "docx" and p.suffix.lower() in {".doc", ".docx"} else []
+        pptx_files = [p] if kind == "pptx" and p.suffix.lower() in {".ppt", ".pptx"} else []
+        image_files = [p] if kind == "images" and p.suffix.lower() in {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".gif"} else []
+        text_files = [p] if kind == "text" and p.suffix.lower() in {".txt", ".md"} else []
+        csv_files = [p] if kind == "csv" and p.suffix.lower() == ".csv" else []
 
     def _sha256(path: Path) -> str:
         import hashlib
@@ -170,41 +232,174 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
                 h.update(chunk)
         return h.hexdigest()
 
-    pdf_kb = PDFKnowledgeBase(
-        path=[{"path": str(p), "metadata": {"user_id": str(user_id), "type": "pdf", "file_sha256": _sha256(p)}} for p in pdf_files_for_kb],
-        vector_db=pdf_vector_db,
-        chunking_strategy=AgenticChunking(),
-        num_documents=5
-    )
-    docx_kb = DocxKnowledgeBase(
-        path=[{"path": str(p), "metadata": {"user_id": str(user_id), "type": "docx", "file_sha256": _sha256(p)}} for p in docx_files_for_kb],
-        vector_db=docx_vector_db,
-        formats=[".doc", ".docx"],
-        num_documents=5
-    )
-    text_kb = TextKnowledgeBase(
-        path=[{"path": str(p), "metadata": {"user_id": str(user_id), "type": "text", "file_sha256": _sha256(p)}} for p in text_files_for_kb],
-        vector_db=text_vector_db,
-        formats=[".txt", ".md"],
-        num_documents=5
-    )
-    csv_kb = CSVKnowledgeBase(
-        path=[{"path": str(p), "metadata": {"user_id": str(user_id), "type": "csv", "file_sha256": _sha256(p)}} for p in csv_files_for_kb],
-        vector_db=csv_vector_db,
-        num_documents=5
-    )
+    knowledge_sources = []
+    
+    # --- Docling-handled documents (PDF, DOCX, PPTX, Images) ---
+    docling_files = pdf_files + docx_files + pptx_files + image_files
+    
+    if docling_files and HAS_DOCLING:
+        # Get already-indexed hashes to skip re-processing (from combined table)
+        indexed_hashes = _get_indexed_hashes()
+        
+        # Filter out already-indexed files
+        files_to_process = []
+        for file_path in docling_files:
+            file_sha = _sha256(file_path)
+            if file_sha in indexed_hashes:
+                logging.info(f"⏭️ Skipping already-indexed: {file_path.name}")
+            else:
+                files_to_process.append((file_path, file_sha))
+        
+        if files_to_process:
+            logging.info(f"📄 Processing {len(files_to_process)} new files with Docling (skipped {len(docling_files) - len(files_to_process)} already-indexed)")
+            
+            # Use Docling for enhanced parsing
+            docling_reader = get_docling_reader(enable_vlm=False, fallback_to_agno=True)
+            if docling_reader:
+                docling_documents = []
+                for file_path, file_sha in files_to_process:
+                    try:
+                        file_type = file_path.suffix.lower().lstrip('.')
+                        chunks = docling_reader.read(
+                            str(file_path), 
+                            user_id=user_id,
+                            file_sha256=file_sha
+                        )
+                        for chunk in chunks:
+                            meta = chunk.get("metadata", {})
+                            meta["user_id"] = str(user_id)
+                            meta["type"] = file_type
+                            meta["file_sha256"] = file_sha
+                            
+                            doc = Document(
+                                content=chunk["content"],
+                                name=file_path.name,
+                                meta_data=meta
+                            )
+                            docling_documents.append(doc)
+                    except Exception as e:
+                        logging.warning(f"Docling failed to process {file_path.name}: {e}, falling back to AGNO")
+                        # Fallback handled below
+                
+            if docling_documents:
+                docling_kb = DocumentKnowledgeBase(
+                    documents=docling_documents,
+                    vector_db=docling_vector_db,
+                    num_documents=5
+                )
+                knowledge_sources.append(docling_kb)
+                logging.info(f"Docling processed {len(docling_documents)} chunks from {len(docling_files)} files")
+    
+    # Fallback to AGNO readers if Docling not available or failed
+    if not HAS_DOCLING and docling_files:
+        logging.info("Using AGNO fallback readers for PDF/DOCX")
+        # Legacy AGNO handling for PDF
+        if pdf_files:
+            pdf_vector_db = PgVector(
+                table_name=_tbl("pdf_documents"),
+                db_url=cfg.VECTOR_DB_URL,
+                embedder=embedder,
+                search_type=SearchType.hybrid,
+                schema="rag"
+            )
+            pdf_kb = PDFKnowledgeBase(
+                path=[{"path": str(p), "metadata": {"user_id": str(user_id), "type": "pdf", "file_sha256": _sha256(p)}} for p in pdf_files],
+                vector_db=pdf_vector_db,
+                chunking_strategy=AgenticChunking(),
+                num_documents=5
+            )
+            knowledge_sources.append(pdf_kb)
+        
+        # Legacy AGNO handling for DOCX
+        if docx_files:
+            docx_vector_db = PgVector(
+                table_name=_tbl("docx_documents"),
+                db_url=cfg.VECTOR_DB_URL,
+                embedder=embedder,
+                search_type=SearchType.hybrid,
+                schema="rag"
+            )
+            docx_kb = DocxKnowledgeBase(
+                path=[{"path": str(p), "metadata": {"user_id": str(user_id), "type": "docx", "file_sha256": _sha256(p)}} for p in docx_files],
+                vector_db=docx_vector_db,
+                formats=[".doc", ".docx"],
+                num_documents=5
+            )
+            knowledge_sources.append(docx_kb)
+    
+    # --- AGNO-handled documents (Text) with skip optimization ---
+    if text_files:
+        # Get already-indexed hashes (cached from combined table)
+        text_indexed_hashes = _get_indexed_hashes()
+        
+        # Filter out already-indexed text files
+        text_to_process = []
+        for text_path in text_files:
+            file_hash = _sha256(text_path)
+            if file_hash in text_indexed_hashes:
+                logging.info(f"⏭️ Skipping already-indexed text: {text_path.name}")
+            else:
+                text_to_process.append(text_path)
+        
+        if text_to_process:
+            logging.info(f"📝 Processing {len(text_to_process)} new text files (skipped {len(text_files) - len(text_to_process)} already-indexed)")
+            text_kb = TextKnowledgeBase(
+                path=[{"path": str(p), "metadata": {"user_id": str(user_id), "type": "text", "file_sha256": _sha256(p)}} for p in text_to_process],
+                vector_db=text_vector_db,
+                formats=[".txt", ".md"],
+                num_documents=5
+            )
+            knowledge_sources.append(text_kb)
+    
+    # --- Custom CSV row-based processing for better retrieval accuracy ---
+    if csv_files:
+        # Get already-indexed hashes (cached from combined table)
+        csv_indexed_hashes = _get_indexed_hashes()
+        
+        # Filter out already-indexed CSV files
+        csv_to_process = []
+        for csv_path in csv_files:
+            file_hash = _sha256(csv_path)
+            if file_hash in csv_indexed_hashes:
+                logging.info(f"⏭️ Skipping already-indexed CSV: {csv_path.name}")
+            else:
+                csv_to_process.append((csv_path, file_hash))
+        
+        if csv_to_process:
+            logging.info(f"📊 Processing {len(csv_to_process)} new CSV files (skipped {len(csv_files) - len(csv_to_process)} already-indexed)")
+            csv_reader = get_csv_row_reader(max_rows_per_chunk=1)  # 1 row per chunk for precise lookup
+            csv_documents = []
+            for csv_path, file_hash in csv_to_process:
+                rows = csv_reader.read(csv_path, user_id=user_id, file_sha256=file_hash)
+                for row in rows:
+                    csv_documents.append(Document(
+                        name=row["metadata"].get("filename", str(csv_path.name)),
+                        id=f"{file_hash}_{row['metadata'].get('row_numbers', [0])[0]}",
+                        content=row["content"],
+                        meta_data=row["metadata"]
+                    ))
+            
+            if csv_documents:
+                csv_kb = DocumentKnowledgeBase(
+                    documents=csv_documents,
+                    vector_db=csv_vector_db,
+                    num_documents=10  # Retrieve more rows for CSV since each row is small
+                )
+                knowledge_sources.append(csv_kb)
+                logging.info(f"CSV row-chunking: processed {len(csv_documents)} row-chunks from {len(csv_to_process)} files")
 
+    # Combine all knowledge sources
     knowledge_base = CombinedKnowledgeBase(
-        sources=[pdf_kb, docx_kb, text_kb, csv_kb],
+        sources=knowledge_sources,
         vector_db=combined_vector_db,
         num_documents=6
     )
 
     # Log basic ingestion diagnostics
     try:
-        logging.info(f"Knowledge ingestion: pdf={len(pdf_files_for_kb)} docx={len(docx_files_for_kb)} text={len(text_files_for_kb)} csv={len(csv_files_for_kb)} for user {user_id}")
+        logging.info(f"Knowledge ingestion: pdf={len(pdf_files)} docx={len(docx_files)} pptx={len(pptx_files)} images={len(image_files)} text={len(text_files)} csv={len(csv_files)} for user {user_id}")
     except Exception as e:
-        logging.warning(f"Unable to list PDFs in {user_pdf_dir}: {e}")
+        logging.warning(f"Unable to list files in user directories: {e}")
 
     # Do not load here; callers will decide recreate/upsert based on context
     logging.info("Knowledge base object created; loading deferred to caller")
@@ -283,7 +478,7 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
             """),
         tools=[knowledge_tools],
         knowledge=knowledge_base,
-        knowledge_filters={"user_id": str(user_id)},
+        # Note: User isolation already handled by per-user table names (_uid_suffix)
         #search_knowledge=True,
         markdown=True,
         read_chat_history=True,
@@ -369,7 +564,19 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
           ```
         - Example BAD format: "Based on documents here's what I found:1. Finding2. Finding3. FindingFrom document filename.pdf"
         
- """),
+        9. ▶ Data Privacy & Compliance (CRITICAL)
+        - NEVER expose internal system metadata to users, including:
+          • User IDs, session IDs, or any internal identifiers
+          • File paths (e.g., /app/data/pdfs/..., C:\\Users\\..., etc.)
+          • SHA256 hashes, chunk indices, or embedding details
+          • Database table names, schema names, or internal configuration
+          • Source file absolute paths or system directory structures
+        - When citing sources, use ONLY the document filename (e.g., "According to Commercial_Proposal.pdf...")
+        - If document metadata contains paths, user_id, file_sha256, or similar internal fields, DO NOT include them in your response
+        - Treat all internal metadata as confidential application data
+        - Focus responses on the CONTENT of documents, not their storage or processing details
+        
+ """)
     )
 
     try:
