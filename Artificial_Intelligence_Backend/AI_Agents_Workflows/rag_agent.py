@@ -51,8 +51,7 @@ except ImportError:
     HAS_DOCLING = False
     logging.info("Docling not installed - using AGNO's default readers")
 
-# Import custom CSV row reader for better tabular data handling
-from .csv_reader import get_csv_row_reader
+# CSV reader removed - XLSX files are now processed via Docling
 
 from .output_utils import clean_agent_output
 from .ollama_queue import local_llm_rate_limit
@@ -95,7 +94,7 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
     user_pdf_dir = cfg.get_user_pdf_dir(user_id)
     user_docx_dir = cfg.get_user_docx_dir(user_id)
     user_text_dir = cfg.get_user_text_dir(user_id)
-    user_csv_dir = cfg.get_user_csv_dir(user_id)
+    user_xlsx_dir = cfg.get_user_xlsx_dir(user_id)
     user_pptx_dir = cfg.get_user_pptx_dir(user_id)
     user_images_dir = cfg.get_user_images_dir(user_id)
 
@@ -132,13 +131,7 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
         search_type=SearchType.hybrid,
         schema="rag"
     )
-    csv_vector_db = PgVector(
-        table_name=_tbl("csv_documents"),
-        db_url=cfg.VECTOR_DB_URL,
-        embedder=embedder,
-        search_type=SearchType.hybrid,
-        schema="rag"
-    )
+    # csv_vector_db removed - XLSX now processed via Docling into docling_documents table
     combined_vector_db = PgVector(
         table_name=_tbl("combined_documents"),
         db_url=cfg.VECTOR_DB_URL,
@@ -146,7 +139,7 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
         search_type=SearchType.hybrid,
         schema="rag"
     )
-    logging.info("Initialized PgVector user-scoped tables for docling, text, csv, combined")
+    logging.info("Initialized PgVector user-scoped tables for docling, text, combined")
 
     # Helper function to get existing file hashes from the database
     # NOTE: AGNO's CombinedKnowledgeBase stores all documents in the combined table
@@ -177,7 +170,7 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
             logging.warning(f"Could not query existing hashes from {combined_table_name}: {e}")
             return set()
 
-    logging.info(f"Using user-specific directories: pdf={user_pdf_dir}, docx={user_docx_dir}, pptx={user_pptx_dir}, images={user_images_dir}, text={user_text_dir}, csv={user_csv_dir}")
+    logging.info(f"Using user-specific directories: pdf={user_pdf_dir}, docx={user_docx_dir}, pptx={user_pptx_dir}, images={user_images_dir}, xlsx={user_xlsx_dir}, text={user_text_dir}")
     
     # Gather all file paths
     try:
@@ -209,9 +202,9 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
     except Exception:
         text_files = []
     try:
-        csv_files = list(Path(user_csv_dir).glob("*.csv"))
+        xlsx_files = list(Path(user_xlsx_dir).glob("*.xlsx"))
     except Exception:
-        csv_files = []
+        xlsx_files = []
 
     # Handle single-file processing mode
     if only_path and only_kind:
@@ -222,7 +215,7 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
         pptx_files = [p] if kind == "pptx" and p.suffix.lower() in {".ppt", ".pptx"} else []
         image_files = [p] if kind == "images" and p.suffix.lower() in {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".gif"} else []
         text_files = [p] if kind == "text" and p.suffix.lower() in {".txt", ".md"} else []
-        csv_files = [p] if kind == "csv" and p.suffix.lower() == ".csv" else []
+        xlsx_files = [p] if kind == "xlsx" and p.suffix.lower() == ".xlsx" else []
 
     def _sha256(path: Path) -> str:
         import hashlib
@@ -234,8 +227,8 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
 
     knowledge_sources = []
     
-    # --- Docling-handled documents (PDF, DOCX, PPTX, Images) ---
-    docling_files = pdf_files + docx_files + pptx_files + image_files
+    # --- Docling-handled documents (PDF, DOCX, PPTX, Images, XLSX) ---
+    docling_files = pdf_files + docx_files + pptx_files + image_files + xlsx_files
     
     if docling_files and HAS_DOCLING:
         # Get already-indexed hashes to skip re-processing (from combined table)
@@ -351,42 +344,7 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
             )
             knowledge_sources.append(text_kb)
     
-    # --- Custom CSV row-based processing for better retrieval accuracy ---
-    if csv_files:
-        # Get already-indexed hashes (cached from combined table)
-        csv_indexed_hashes = _get_indexed_hashes()
-        
-        # Filter out already-indexed CSV files
-        csv_to_process = []
-        for csv_path in csv_files:
-            file_hash = _sha256(csv_path)
-            if file_hash in csv_indexed_hashes:
-                logging.info(f"⏭️ Skipping already-indexed CSV: {csv_path.name}")
-            else:
-                csv_to_process.append((csv_path, file_hash))
-        
-        if csv_to_process:
-            logging.info(f"📊 Processing {len(csv_to_process)} new CSV files (skipped {len(csv_files) - len(csv_to_process)} already-indexed)")
-            csv_reader = get_csv_row_reader(max_rows_per_chunk=1)  # 1 row per chunk for precise lookup
-            csv_documents = []
-            for csv_path, file_hash in csv_to_process:
-                rows = csv_reader.read(csv_path, user_id=user_id, file_sha256=file_hash)
-                for row in rows:
-                    csv_documents.append(Document(
-                        name=row["metadata"].get("filename", str(csv_path.name)),
-                        id=f"{file_hash}_{row['metadata'].get('row_numbers', [0])[0]}",
-                        content=row["content"],
-                        meta_data=row["metadata"]
-                    ))
-            
-            if csv_documents:
-                csv_kb = DocumentKnowledgeBase(
-                    documents=csv_documents,
-                    vector_db=csv_vector_db,
-                    num_documents=10  # Retrieve more rows for CSV since each row is small
-                )
-                knowledge_sources.append(csv_kb)
-                logging.info(f"CSV row-chunking: processed {len(csv_documents)} row-chunks from {len(csv_to_process)} files")
+    # NOTE: XLSX files are now processed via Docling above (added to docling_files)
 
     # Combine all knowledge sources
     knowledge_base = CombinedKnowledgeBase(
@@ -397,7 +355,7 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
 
     # Log basic ingestion diagnostics
     try:
-        logging.info(f"Knowledge ingestion: pdf={len(pdf_files)} docx={len(docx_files)} pptx={len(pptx_files)} images={len(image_files)} text={len(text_files)} csv={len(csv_files)} for user {user_id}")
+        logging.info(f"Knowledge ingestion: pdf={len(pdf_files)} docx={len(docx_files)} pptx={len(pptx_files)} images={len(image_files)} xlsx={len(xlsx_files)} text={len(text_files)} for user {user_id}")
     except Exception as e:
         logging.warning(f"Unable to list files in user directories: {e}")
 
@@ -575,6 +533,29 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
         - If document metadata contains paths, user_id, file_sha256, or similar internal fields, DO NOT include them in your response
         - Treat all internal metadata as confidential application data
         - Focus responses on the CONTENT of documents, not their storage or processing details
+        
+        10. ▶ Mathematical Calculations & Data Accuracy (CRITICAL)
+        - When performing calculations with numbers from retrieved documents:
+          • EXTRACT exact values from the documents first - do not approximate
+          • SHOW your calculation step-by-step (e.g., "5,200 + 3,100 + 2,800 = 11,100")
+          • VERIFY your arithmetic before presenting the final answer
+          • Use the correct units and currency symbols from the source data
+        - For aggregations (SUM, AVERAGE, COUNT):
+          • List all values being aggregated
+          • Perform the calculation explicitly in your response
+          • Double-check by recounting or recalculating
+        - For percentage calculations:
+          • Show formula: "(part / whole) × 100 = X%"
+          • Verify numerator and denominator are correct
+        - If data is incomplete or ambiguous:
+          • State which data points are available
+          • Explain any assumptions made
+          • Provide ranges if exact values cannot be determined
+        - NEVER guess or estimate numbers - only use values explicitly stated in documents
+        - When presenting tables or numerical summaries:
+          • Align numbers properly
+          • Include totals/subtotals where appropriate
+          • Cross-verify totals match sum of components
         
  """)
     )

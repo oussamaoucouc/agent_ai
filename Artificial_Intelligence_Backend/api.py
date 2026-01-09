@@ -16,7 +16,7 @@ from pydub import AudioSegment
 from AI_Agents_Workflows.rag_agent import run_rag_agent, initialize_knowledge_base
 from AI_Agents_Workflows.locks import get_user_kb_lock
 from AI_Agents_Workflows.ai_agent_assistant import run_assistant_agent
-from AI_Agents_Workflows.config import get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir, get_user_pptx_dir, get_user_images_dir
+from AI_Agents_Workflows.config import get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_xlsx_dir, get_user_pptx_dir, get_user_images_dir
 from AI_Agents_Workflows.mcp_agent import run_agent_async as run_mcp_agent, reset_mcp_gateway_state
 from AI_Agents_Workflows.tts import text_to_speech
 from AI_Agents_Workflows.sentence_buffer import SentenceBuffer
@@ -482,7 +482,7 @@ async def upload_document_endpoint(
         allowed = {
             ".pdf", ".docx", ".doc",  # Documents
             ".pptx", ".ppt",  # Presentations
-            ".txt", ".md", ".csv",  # Text/data
+            ".txt", ".md",".xlsx",  # Text/data
             ".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".gif"  # Images (OCR)
         }
         if file_extension not in allowed:
@@ -507,9 +507,9 @@ async def upload_document_endpoint(
         elif file_extension in {".txt", ".md"}:
             target_dir = str(get_user_text_dir(effective_user_id))
             kind = "text"
-        else:  # .csv
-            target_dir = str(get_user_csv_dir(effective_user_id))
-            kind = "csv"
+        else:  # .xlsx
+            target_dir = str(get_user_xlsx_dir(effective_user_id))
+            kind = "xlsx"
         
         # Check file size against user's quotas
         from users import get_user_file_size_limits, get_user_storage_usage
@@ -730,7 +730,7 @@ async def list_documents(user_id: Optional[str] = None, request: Request = None,
             (str(get_user_pptx_dir(effective_user_id)), "pptx", {".ppt", ".pptx"}),
             (str(get_user_images_dir(effective_user_id)), "images", {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".gif"}),
             (str(get_user_text_dir(effective_user_id)), "text", {".txt", ".md"}),
-            (str(get_user_csv_dir(effective_user_id)), "csv", {".csv"}),
+            (str(get_user_xlsx_dir(effective_user_id)), "xlsx", {".xlsx"}),
         ]
         docs = []
         for d, kind, exts in dirs:
@@ -810,8 +810,8 @@ async def delete_document(user_id: Optional[str] = None, filename: str = "", kin
         elif kind == "text":
             d = str(get_user_text_dir(user_id))
             candidates.append(os.path.join(d, safe_name))
-        elif kind == "csv":
-            d = str(get_user_csv_dir(user_id))
+        elif kind == "xlsx":
+            d = str(get_user_xlsx_dir(user_id))
             candidates.append(os.path.join(d, safe_name))
         else:
             # Search all directories
@@ -821,7 +821,7 @@ async def delete_document(user_id: Optional[str] = None, filename: str = "", kin
                 str(get_user_pptx_dir(user_id)),
                 str(get_user_images_dir(user_id)),
                 str(get_user_text_dir(user_id)), 
-                str(get_user_csv_dir(user_id))
+                str(get_user_xlsx_dir(user_id))
             ]:
                 candidates.append(os.path.join(d, safe_name))
         file_path = next((p for p in candidates if os.path.isfile(p)), None)
@@ -879,14 +879,12 @@ async def delete_document(user_id: Optional[str] = None, filename: str = "", kin
             uid = f"u_{hashlib.sha1(str(user_id).encode('utf-8')).hexdigest()[:12]}"
             tables_base = [f"combined_documents_{uid}"]
             # Route to correct vector DB table based on file type
-            # Docling handles: PDF, DOCX, PPTX, images
-            # AGNO handles: text, csv
-            if kind in {"pdf", "docx", "pptx", "images"}:
+            # Docling handles: PDF, DOCX, PPTX, images, XLSX
+            # AGNO handles: text
+            if kind in {"pdf", "docx", "pptx", "images", "xlsx"}:
                 tables_base.append(f"docling_documents_{uid}")
             elif kind == "text":
                 tables_base.append(f"text_documents_{uid}")
-            elif kind == "csv":
-                tables_base.append(f"csv_documents_{uid}")
             
             # Explicitly check schemas to ensure deletion works regardless of search_path
             schemas = ["rag", "ai"]
