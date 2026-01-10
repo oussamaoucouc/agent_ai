@@ -2,6 +2,9 @@ import React, { useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm-configurable';
 import remarkBreaks from 'remark-breaks';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import { Message, User } from '../types';
 import { AssistantIcon, UserIcon, SpeakerIcon, SpeakerOffIcon } from './icons';
 
@@ -73,12 +76,36 @@ const extractToolUsage = (text: string): { cleanText: string; toolCalls: ToolCal
 };
 
 /**
+ * Converts LaTeX delimiters to standard markdown math delimiters.
+ * - \[...\] → $$...$$ (block math)
+ * - \(...\) → $...$ (inline math)
+ */
+const preprocessLatex = (text: string): string => {
+    if (!text) return '';
+    let processed = text;
+
+    // Convert block math: \[...\] → $$...$$
+    processed = processed.replace(/\\\[([\s\S]*?)\\\]/g, (match, content) => {
+        return '$$' + content + '$$';
+    });
+
+    // Convert inline math: \(...\) → $...$
+    processed = processed.replace(/\\\(([\s\S]*?)\\\)/g, (match, content) => {
+        return '$' + content + '$';
+    });
+
+    return processed;
+};
+
+/**
  * Preprocesses markdown text to fix common malformed patterns from AI output.
  * Key fix: Strip orphan ** markers that don't have a matching pair on the same line.
  */
 const preprocessMarkdown = (raw: string): string => {
     if (!raw) return '';
-    let processed = raw;
+
+    // First, preprocess LaTeX delimiters
+    let processed = preprocessLatex(raw);
 
     // STEP -1: FIX MULTILINE TABLE ROWS (Before any other processing)
     // Detects table rows incorrectly split across lines (e.g. lists inside cells) and merges them
@@ -745,9 +772,10 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
                                         />
                                     </div>
                                 ) : (
-                                    // Full markdown rendering
+                                    // Full markdown rendering with LaTeX/KaTeX support
                                     <ReactMarkdown
-                                        remarkPlugins={[[remarkGfm, { autolinkLiteral: false }], remarkBreaks]}
+                                        remarkPlugins={[[remarkGfm, { autolinkLiteral: false }], remarkBreaks, remarkMath]}
+                                        rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false }]]}
                                         components={markdownComponents}
                                     >
                                         {cleanText}
