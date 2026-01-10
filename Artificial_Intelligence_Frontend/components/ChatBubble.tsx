@@ -80,6 +80,46 @@ const preprocessMarkdown = (raw: string): string => {
     if (!raw) return '';
     let processed = raw;
 
+    // STEP -1: FIX MULTILINE TABLE ROWS (Before any other processing)
+    // Detects table rows incorrectly split across lines (e.g. lists inside cells) and merges them
+    let rawLines = processed.split('\n');
+    let merged: string[] = [];
+    let buffer = '';
+
+    for (let i = 0; i < rawLines.length; i++) {
+        const line = rawLines[i];
+        const trimmed = line.trim();
+
+        if (buffer) {
+            // We are inside a potential split row
+            buffer += ' <br> ' + line; // Use <br> to preserve separation
+            if (trimmed.endsWith('|')) {
+                // Found the end of the row
+                merged.push(buffer);
+                buffer = '';
+            } else if (buffer.length > 5000) {
+                // Safety: buffer too large, probably not a table row. Flush.
+                merged.push(buffer);
+                buffer = '';
+            }
+        } else {
+            // Not in buffer, check if this is a split row start
+            // Starts with |, has some pipes, but DOES NOT end with | (and is not just a single | char)
+            // Also ignore separator rows like |---| or |:---| that might be split (rare)
+            if (trimmed.startsWith('|') && !trimmed.endsWith('|') && trimmed.length > 1 && (trimmed.match(/\|/g) || []).length >= 1) {
+                buffer = line;
+            } else {
+                merged.push(line);
+            }
+        }
+    }
+    // Flush buffer if we reached end without closing (wasn't a table row)
+    if (buffer) {
+        // Just push the raw buffer content, don't try to be too smart
+        merged.push(buffer);
+    }
+    processed = merged.join('\n');
+
     // NORMALIZE LINE ENDINGS (fixes Windows \r\n issues)
     processed = processed.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
@@ -101,17 +141,17 @@ const preprocessMarkdown = (raw: string): string => {
         return placeholder;
     });
 
-    // CONVERT <br> TAGS: Replace HTML line breaks with bullet separators for cleaner display
-    // These often come from PDF parsing and look ugly when shown as raw HTML
-    processed = processed.replace(/<br\s*\/?>/gi, ' • ');
-
-    // PROTECT TABLE ROWS: Lines starting with | are table rows - protect them from preprocessing
-    // This prevents SMART LIST SPLITTING and other steps from breaking table cells
+    // PROTECT TABLE ROWS FIRST (before any content modification)
+    // Only protect lines that look like COMPLETE table rows (start AND end with |, have 2+ columns)
     const tableRows: string[] = [];
     processed = processed.split('\n').map((line, idx) => {
         const trimmed = line.trim();
-        // Protect lines that look like table rows (start with |) or separators (|---|)
-        if (trimmed.startsWith('|') || /^\|[-:\s|]+\|$/.test(trimmed)) {
+        // Must start AND end with | and have at least 2 columns (3+ pipes)
+        const isTableRow = trimmed.startsWith('|') && trimmed.endsWith('|') && (trimmed.match(/\|/g) || []).length >= 3;
+        // Also protect separator rows like |---|---|
+        const isSeparator = /^\|[-:\s|]+\|$/.test(trimmed);
+
+        if (isTableRow || isSeparator) {
             const placeholder = `__TABLE_ROW_${tableRows.length}__`;
             tableRows.push(line);
             return placeholder;
@@ -156,19 +196,10 @@ const preprocessMarkdown = (raw: string): string => {
     });
     processed = processedLines.join('\n');
 
-    // STEP 0.2: SMART LIST SPLITTING (Informative & Logical)
-    // Detects pattern: "Text - **Title**" or "Text - [Source]" which indicates an inline list.
-    // We convert this to a properly nested sub-list for better readability.
-    // Example: "* Source 1: Desc - **Source 2**: Desc" ->
-    // "* Source 1: Desc
-    //   - **Source 2**: Desc"
+    // STEP 0.2: SMART LIST SPLITTING - DISABLED
+    // This step was removing table content from cells because it matched patterns like " - **"
+    // and inserted newlines. Disabling it fixes table rendering issues.
 
-    // 1. Split " - **Title**" pattern (Common in citation lists)
-    // SAFEGUARD: Match Word OR closing bracket ] or ) before hyphen
-    processed = processed.replace(/([\w\])])\s+-\s+\*\*/g, '$1\n\n  - **');
-
-    // 2. Split " - [Source]" pattern
-    processed = processed.replace(/([\w\])])\s+-\s+\[/g, '$1\n\n  - [');
 
     // STEP 0.1: GENERALIZED URL REPAIR (Handle "https://site. com" pattern)
     // Matches "http://" followed by dotted segments, then a dot+space, then more text.
@@ -221,17 +252,23 @@ const preprocessMarkdown = (raw: string): string => {
     // Remove multiple consecutive blank lines (more than 2)
     processed = processed.replace(/\n{3,}/g, '\n\n');
 
-    // RESTORE CODE BLOCKS: Put back the protected code blocks and inline code
-    inlineCode.forEach((code, i) => {
-        processed = processed.replace(`__INLINE_CODE_${i}__`, code);
-    });
-    codeBlocks.forEach((block, i) => {
-        processed = processed.replace(`__CODE_BLOCK_${i}__`, block);
-    });
-    // RESTORE TABLE ROWS: Put back the protected table rows
+    // RESTORE PROTECTED CONTENT (ORDER MATTERS!)
+    // 1. Table rows first (they may contain inline code placeholders)
     tableRows.forEach((row, i) => {
         processed = processed.replace(`__TABLE_ROW_${i}__`, row);
     });
+    // 2. Then inline code (may be inside table rows)
+    inlineCode.forEach((code, i) => {
+        processed = processed.replace(`__INLINE_CODE_${i}__`, code);
+    });
+    // 3. Finally code blocks
+    codeBlocks.forEach((block, i) => {
+        processed = processed.replace(`__CODE_BLOCK_${i}__`, block);
+    });
+
+    // CONVERT <br> TAGS: Replace HTML line breaks with bullet separators
+    // This is done AFTER all restorations so table content is also cleaned
+    processed = processed.replace(/<br\s*\/?>/gi, ' • ');
 
     return processed.trim();
 };
