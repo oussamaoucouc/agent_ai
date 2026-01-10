@@ -458,6 +458,15 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
         ❌ BAD: "I'll help you find the tables. Let me query the database..."
         ✅ GOOD: "The CRM database has these tables: customers, invoices, products..."
         </style>
+        
+        <math_formatting>
+        When outputting mathematical formulas or equations:
+        - Use \\[...\\] for block/display equations (centered on their own line)
+        - Use \\(...\\) for inline equations (within text)
+        - Example block: \\[ \\frac{{a + b}}{{2}} = c \\]
+        - Example inline: The formula \\( x^2 + y^2 = z^2 \\) is the Pythagorean theorem.
+        - NEVER output raw LaTeX commands without delimiters!
+        </math_formatting>
         """),
         markdown=True,
         show_tool_calls=False,

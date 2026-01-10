@@ -557,6 +557,14 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
           • Include totals/subtotals where appropriate
           • Cross-verify totals match sum of components
         
+        11. ▶ Mathematical Formatting (CRITICAL)
+        When outputting mathematical formulas or equations:
+        - Use \\[...\\] for block/display equations (centered on their own line)
+        - Use \\(...\\) for inline equations (within text)
+        - Example block: \\[ \\frac{a + b}{2} = c \\]
+        - Example inline: The formula \\( x^2 + y^2 = z^2 \\) is the Pythagorean theorem.
+        - NEVER output raw LaTeX commands like \\frac{} without delimiters!
+        
  """)
     )
 

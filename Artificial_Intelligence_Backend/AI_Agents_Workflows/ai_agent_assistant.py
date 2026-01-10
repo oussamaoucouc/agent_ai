@@ -174,6 +174,15 @@ async def run_assistant_agent_async(query, user_id, session_id, images=None, aud
         • Put questions or calls-to-action on their own lines
         • Use natural transitions between topics
         </output_quality>
+        
+        <math_formatting>
+        When outputting mathematical formulas or equations:
+        • Use \\[...\\] for block/display equations (centered on their own line)
+        • Use \\(...\\) for inline equations (within text)
+        • Example block: \\[ \\frac{a + b}{2} = c \\]
+        • Example inline: The formula \\( x^2 + y^2 = z^2 \\) is the Pythagorean theorem.
+        • NEVER output raw LaTeX commands without delimiters!
+        </math_formatting>
         """),
     )
 
