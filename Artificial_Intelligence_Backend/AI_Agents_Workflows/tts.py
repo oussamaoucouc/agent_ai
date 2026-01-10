@@ -62,8 +62,16 @@ class KokoroTTS:
                 raise RuntimeError("Kokoro TTS model files missing. Please run setup_tts.py.")
         
         print(f"Loading Kokoro ONNX model from {MODEL_PATH}...", file=sys.stderr)
-        self._model = Kokoro(str(MODEL_PATH), str(VOICES_PATH))
-        print("Kokoro ONNX model loaded.", file=sys.stderr)
+        
+        # Explicitly initialize session with GPU support
+        import onnxruntime as rt
+        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        print(f"Initializing ONNX session with providers: {providers}", file=sys.stderr)
+        sess = rt.InferenceSession(str(MODEL_PATH), providers=providers)
+        
+        # Use from_session to inject our custom session
+        self._model = Kokoro.from_session(sess, str(VOICES_PATH))
+        print("Kokoro ONNX model loaded with GPU support.", file=sys.stderr)
 
     def get_language_code(self, voice):
         """
