@@ -248,8 +248,8 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
             
             # Use Docling for enhanced parsing
             docling_reader = get_docling_reader(enable_vlm=False, fallback_to_agno=True)
+            docling_documents = []  # Initialize early to prevent UnboundLocalError
             if docling_reader:
-                docling_documents = []
                 for file_path, file_sha in files_to_process:
                     try:
                         file_type = file_path.suffix.lower().lstrip('.')

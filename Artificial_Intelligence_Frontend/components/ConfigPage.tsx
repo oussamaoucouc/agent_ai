@@ -345,11 +345,11 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert, o
                   {/* Filtered Model List */}
                   <div className="space-y-2 max-h-[320px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700">
                     {(config.available_models_labeled || [])
-                      .filter(m => selectedModelProvider === 'all' || (m.provider || 'ollama') === selectedModelProvider)
-                      .map((m) => {
-                        const idx = (config.available_models_labeled || []).findIndex(model => model.id === m.id);
+                      .map((model, index) => ({ model, originalIndex: index }))
+                      .filter(({ model: m }) => selectedModelProvider === 'all' || (m.provider || 'ollama') === selectedModelProvider)
+                      .map(({ model: m, originalIndex: idx }) => {
                         return (
-                          <div key={m.id} className="group flex items-center gap-3 bg-slate-800/40 border border-slate-700/50 rounded-lg p-2.5 hover:border-sky-500/30 transition-all">
+                          <div key={idx} className="group flex items-center gap-3 bg-slate-800/40 border border-slate-700/50 rounded-lg p-2.5 hover:border-sky-500/30 transition-all">
                             {/* Model Info */}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">
