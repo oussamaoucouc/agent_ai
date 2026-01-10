@@ -278,7 +278,7 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
                 docling_kb = DocumentKnowledgeBase(
                     documents=docling_documents,
                     vector_db=docling_vector_db,
-                    num_documents=5
+                    num_documents=10
                 )
                 knowledge_sources.append(docling_kb)
                 logging.info(f"Docling processed {len(docling_documents)} chunks from {len(docling_files)} files")

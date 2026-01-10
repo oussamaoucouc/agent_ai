@@ -79,6 +79,7 @@ const extractToolUsage = (text: string): { cleanText: string; toolCalls: ToolCal
  * Converts LaTeX delimiters to standard markdown math delimiters.
  * - \[...\] → $$...$$ (block math)
  * - \(...\) → $...$ (inline math)
+ * Also fixes invalid LaTeX currency symbols.
  */
 const preprocessLatex = (text: string): string => {
     if (!text) return '';
@@ -86,12 +87,18 @@ const preprocessLatex = (text: string): string => {
 
     // Convert block math: \[...\] → $$...$$
     processed = processed.replace(/\\\[([\s\S]*?)\\\]/g, (match, content) => {
-        return '$$' + content + '$$';
+        // Fix invalid LaTeX currency symbols inside math
+        let fixedContent = content.replace(/\\€/g, '\\text{€}');
+        fixedContent = fixedContent.replace(/\\\$/g, '\\text{\\$}');
+        return '$$' + fixedContent + '$$';
     });
 
     // Convert inline math: \(...\) → $...$
     processed = processed.replace(/\\\(([\s\S]*?)\\\)/g, (match, content) => {
-        return '$' + content + '$';
+        // Fix invalid LaTeX currency symbols inside math
+        let fixedContent = content.replace(/\\€/g, '\\text{€}');
+        fixedContent = fixedContent.replace(/\\\$/g, '\\text{\\$}');
+        return '$' + fixedContent + '$';
     });
 
     return processed;
