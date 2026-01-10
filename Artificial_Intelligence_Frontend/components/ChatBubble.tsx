@@ -114,34 +114,59 @@ const preprocessMarkdown = (raw: string): string => {
     // First, preprocess LaTeX delimiters
     let processed = preprocessLatex(raw);
 
-    // STEP -1: FIX MULTILINE TABLE ROWS (Before any other processing)
+    // STEP -1: FIX MULTILINE TABLE ROWS (Schema-Aware)
     // Detects table rows incorrectly split across lines (e.g. lists inside cells) and merges them
     let rawLines = processed.split('\n');
     let merged: string[] = [];
     let buffer = '';
+    let expectedPipes = 0;
 
     for (let i = 0; i < rawLines.length; i++) {
         const line = rawLines[i];
         const trimmed = line.trim();
 
+        // CHECK FOR SEPARATOR ROW to set expectations
+        if (/^\|[-:\s|]+\|$/.test(trimmed)) {
+            const pipes = (trimmed.match(/\|/g) || []).length;
+            if (pipes > 1) {
+                expectedPipes = pipes;
+            }
+        }
+
         if (buffer) {
             // We are inside a potential split row
-            buffer += ' <br> ' + line; // Use <br> to preserve separation
-            if (trimmed.endsWith('|')) {
-                // Found the end of the row
-                merged.push(buffer);
-                buffer = '';
+            buffer += ' <br> ' + line;
+
+            // Check if we can close the buffer
+            const bufferTrimmed = buffer.trim();
+            if (bufferTrimmed.endsWith('|')) {
+                const bufferPipes = (buffer.match(/\|/g) || []).length;
+                // Close if we match the expected schema OR if we don't know the schema yet
+                if (expectedPipes === 0 || bufferPipes >= expectedPipes) {
+                    merged.push(buffer);
+                    buffer = '';
+                }
             } else if (buffer.length > 5000) {
-                // Safety: buffer too large, probably not a table row. Flush.
                 merged.push(buffer);
                 buffer = '';
             }
         } else {
             // Not in buffer, check if this is a split row start
-            // Starts with |, has some pipes, but DOES NOT end with | (and is not just a single | char)
-            // Also ignore separator rows like |---| or |:---| that might be split (rare)
-            if (trimmed.startsWith('|') && !trimmed.endsWith('|') && trimmed.length > 1 && (trimmed.match(/\|/g) || []).length >= 1) {
-                buffer = line;
+            const isTableLine = trimmed.startsWith('|');
+
+            if (isTableLine) {
+                const currentPipes = (trimmed.match(/\|/g) || []).length;
+
+                // DECIDE IF WE NEED TO MERGE
+                // 1. Doesn't end with | -> Merge (Classic broken row)
+                // 2. Ends with | but has fewer pipes than expected -> Merge (Structurally incomplete)
+                const isStructurallyComplete = trimmed.endsWith('|') && (expectedPipes === 0 || currentPipes >= expectedPipes);
+
+                if (!isStructurallyComplete && trimmed.length > 1) {
+                    buffer = line;
+                } else {
+                    merged.push(line);
+                }
             } else {
                 merged.push(line);
             }

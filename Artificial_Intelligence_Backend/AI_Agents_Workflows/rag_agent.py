@@ -43,13 +43,14 @@ import logging
 logging.basicConfig(level=logging.INFO)
 
 # Try to import Docling reader - graceful fallback if not installed
+# Force Docling reader
 try:
     from .docling_reader import DoclingReader, get_docling_reader
-    HAS_DOCLING = True
     logging.info("Docling reader available - enhanced document parsing enabled")
 except ImportError:
-    HAS_DOCLING = False
-    logging.info("Docling not installed - using AGNO's default readers")
+    # This should effectively crash or warn loudly if Docling is missing, as requested
+    logging.error("CRITICAL: Docling not installed but REQUIRED. Install with `uv pip install docling`.")
+    raise ImportError("Docling is mandatory for this configuration.")
 
 # CSV reader removed - XLSX files are now processed via Docling
 
@@ -101,7 +102,7 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
     logging.info("Initializing knowledge base")
     logging.info(f"Using Ollama URL for embedder: {cfg.OLLAMA_BASE_URL}")
     logging.info(f"OpenAI-compatible base URL (embeddings): {cfg.get_openai_base_url()}")
-    logging.info(f"Docling enabled: {HAS_DOCLING}")
+    logging.info("Docling enabled: REQUIRED")
 
 
     embedder = OllamaEmbedder(
@@ -230,7 +231,10 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
     # --- Docling-handled documents (PDF, DOCX, PPTX, Images, XLSX) ---
     docling_files = pdf_files + docx_files + pptx_files + image_files + xlsx_files
     
-    if docling_files and HAS_DOCLING:
+    # --- Docling-handled documents (PDF, DOCX, PPTX, Images, XLSX) ---
+    docling_files = pdf_files + docx_files + pptx_files + image_files + xlsx_files
+    
+    if docling_files:
         # Get already-indexed hashes to skip re-processing (from combined table)
         indexed_hashes = _get_indexed_hashes()
         
@@ -248,7 +252,8 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
             
             # Use Docling for enhanced parsing
             docling_reader = get_docling_reader(enable_vlm=False, fallback_to_agno=True)
-            docling_documents = []  # Initialize early to prevent UnboundLocalError
+            docling_documents = []
+            
             if docling_reader:
                 for file_path, file_sha in files_to_process:
                     try:
@@ -271,8 +276,7 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
                             )
                             docling_documents.append(doc)
                     except Exception as e:
-                        logging.warning(f"Docling failed to process {file_path.name}: {e}, falling back to AGNO")
-                        # Fallback handled below
+                        logging.error(f"Docling failed to process {file_path.name}: {e}")
                 
             if docling_documents:
                 docling_kb = DocumentKnowledgeBase(
@@ -282,43 +286,6 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
                 )
                 knowledge_sources.append(docling_kb)
                 logging.info(f"Docling processed {len(docling_documents)} chunks from {len(docling_files)} files")
-    
-    # Fallback to AGNO readers if Docling not available or failed
-    if not HAS_DOCLING and docling_files:
-        logging.info("Using AGNO fallback readers for PDF/DOCX")
-        # Legacy AGNO handling for PDF
-        if pdf_files:
-            pdf_vector_db = PgVector(
-                table_name=_tbl("pdf_documents"),
-                db_url=cfg.VECTOR_DB_URL,
-                embedder=embedder,
-                search_type=SearchType.hybrid,
-                schema="rag"
-            )
-            pdf_kb = PDFKnowledgeBase(
-                path=[{"path": str(p), "metadata": {"user_id": str(user_id), "type": "pdf", "file_sha256": _sha256(p)}} for p in pdf_files],
-                vector_db=pdf_vector_db,
-                chunking_strategy=AgenticChunking(),
-                num_documents=5
-            )
-            knowledge_sources.append(pdf_kb)
-        
-        # Legacy AGNO handling for DOCX
-        if docx_files:
-            docx_vector_db = PgVector(
-                table_name=_tbl("docx_documents"),
-                db_url=cfg.VECTOR_DB_URL,
-                embedder=embedder,
-                search_type=SearchType.hybrid,
-                schema="rag"
-            )
-            docx_kb = DocxKnowledgeBase(
-                path=[{"path": str(p), "metadata": {"user_id": str(user_id), "type": "docx", "file_sha256": _sha256(p)}} for p in docx_files],
-                vector_db=docx_vector_db,
-                formats=[".doc", ".docx"],
-                num_documents=5
-            )
-            knowledge_sources.append(docx_kb)
     
     # --- AGNO-handled documents (Text) with skip optimization ---
     if text_files:
@@ -350,7 +317,7 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
     knowledge_base = CombinedKnowledgeBase(
         sources=knowledge_sources,
         vector_db=combined_vector_db,
-        num_documents=6
+        num_documents=10
     )
 
     # Log basic ingestion diagnostics
