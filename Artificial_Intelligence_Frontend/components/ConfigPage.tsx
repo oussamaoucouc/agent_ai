@@ -8,6 +8,7 @@ import { CustomDropdown } from './CustomDropdown';
 interface ConfigPageProps {
   onCancel: () => void;
   onShowAlert: (message: string, title: string) => void;
+  onShowConfirmation: (title: string, message: string, onConfirm: () => void) => void;
 }
 
 // Helper function to infer provider from model ID
@@ -29,7 +30,7 @@ const buttonAddIconStyle = "p-2 bg-sky-600 hover:bg-sky-700 text-white rounded-m
 const buttonRemoveIconStyle = "p-2 text-slate-400 bg-slate-800/40 border border-slate-600/50 hover:bg-red-500/20 hover:text-white rounded-md transition-colors flex-shrink-0";
 
 
-export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert }) => {
+export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert, onShowConfirmation }) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,9 +40,10 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
   const [openrouterApiKey, setOpenrouterApiKey] = useState<string>('');
   const [agnoApiKey, setAgnoApiKey] = useState<string>('');
   const [newServer, setNewServer] = useState<{ label: string; url: string }>({ label: '', url: '' });
-  const [newModel, setNewModel] = useState<{ label: string; id: string; provider: string }>({ label: '', id: '', provider: 'openai' });
+  const [newModel, setNewModel] = useState<{ label: string; id: string; provider: string }>({ label: '', id: '', provider: 'ollama' });
   const [newVoice, setNewVoice] = useState<{ label: string; id: string }>({ label: '', id: '' });
   const [newStdioTool, setNewStdioTool] = useState<{ label: string; command: string }>({ label: '', command: '' });
+  const [selectedModelProvider, setSelectedModelProvider] = useState<string>('all');
 
   const userId = storage.getCurrentUser() || '';
 
@@ -170,7 +172,12 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
 
   const removeModel = (index: number) => {
     if (!config) return;
-    updateModelsList((config.available_models_labeled || []).filter((_, i) => i !== index));
+    const model = (config.available_models_labeled || [])[index];
+    onShowConfirmation(
+      'Delete Model',
+      `Are you sure you want to delete "${model?.label || model?.id}"?`,
+      () => updateModelsList((config.available_models_labeled || []).filter((_, i) => i !== index))
+    );
   };
 
   const updateModel = (index: number, field: 'label' | 'id' | 'provider', value: string) => {
@@ -194,7 +201,12 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
 
   const removeVoice = (index: number) => {
     if (!config) return;
-    updateVoicesList((config.available_voices_labeled || []).filter((_, i) => i !== index));
+    const voice = (config.available_voices_labeled || [])[index];
+    onShowConfirmation(
+      'Delete Voice',
+      `Are you sure you want to delete "${voice?.label || voice?.id}"?`,
+      () => updateVoicesList((config.available_voices_labeled || []).filter((_, i) => i !== index))
+    );
   };
 
   const updateVoice = (index: number, field: 'label' | 'id', value: string) => {
@@ -219,7 +231,12 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
   };
 
   const removeServer = (index: number) => {
-    setConfig(prev => prev ? { ...prev, mcp_servers: (prev.mcp_servers || []).filter((_, i) => i !== index) } : prev);
+    const server = config?.mcp_servers?.[index];
+    onShowConfirmation(
+      'Delete Server',
+      `Are you sure you want to delete "${server?.label || server?.url}"?`,
+      () => setConfig(prev => prev ? { ...prev, mcp_servers: (prev.mcp_servers || []).filter((_, i) => i !== index) } : prev)
+    );
   };
 
   const addStdioTool = () => {
@@ -243,11 +260,16 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
   };
 
   const removeStdioTool = (index: number) => {
-    setConfig(prev => {
-      if (!prev) return null;
-      const newTools = (prev.mcp_stdio_tools || []).filter((_, i) => i !== index);
-      return { ...prev, mcp_stdio_tools: newTools };
-    });
+    const tool = config?.mcp_stdio_tools?.[index];
+    onShowConfirmation(
+      'Delete Tool',
+      `Are you sure you want to delete "${tool?.label || tool?.command}"?`,
+      () => setConfig(prev => {
+        if (!prev) return null;
+        const newTools = (prev.mcp_stdio_tools || []).filter((_, i) => i !== index);
+        return { ...prev, mcp_stdio_tools: newTools };
+      })
+    );
   };
 
   return (
@@ -288,166 +310,180 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
               <section className="bg-slate-900/30 backdrop-blur-md border border-slate-500/30 rounded-xl p-6 space-y-6">
                 <h2 className="text-xl font-bold">Models & Voice</h2>
                 <div>
-                  <span className="block text-sm font-medium text-slate-400 mb-3">Available Models</span>
-                  <div className="grid grid-cols-1 gap-4">
-                    {(config.available_models_labeled || []).map((m, idx) => (
-                      <div key={idx} className="group relative bg-slate-800/40 border border-slate-700/50 rounded-xl p-4 transition-all hover:border-sky-500/30 hover:shadow-lg hover:shadow-sky-500/5">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm font-medium text-slate-400">Available Models</span>
+                    <span className="text-xs text-slate-500">{(config.available_models_labeled || []).length} models</span>
+                  </div>
 
-                        {/* Header: Label & Provider */}
-                        <div className="flex items-start justify-between gap-4 mb-2">
-                          <div className="flex-1">
-                            <input
-                              type="text"
-                              value={m.label}
-                              onChange={(e) => updateModel(idx, 'label', e.target.value)}
-                              className="w-full bg-transparent border-none p-0 text-lg font-semibold text-slate-200 placeholder-slate-600 focus:ring-0"
-                              placeholder="Model Name"
-                            />
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className="text-slate-600 text-xs font-mono">ID:</span>
-                              <input
-                                type="text"
-                                value={m.id}
-                                onChange={(e) => updateModel(idx, 'id', e.target.value)}
-                                className="flex-1 bg-transparent border-none p-0 text-xs font-mono text-slate-500 focus:text-sky-400 focus:ring-0 transition-colors"
-                                placeholder="model-id"
-                              />
-                            </div>
-                          </div>
+                  {/* Provider Filter Tabs */}
+                  {(() => {
+                    const models = config.available_models_labeled || [];
+                    const providers = ['all', ...Array.from(new Set(models.map(m => m.provider || 'ollama')))];
+                    const providerCounts = providers.reduce((acc, p) => {
+                      acc[p] = p === 'all' ? models.length : models.filter(m => (m.provider || 'ollama') === p).length;
+                      return acc;
+                    }, {} as Record<string, number>);
 
-                          <div className="flex items-center gap-2">
-                            <div className="w-32">
-                              <CustomDropdown
-                                options={['openai', 'google', 'openrouter', 'ollama']}
-                                value={m.provider || 'openai'}
-                                onChange={(val) => updateModel(idx, 'provider', val)}
-                              />
+                    return (
+                      <div className="flex flex-wrap gap-1 mb-3 border-b border-slate-700/50 pb-2">
+                        {providers.map(provider => (
+                          <button
+                            key={provider}
+                            onClick={() => setSelectedModelProvider(provider)}
+                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all capitalize ${selectedModelProvider === provider
+                              ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
+                              : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 border border-transparent'
+                              }`}
+                          >
+                            {provider} <span className="text-slate-600 ml-1">({providerCounts[provider]})</span>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Filtered Model List */}
+                  <div className="space-y-2 max-h-[320px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700">
+                    {(config.available_models_labeled || [])
+                      .filter(m => selectedModelProvider === 'all' || (m.provider || 'ollama') === selectedModelProvider)
+                      .map((m) => {
+                        const idx = (config.available_models_labeled || []).findIndex(model => model.id === m.id);
+                        return (
+                          <div key={m.id} className="group flex items-center gap-3 bg-slate-800/40 border border-slate-700/50 rounded-lg p-2.5 hover:border-sky-500/30 transition-all">
+                            {/* Model Info */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  value={m.label}
+                                  onChange={(e) => updateModel(idx, 'label', e.target.value)}
+                                  className="bg-transparent border-none p-0 text-sm font-semibold text-slate-200 placeholder-slate-600 focus:ring-0 w-auto max-w-[160px]"
+                                  placeholder="Model Name"
+                                />
+                                <span className="text-slate-600">·</span>
+                                <input
+                                  type="text"
+                                  value={m.id}
+                                  onChange={(e) => updateModel(idx, 'id', e.target.value)}
+                                  className="flex-1 bg-transparent border-none p-0 text-xs font-mono text-slate-500 focus:text-sky-400 focus:ring-0 transition-colors truncate"
+                                  placeholder="model-id"
+                                />
+                              </div>
                             </div>
+
+                            {/* Capabilities - Compact Icon Toggles */}
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!config) return;
+                                  const newList = (config.available_models_labeled || []).map((model, i) =>
+                                    i === idx ? { ...model, supports_images: !model.supports_images } : model
+                                  );
+                                  updateModelsList(newList);
+                                }}
+                                className={`p-1.5 rounded transition-all ${m.supports_images ? 'bg-sky-500/20 text-sky-400' : 'bg-slate-800/50 text-slate-600 hover:text-slate-400'}`}
+                                title="Image Support"
+                              >
+                                <ImageIcon className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!config) return;
+                                  const newList = (config.available_models_labeled || []).map((model, i) =>
+                                    i === idx ? { ...model, supports_audio: !model.supports_audio } : model
+                                  );
+                                  updateModelsList(newList);
+                                }}
+                                className={`p-1.5 rounded transition-all ${m.supports_audio ? 'bg-purple-500/20 text-purple-400' : 'bg-slate-800/50 text-slate-600 hover:text-slate-400'}`}
+                                title="Audio Support"
+                              >
+                                <MicIcon className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!config) return;
+                                  const newList = (config.available_models_labeled || []).map((model, i) =>
+                                    i === idx ? { ...model, supports_videos: !model.supports_videos } : model
+                                  );
+                                  updateModelsList(newList);
+                                }}
+                                className={`p-1.5 rounded transition-all ${m.supports_videos ? 'bg-pink-500/20 text-pink-400' : 'bg-slate-800/50 text-slate-600 hover:text-slate-400'}`}
+                                title="Video Support"
+                              >
+                                <VideoIcon className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            {/* Provider Badge */}
+                            <span className={`text-[10px] font-medium px-2 py-0.5 rounded capitalize ${m.provider === 'openai' ? 'bg-emerald-500/10 text-emerald-400' :
+                              m.provider === 'google' ? 'bg-blue-500/10 text-blue-400' :
+                                m.provider === 'openrouter' ? 'bg-orange-500/10 text-orange-400' :
+                                  'bg-slate-700/50 text-slate-400'
+                              }`}>
+                              {m.provider || 'ollama'}
+                            </span>
+
+                            {/* Delete Button */}
                             <button
                               onClick={() => removeModel(idx)}
-                              className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100"
+                              className="p-1.5 rounded text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100"
                               title="Remove Model"
                             >
                               <TrashIcon className="w-4 h-4" />
                             </button>
                           </div>
-                        </div>
+                        );
+                      })}
+                  </div>
 
-                        {/* Capabilities Badges */}
-                        <div className="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t border-slate-700/30">
-                          <span className="text-[10px] uppercase tracking-wider text-slate-500 font-medium mr-1">Capabilities:</span>
-
-                          <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all cursor-pointer select-none ${m.supports_images ? 'bg-sky-500/10 border-sky-500/30 text-sky-400' : 'bg-slate-800/50 border-slate-700 text-slate-500 hover:border-slate-600'}`}>
-                            <input
-                              type="checkbox"
-                              checked={m.supports_images || false}
-                              onChange={(e) => {
-                                if (!config) return;
-                                const newList = (config.available_models_labeled || []).map((model, i) =>
-                                  i === idx ? { ...model, supports_images: e.target.checked } : model
-                                );
-                                updateModelsList(newList);
-                              }}
-                              className="hidden"
-                            />
-                            <ImageIcon className="w-3.5 h-3.5" />
-                            <span>Images</span>
-                          </label>
-
-                          <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all cursor-pointer select-none ${m.supports_audio ? 'bg-purple-500/10 border-purple-500/30 text-purple-400' : 'bg-slate-800/50 border-slate-700 text-slate-500 hover:border-slate-600'}`}>
-                            <input
-                              type="checkbox"
-                              checked={m.supports_audio || false}
-                              onChange={(e) => {
-                                if (!config) return;
-                                const newList = (config.available_models_labeled || []).map((model, i) =>
-                                  i === idx ? { ...model, supports_audio: e.target.checked } : model
-                                );
-                                updateModelsList(newList);
-                              }}
-                              className="hidden"
-                            />
-                            <span className="text-sm">🎵</span>
-                            <span>Audio</span>
-                          </label>
-
-                          <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all cursor-pointer select-none ${m.supports_videos ? 'bg-pink-500/10 border-pink-500/30 text-pink-400' : 'bg-slate-800/50 border-slate-700 text-slate-500 hover:border-slate-600'}`}>
-                            <input
-                              type="checkbox"
-                              checked={m.supports_videos || false}
-                              onChange={(e) => {
-                                if (!config) return;
-                                const newList = (config.available_models_labeled || []).map((model, i) =>
-                                  i === idx ? { ...model, supports_videos: e.target.checked } : model
-                                );
-                                updateModelsList(newList);
-                              }}
-                              className="hidden"
-                            />
-                            <VideoIcon className="w-3.5 h-3.5" />
-                            <span>Videos</span>
-                          </label>
-                        </div>
-                      </div>
-                    ))}
-
-                    {/* Add New Model Card */}
-                    <div className="relative group border-2 border-dashed border-slate-700/50 rounded-xl p-4 hover:border-sky-500/40 hover:bg-slate-800/30 transition-all">
-                      <div className="flex items-center gap-3">
-                        <div className="flex-1 space-y-2">
-                          <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                              <span className="text-slate-500 text-xs">🏷️</span>
-                            </div>
-                            <input
-                              type="text"
-                              value={newModel.label}
-                              onChange={(e) => setNewModel(prev => ({ ...prev, label: e.target.value }))}
-                              placeholder="New Model Name"
-                              className="w-full bg-slate-900/50 border border-slate-700 rounded-lg py-2 pl-9 pr-3 text-sm text-slate-200 placeholder-slate-500 focus:ring-1 focus:ring-sky-500 focus:border-sky-500 transition-all"
-                            />
-                          </div>
-                          <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                              <span className="text-slate-500 text-xs">🆔</span>
-                            </div>
-                            <input
-                              type="text"
-                              value={newModel.id}
-                              onChange={(e) => setNewModel(prev => ({ ...prev, id: e.target.value }))}
-                              placeholder="Model ID (e.g. gpt-4o)"
-                              className="w-full bg-slate-900/50 border border-slate-700 rounded-lg py-2 pl-9 pr-3 text-sm text-slate-200 placeholder-slate-500 focus:ring-1 focus:ring-sky-500 focus:border-sky-500 transition-all"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col gap-2">
-                          <div className="w-32">
-                            <CustomDropdown
-                              options={['openai', 'google', 'openrouter', 'ollama']}
-                              value={newModel.provider}
-                              onChange={(val) => setNewModel(prev => ({ ...prev, provider: val }))}
-                            />
-                          </div>
-                          <button
-                            onClick={addModel}
-                            className="flex items-center justify-center gap-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg py-2 px-4 text-sm font-medium transition-colors shadow-lg shadow-sky-900/20"
-                          >
-                            <PlusIcon className="w-4 h-4" />
-                            <span>Add</span>
-                          </button>
-                        </div>
-                      </div>
+                  {/* Add New Model - Compact Row */}
+                  <div className="flex items-center gap-2 border border-dashed border-slate-700/50 rounded-lg p-2 mt-3 hover:border-sky-500/40 transition-all">
+                    <input
+                      type="text"
+                      value={newModel.label}
+                      onChange={(e) => setNewModel(prev => ({ ...prev, label: e.target.value }))}
+                      placeholder="Name"
+                      className="w-24 bg-slate-900/50 border border-slate-700 rounded px-2 py-1.5 text-sm text-slate-200 placeholder-slate-500 focus:ring-1 focus:ring-sky-500 focus:border-sky-500"
+                    />
+                    <input
+                      type="text"
+                      value={newModel.id}
+                      onChange={(e) => setNewModel(prev => ({ ...prev, id: e.target.value }))}
+                      placeholder="Model ID (e.g. gpt-4o)"
+                      className="flex-1 bg-slate-900/50 border border-slate-700 rounded px-2 py-1.5 text-sm text-slate-200 placeholder-slate-500 focus:ring-1 focus:ring-sky-500 focus:border-sky-500 font-mono"
+                    />
+                    <div className="w-24">
+                      <CustomDropdown
+                        options={['ollama', 'openai', 'google', 'openrouter']}
+                        value={newModel.provider}
+                        onChange={(val) => setNewModel(prev => ({ ...prev, provider: val }))}
+                      />
                     </div>
+                    <button
+                      onClick={addModel}
+                      disabled={!newModel.id.trim()}
+                      className="p-1.5 bg-sky-600 hover:bg-sky-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded transition-colors"
+                      title="Add Model"
+                    >
+                      <PlusIcon className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
                 <div>
-                  <span className="block text-sm font-medium text-slate-400 mb-3">Available Voices</span>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm font-medium text-slate-400">Available Voices</span>
+                    <span className="text-xs text-slate-500">{(config.available_voices_labeled || []).length} voices</span>
+                  </div>
+
+                  {/* Compact Voice List - 2 columns on larger screens */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     {(config.available_voices_labeled || []).map((v, idx) => (
-                      <div key={idx} className="group relative bg-slate-800/40 border border-slate-700/50 rounded-xl p-3 flex items-center gap-3 transition-all hover:border-purple-500/30 hover:shadow-lg hover:shadow-purple-500/5">
-                        <div className="p-2 bg-purple-500/10 rounded-lg text-purple-400">
-                          <MicIcon className="w-5 h-5" />
+                      <div key={idx} className="group flex items-center gap-2 bg-slate-800/40 border border-slate-700/50 rounded-lg p-2 hover:border-purple-500/30 transition-all">
+                        <div className="p-1.5 bg-purple-500/10 rounded text-purple-400">
+                          <MicIcon className="w-4 h-4" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <input
@@ -455,53 +491,52 @@ export const ConfigPage: React.FC<ConfigPageProps> = ({ onCancel, onShowAlert })
                             value={v.label}
                             onChange={(e) => updateVoice(idx, 'label', e.target.value)}
                             className="w-full bg-transparent border-none p-0 text-sm font-medium text-slate-200 placeholder-slate-600 focus:ring-0"
-                            placeholder="Voice Label"
+                            placeholder="Voice Name"
                           />
                           <input
                             type="text"
                             value={v.id}
                             onChange={(e) => updateVoice(idx, 'id', e.target.value)}
-                            className="w-full bg-transparent border-none p-0 text-xs font-mono text-slate-500 focus:text-purple-400 focus:ring-0 transition-colors"
+                            className="w-full bg-transparent border-none p-0 text-[11px] font-mono text-slate-500 focus:text-purple-400 focus:ring-0 transition-colors"
                             placeholder="voice_id"
                           />
                         </div>
                         <button
                           onClick={() => removeVoice(idx)}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100"
+                          className="p-1 rounded text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100"
                           title="Remove Voice"
                         >
-                          <TrashIcon className="w-4 h-4" />
+                          <TrashIcon className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     ))}
 
-                    {/* Add Voice Card */}
-                    <div className="group relative border-2 border-dashed border-slate-700/50 rounded-xl p-3 flex items-center gap-3 hover:border-purple-500/40 hover:bg-slate-800/30 transition-all">
-                      <div className="p-2 bg-slate-800 rounded-lg text-slate-500 group-hover:text-purple-400 transition-colors">
-                        <PlusIcon className="w-5 h-5" />
+                    {/* Add New Voice - Compact */}
+                    <div className="flex items-center gap-2 border border-dashed border-slate-700/50 rounded-lg p-2 hover:border-purple-500/40 transition-all">
+                      <div className="p-1.5 bg-slate-800/50 rounded text-slate-500">
+                        <PlusIcon className="w-4 h-4" />
                       </div>
-                      <div className="flex-1 min-w-0 space-y-1">
-                        <input
-                          type="text"
-                          value={newVoice.label}
-                          onChange={(e) => setNewVoice(prev => ({ ...prev, label: e.target.value }))}
-                          placeholder="New Voice Label"
-                          className="w-full bg-transparent border-none p-0 text-sm font-medium text-slate-300 placeholder-slate-500 focus:ring-0"
-                        />
-                        <input
-                          type="text"
-                          value={newVoice.id}
-                          onChange={(e) => setNewVoice(prev => ({ ...prev, id: e.target.value }))}
-                          placeholder="voice_id"
-                          className="w-full bg-transparent border-none p-0 text-xs font-mono text-slate-500 focus:text-purple-400 focus:ring-0 transition-colors"
-                        />
-                      </div>
+                      <input
+                        type="text"
+                        value={newVoice.label}
+                        onChange={(e) => setNewVoice(prev => ({ ...prev, label: e.target.value }))}
+                        placeholder="Name"
+                        className="w-20 bg-transparent border-none p-0 text-sm text-slate-300 placeholder-slate-500 focus:ring-0"
+                      />
+                      <input
+                        type="text"
+                        value={newVoice.id}
+                        onChange={(e) => setNewVoice(prev => ({ ...prev, id: e.target.value }))}
+                        placeholder="voice_id"
+                        className="flex-1 bg-transparent border-none p-0 text-xs font-mono text-slate-500 focus:text-purple-400 focus:ring-0"
+                      />
                       <button
                         onClick={addVoice}
-                        className="p-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-900/20 transition-all"
+                        disabled={!newVoice.id.trim()}
+                        className="p-1 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded transition-colors"
                         title="Add Voice"
                       >
-                        <PlusIcon className="w-4 h-4" />
+                        <PlusIcon className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>

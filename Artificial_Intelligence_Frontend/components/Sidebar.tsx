@@ -3,8 +3,10 @@ import { UploadedFile, Session, TTSVoice, QueryMode } from '../types';
 import * as storage from '../services/storageService';
 import { getVoicesCatalog } from '../services/apiService';
 import { McpToolItem } from '../types';
-import { CustomDropdown } from './CustomDropdown';
-import { DocumentIcon, UploadIcon, SpinnerIcon, CheckIcon, ErrorIcon, PlusIcon, LogoutIcon, ChatIcon, CloseIcon, EditIcon, TrashIcon, CubeIcon, SpeakerIcon } from './icons';
+import { ModelSelector } from './ModelSelector';
+import { VoiceSelector } from './VoiceSelector';
+import { ToolsSelector } from './ToolsSelector';
+import { DocumentIcon, UploadIcon, SpinnerIcon, CheckIcon, ErrorIcon, PlusIcon, LogoutIcon, ChatIcon, CloseIcon, EditIcon, TrashIcon } from './icons';
 
 interface SidebarProps {
     uploadedFiles: UploadedFile[];
@@ -83,7 +85,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
     const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
     const [sessionName, setSessionName] = useState('');
-    const [selectedProvider, setSelectedProvider] = useState<string>('');
     const [fileFilter, setFileFilter] = useState<'all' | 'user' | 'admin'>('all');
 
     const renameInputRef = useRef<HTMLInputElement>(null);
@@ -118,77 +119,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         return () => controller.abort();
     }, []);
 
-    // Docker MCP Gateway detection - uses is_autonomous flag (with fallback to URL pattern for backward compatibility)
-    const isDockerGateway = (tool: McpToolItem): boolean => {
-        // Prefer explicit flag if set
-        if (tool.is_autonomous !== undefined) {
-            return tool.is_autonomous;
-        }
-        // Fallback to URL pattern for backward compatibility
-        return tool.url.toLowerCase().includes('mcp-gateway');
-    };
-
-    // Check if Docker gateway is currently selected
-    const isDockerGatewayActive = mcpToolsCatalog.some(
-        tool => isDockerGateway(tool) && selectedMcpTools.includes(tool.label)
-    );
-
-    const toggleMcpTool = (label: string) => {
-        if (!canSelectTools) return;
-
-        const tool = mcpToolsCatalog.find(t => t.label === label);
-        const isSelectingGateway = tool && isDockerGateway(tool);
-        const isAlreadySelected = selectedMcpTools.includes(label);
-
-        // Case 1: Deselecting Docker gateway - just deselect normally
-        if (isSelectingGateway && isAlreadySelected) {
-            onSelectedMcpToolsChange([]);
-            return;
-        }
-
-        // Case 2: Selecting Docker gateway - show confirmation first
-        if (isSelectingGateway && !isAlreadySelected) {
-            if (onShowConfirmation) {
-                onShowConfirmation(
-                    'Docker Tools Mode',
-                    'Selecting Docker Tools enables exclusive mode. All other Web Tools and Local Tools will be cleared. Do you want to continue?',
-                    () => {
-                        // On confirm: select only Docker gateway and clear Local Tools
-                        onSelectedMcpToolsChange([label]);
-                        onSelectedMcpStdioChange([]);
-                    }
-                );
-            } else {
-                // Fallback if no confirmation handler
-                onSelectedMcpToolsChange([label]);
-                onSelectedMcpStdioChange([]);
-            }
-            return;
-        }
-
-        // Case 3: Docker gateway is active and user tries to select another tool
-        if (isDockerGatewayActive && !isSelectingGateway) {
-            // Don't allow - gateway is exclusive
-            return;
-        }
-
-        // Case 4: Normal toggle (no gateway involved)
-        const nextLabels = isAlreadySelected
-            ? selectedMcpTools.filter(l => l !== label)
-            : [...selectedMcpTools, label];
-        onSelectedMcpToolsChange(nextLabels);
-    };
-
-    const toggleMcpStdio = (cmd: string) => {
-        // Don't allow stdio selection if Docker gateway is active
-        if (!canSelectTools || isDockerGatewayActive) return;
-
-        const next = selectedMcpStdio.includes(cmd)
-            ? selectedMcpStdio.filter(c => c !== cmd)
-            : [...selectedMcpStdio, cmd];
-        onSelectedMcpStdioChange(next);
-    };
-
 
     const handleStartRename = (session: Session) => {
         setRenamingSessionId(session.id);
@@ -209,45 +139,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             setRenamingSessionId(null);
         }
     };
-
-    // Group models by provider and infer provider if missing
-    const modelsByProvider = (availableModelsLabeled || []).reduce((acc, m) => {
-        // Infer provider from model ID if not set
-        let provider = m.provider;
-        if (!provider) {
-            if (m.id.startsWith('openrouter/')) {
-                provider = 'openrouter';
-            } else if (m.id.startsWith('gemini/')) {
-                provider = 'gemini';
-            } else if (m.id.startsWith('gpt/')) {
-                provider = 'openai';
-            } else if (m.id.startsWith('openai/')) {
-                provider = 'openai';
-            } else {
-                provider = 'ollama';
-            }
-        }
-        if (!acc[provider]) acc[provider] = [];
-        acc[provider].push(m);
-        return acc;
-    }, {} as Record<string, Array<{ label: string; id: string; provider?: string }>>);
-
-    const providers = Object.keys(modelsByProvider);
-
-    // Set initial selected provider when models load
-    useEffect(() => {
-        if (providers.length > 0 && !selectedProvider) {
-            // Try to find provider of current model
-            let initialProvider = providers[0];
-            for (const [prov, models] of Object.entries(modelsByProvider) as [string, Array<{ label: string; id: string; provider?: string }>][]) {
-                if (models.some(m => m.id === currentModel)) {
-                    initialProvider = prov;
-                    break;
-                }
-            }
-            setSelectedProvider(initialProvider);
-        }
-    }, [availableModelsLabeled, currentModel]);
 
     return (
         <aside className={`w-80 flex-shrink-0 bg-slate-900/30 backdrop-blur-2xl border-r border-slate-500/30 flex flex-col fixed inset-y-0 left-0 z-40 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
@@ -340,200 +231,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div className="pt-2">
                     <h2 className="text-lg font-bold text-slate-200 mb-4">Settings</h2>
                     <div className="space-y-6">
-                        <div>
-                            <h3 className="text-sm font-medium text-slate-400 mb-2 flex items-center"><CubeIcon className="w-4 h-4 mr-2" />AI Model</h3>
+                        {/* Model Selector - Collapsible with provider tabs */}
+                        <ModelSelector
+                            currentModel={currentModel}
+                            onModelChange={onModelChange}
+                            availableModels={availableModelsLabeled || []}
+                        />
+                        {/* Voice Selector - Collapsible drill-down picker */}
+                        <VoiceSelector
+                            currentVoice={currentVoice}
+                            onVoiceChange={onVoiceChange}
+                            availableVoices={availableVoicesLabeled || []}
+                        />
 
-                            {/* Provider Selection */}
-                            {providers.length > 0 && (
-                                <div className="mb-3">
-                                    <CustomDropdown
-                                        label="Provider"
-                                        options={providers}
-                                        value={selectedProvider}
-                                        onChange={setSelectedProvider}
-                                    />
-                                </div>
-                            )}
-
-                            <div className="grid grid-cols-2 gap-2">
-                                {(modelsByProvider[selectedProvider] || []).map((m) => (
-                                    <button
-                                        key={m.id}
-                                        onClick={() => onModelChange(m.id)}
-                                        title={m.label}
-                                        className={`w-full text-center truncate px-2 py-1.5 text-xs rounded-lg transition-colors border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-500 ${currentModel === m.id ? 'bg-sky-500 text-white font-bold border-sky-500' : 'bg-slate-700/50 hover:bg-slate-700 text-slate-300 border-slate-600'
-                                            }`}
-                                    >
-                                        {m.label}
-                                    </button>
-                                ))}
-                            </div>
-                            {(!availableModelsLabeled || availableModelsLabeled.length === 0) && (
-                                <p className="mt-2 text-xs text-slate-500">No models configured.</p>
-                            )}
-                            <p className="mt-2 text-xs text-slate-500">
-                                Choose the AI model to power your assistant.
-                            </p>
-                        </div>
-                        {/* Voices at top */}
-                        <div>
-                            <h3 className="text-sm font-medium text-slate-400 mb-2 flex items-center"><SpeakerIcon className="w-4 h-4 mr-2" />Voices</h3>
-                            <div className="grid grid-cols-3 gap-2">
-                                {(availableVoicesLabeled || []).map(v => (
-                                    <button
-                                        key={v.id}
-                                        onClick={() => onVoiceChange(v.id as TTSVoice)}
-                                        className={`px-2 py-1.5 text-xs rounded-lg transition-colors border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-500 ${currentVoice === (v.id as TTSVoice) ? 'bg-sky-500 text-white font-bold border-sky-500' : 'bg-slate-700/50 hover:bg-slate-700 text-slate-300 border-slate-600'
-                                            }`}
-                                    >
-                                        {v.label}
-                                    </button>
-                                ))}
-                            </div>
-                            {(!availableVoicesLabeled || availableVoicesLabeled.length === 0) && (
-                                <p className="mt-2 text-xs text-slate-500">No voices configured.</p>
-                            )}
-                        </div>
-                        {/* Tools multi-select below Voices */}
-                        <div className={`transition-opacity duration-200 ${isSettingsSyncing ? 'opacity-50 pointer-events-none' : ''}`}>
-                            {/* Autonomous Mode - Docker Gateway Section */}
-                            {mcpToolsCatalog.some(isDockerGateway) && (
-                                <>
-                                    {/* Compact Autonomous Mode Card */}
-                                    <div className={`relative overflow-hidden rounded-lg p-[1px] transition-all duration-300 ${isDockerGatewayActive ? 'bg-gradient-to-r from-sky-600/60 via-cyan-600/50 to-sky-600/60' : 'bg-slate-700/40'}`}>
-                                        <div className="relative bg-slate-900/95 backdrop-blur-sm rounded-lg p-3">
-                                            {/* Header */}
-                                            <div className="flex items-center justify-between mb-2 relative z-10">
-                                                <div className="flex items-center gap-2">
-                                                    <div className={`p-1 rounded transition-all duration-300 ${isDockerGatewayActive ? 'bg-sky-600/80' : 'bg-slate-700/60'}`}>
-                                                        <svg className={`w-3.5 h-3.5 ${isDockerGatewayActive ? 'text-sky-200' : 'text-slate-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                                        </svg>
-                                                    </div>
-                                                    <h3 className={`text-xs font-medium ${isDockerGatewayActive ? 'text-sky-300' : 'text-slate-400'}`}>
-                                                        Autonomous Mode
-                                                    </h3>
-                                                </div>
-                                                {isDockerGatewayActive && (
-                                                    <span className="flex items-center gap-1 text-[9px] font-medium bg-sky-800/60 text-sky-200 px-1.5 py-0.5 rounded-full">
-                                                        <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse"></span>
-                                                        ACTIVE
-                                                    </span>
-                                                )}
-                                            </div>
-
-                                            {/* Docker Tools */}
-                                            <div className="relative z-10">
-                                                {mcpToolsCatalog.filter(isDockerGateway).map(tool => {
-                                                    const isSelected = selectedMcpTools.includes(tool.label);
-                                                    return (
-                                                        <button
-                                                            key={tool.label}
-                                                            onClick={() => toggleMcpTool(tool.label)}
-                                                            disabled={!canSelectTools}
-                                                            className={`w-full px-3 py-2 text-xs rounded-md transition-all duration-200 border focus:outline-none ${isSelected
-                                                                ? 'bg-sky-600/70 text-sky-100 font-medium border-sky-500/50'
-                                                                : canSelectTools
-                                                                    ? 'bg-slate-800/60 hover:bg-slate-800/80 text-slate-300 border-slate-600/50 hover:border-slate-500/60'
-                                                                    : 'bg-slate-800/30 opacity-50 cursor-not-allowed text-slate-500 border-slate-700/30'
-                                                                }`}
-                                                            title="Enable full autonomous mode with all Docker tools"
-                                                        >
-                                                            <span className="flex items-center justify-center gap-2">
-                                                                <span className="text-sm">⚡</span>
-                                                                <span>{tool.label}</span>
-                                                            </span>
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-
-                                            {/* Description */}
-                                            <p className="text-[10px] text-slate-500 mt-2 relative z-10">
-                                                {isDockerGatewayActive
-                                                    ? '✓ All Docker tools active. Other tools disabled.'
-                                                    : 'Enables all containerized tools in one click.'}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div className="border-t border-slate-700/30 my-3"></div>
-                                </>
-                            )}
-
-                            {/* Regular Web Tools Section */}
-                            <h3 className="text-sm font-medium text-slate-400 mb-2">Web Tools</h3>
-                            <div className={`relative ${!canSelectTools ? 'group' : ''}`}>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {mcpToolsCatalog.filter(tool => !isDockerGateway(tool)).map(tool => {
-                                        const isSelected = selectedMcpTools.includes(tool.label);
-                                        const isDisabled = !canSelectTools || isDockerGatewayActive;
-
-                                        return (
-                                            <button
-                                                key={tool.label}
-                                                onClick={() => toggleMcpTool(tool.label)}
-                                                disabled={isDisabled}
-                                                className={`px-2 py-1.5 text-xs rounded-lg transition-colors border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-500 ${isSelected
-                                                    ? 'bg-sky-500 text-white font-bold border-sky-500'
-                                                    : isDisabled
-                                                        ? 'bg-slate-800/50 opacity-50 cursor-not-allowed text-slate-300 border-slate-600'
-                                                        : 'bg-slate-700/50 hover:bg-slate-700 text-slate-300 border-slate-600'
-                                                    }`}
-                                                title={isDockerGatewayActive ? 'Disabled: Autonomous mode is active' : tool.label}
-                                            >
-                                                {tool.label}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                                {!canSelectTools && (
-                                    <div className="pointer-events-none absolute -bottom-10 left-0 bg-gray-900/90 text-white text-xs px-2 py-1 rounded-md shadow-md opacity-0 group-hover:opacity-100 backdrop-blur-sm">
-                                        {isSettingsSyncing ? 'Loading...' : 'Switch to Tools mode to enable tool selection'}
-                                    </div>
-                                )}
-                            </div>
-                            <p className="mt-2 text-xs text-slate-500">
-                                {isDockerGatewayActive
-                                    ? 'Disabled while Autonomous mode is active.'
-                                    : canSelectTools
-                                        ? 'Select individual tools to use.'
-                                        : 'Switch to Tools mode to select tools.'}
-                            </p>
-                            <h3 className="text-sm font-medium text-slate-400 mb-2">Local Tools</h3>
-                            <div className={`relative ${(!canSelectTools || isDockerGatewayActive) ? 'group' : ''}`}>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {mcpStdioCatalog.map(item => {
-                                        const isDisabled = !canSelectTools || isDockerGatewayActive;
-                                        return (
-                                            <button
-                                                key={item.command}
-                                                onClick={() => toggleMcpStdio(item.command)}
-                                                disabled={isDisabled}
-                                                className={`px-2 py-1.5 text-xs rounded-lg transition-colors border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-500 ${selectedMcpStdio.includes(item.command)
-                                                    ? 'bg-sky-500 text-white font-bold border-sky-500'
-                                                    : isDisabled
-                                                        ? 'bg-slate-800/50 opacity-50 cursor-not-allowed text-slate-300 border-slate-600'
-                                                        : 'bg-slate-700/50 hover:bg-slate-700 text-slate-300 border-slate-600'
-                                                    }`}
-                                                title={isDockerGatewayActive ? 'Disabled: Autonomous mode is active' : item.label}
-                                            >
-                                                {item.label}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                                {(!canSelectTools || isDockerGatewayActive) && (
-                                    <div className="pointer-events-none absolute -bottom-10 left-0 bg-gray-900/90 text-white text-xs px-2 py-1 rounded-md shadow-md opacity-0 group-hover:opacity-100 backdrop-blur-sm">
-                                        {isSettingsSyncing ? 'Loading...' : isDockerGatewayActive ? 'Local Tools disabled in Autonomous mode' : 'Switch to Tools mode to enable stdio selection'}
-                                    </div>
-                                )}
-                            </div>
-                            <p className="mt-2 text-xs text-slate-500">
-                                {isDockerGatewayActive
-                                    ? 'Local Tools are disabled in Autonomous mode.'
-                                    : 'Local tools run locally configured by the administrator.'}
-                            </p>
-                        </div>
+                        {/* Tools Selector - Categorized with Docker/Web/Local tabs */}
+                        <ToolsSelector
+                            mcpToolsCatalog={mcpToolsCatalog}
+                            selectedMcpTools={selectedMcpTools}
+                            onSelectedMcpToolsChange={onSelectedMcpToolsChange}
+                            mcpStdioCatalog={mcpStdioCatalog}
+                            selectedMcpStdio={selectedMcpStdio}
+                            onSelectedMcpStdioChange={onSelectedMcpStdioChange}
+                            canSelectTools={canSelectTools}
+                            isSettingsSyncing={isSettingsSyncing}
+                            onShowConfirmation={onShowConfirmation}
+                        />
                     </div>
                 </div>
 

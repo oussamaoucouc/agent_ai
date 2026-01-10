@@ -1863,7 +1863,7 @@ const App: React.FC = () => {
                         onShowConfirmation={showConfirmation}
                     />;
                 case 'config':
-                    return <ConfigPage onCancel={() => setAdminView('dashboard')} onShowAlert={(message, title) => showAlert(title, message)} />;
+                    return <ConfigPage onCancel={() => setAdminView('dashboard')} onShowAlert={(message, title) => showAlert(title, message)} onShowConfirmation={showConfirmation} />;
                 default:
                     return (
                         <DashboardPage
