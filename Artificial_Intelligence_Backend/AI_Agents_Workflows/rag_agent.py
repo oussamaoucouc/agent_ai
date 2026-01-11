@@ -34,6 +34,9 @@ from agno.tools.reasoning import ReasoningTools
 from agno.tools.thinking import ThinkingTools
 from agno.tools.knowledge import KnowledgeTools
 from agno.storage.sqlite import SqliteStorage
+from agno.tools.calculator import CalculatorTools
+from agno.tools.pandas import PandasTools
+from agno.tools.file import FileTools
 from . import config as cfg
 from . import model_factory
 from .locks import get_user_kb_lock
@@ -368,6 +371,17 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
     add_few_shot=True,
     add_instructions=True,
     )
+    
+    # Calculator tool for accurate mathematical operations
+    # add_instructions=True injects function docstrings into agent context
+    calculator_tools = CalculatorTools(add_instructions=True)
+    
+    # PandasTools for data analysis on Excel/CSV files
+    pandas_tools = PandasTools(add_instructions=True)
+    
+    # FileTools for reading Excel files - restricted to user's xlsx directory
+    user_xlsx_dir = cfg.get_user_xlsx_dir(user_id)
+    file_tools = FileTools(base_dir=user_xlsx_dir)
 
     # Resolve per-session model preference
     try:
@@ -390,10 +404,12 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
 
     rag_expert_agent = Agent(
         model=session_model,
+        #For debuggin purposes
+        debug_mode=True,
         reasoning=False,
         name="rag_expert_agent",
         session_id=session_id,
-        session_state={"user_id":user_id, "session_id":session_id},
+        session_state={"user_id":user_id, "session_id":session_id, "xlsx_directory": str(user_xlsx_dir)},
         add_state_in_messages=True,
         role="AI Expert in Retrieval-Augmented Generation (RAG) systems that provides comprehensive, accurate, and contextually relevant responses by leveraging advanced document retrieval and knowledge synthesis techniques",
         user_id=user_id,
@@ -401,7 +417,7 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
             You are an AI RAG Expert, optimized for maximum retrieval accuracy, semantic understanding, and knowledge synthesis. 
             Your expertise lies in intelligently retrieving, analyzing, and synthesizing information from knowledge bases to provide comprehensive, accurate, and contextually relevant responses.
             """),
-        tools=[knowledge_tools],
+        tools=[knowledge_tools, calculator_tools, pandas_tools, file_tools],
         knowledge=knowledge_base,
         # Note: User isolation already handled by per-user table names (_uid_suffix)
         #search_knowledge=True,
@@ -502,27 +518,41 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
         - Focus responses on the CONTENT of documents, not their storage or processing details
         
         10. ▶ Mathematical Calculations & Data Accuracy (CRITICAL)
+        - **ALWAYS USE the Calculator tool** for ANY mathematical operation:
+          • For addition: use the `add` function
+          • For subtraction: use the `subtract` function  
+          • For multiplication: use the `multiply` function
+          • For division: use the `divide` function
+          • For powers: use the `exponentiate` function
+          • For square roots: use the `square_root` function
+          • For factorials: use the `factorial` function
         - When performing calculations with numbers from retrieved documents:
           • EXTRACT exact values from the documents first - do not approximate
-          • SHOW your calculation step-by-step (e.g., "5,200 + 3,100 + 2,800 = 11,100")
-          • VERIFY your arithmetic before presenting the final answer
+          • CALL the Calculator tool to perform the actual computation
+          • SHOW your calculation step-by-step (e.g., "5,200 + 3,100 = [use add tool] = 8,300")
+          • VERIFY your arithmetic using the Calculator tool before presenting the final answer
           • Use the correct units and currency symbols from the source data
         - For aggregations (SUM, AVERAGE, COUNT):
           • List all values being aggregated
-          • Perform the calculation explicitly in your response
-          • Double-check by recounting or recalculating
+          • Use the Calculator tool for each operation
+          • For averages: first sum using `add`, then `divide` by count
         - For percentage calculations:
-          • Show formula: "(part / whole) × 100 = X%"
+          • Use `divide` then `multiply` by 100: "(part / whole) × 100 = X%"
           • Verify numerator and denominator are correct
+        - For complex multi-step calculations:
+          • Break down into individual operations
+          • Call the Calculator tool for each step
+          • Chain results together
         - If data is incomplete or ambiguous:
           • State which data points are available
           • Explain any assumptions made
           • Provide ranges if exact values cannot be determined
+        - NEVER attempt mental math - ALWAYS delegate to the Calculator tool
         - NEVER guess or estimate numbers - only use values explicitly stated in documents
         - When presenting tables or numerical summaries:
           • Align numbers properly
-          • Include totals/subtotals where appropriate
-          • Cross-verify totals match sum of components
+          • Include totals/subtotals where appropriate (calculated via Calculator tool)
+          • Cross-verify totals match sum of components using the Calculator
         
         11. ▶ Mathematical Formatting (CRITICAL)
         When outputting mathematical formulas or equations:
@@ -531,6 +561,40 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
         - Example block: \\[ \\frac{a + b}{2} = c \\]
         - Example inline: The formula \\( x^2 + y^2 = z^2 \\) is the Pythagorean theorem.
         - NEVER output raw LaTeX commands like \\frac{} without delimiters!
+        
+        12. ▶ Excel/CSV Data Analysis with FileTools + PandasTools (CRITICAL)
+        The user's Excel files are in: session_state['xlsx_directory']
+        
+        **CRITICAL: Use FULL PATH for read_excel**
+        The xlsx_directory path + filename must be combined for pandas to work.
+        
+        **Workflow for accurate Excel data analysis:**
+        1. First, use `list_files` (FileTools) to see available Excel files
+        2. Get the xlsx_directory from session_state (e.g., "/app/data/xlsx/user123/")
+        3. Use `create_pandas_dataframe` with the FULL path:
+           • create_using_function: "read_excel"
+           • function_parameters: {"io": "/app/data/xlsx/user123/crm.xlsx"}  ← FULL PATH!
+        4. Use `run_dataframe_operation` to perform analysis:
+           • For SUM of column: operation="sum", operation_parameters={}
+           • For specific column sum: First select column, then sum
+           • For AVERAGE: operation="mean", operation_parameters={}
+        
+        **Correct Example:**
+        1. xlsx_directory = "/app/data/xlsx/46316fa7-bc48-4957-84f8-d3c3236a0d98/"
+        2. File = "crm.xlsx"
+        3. create_pandas_dataframe(
+             dataframe_name="df",
+             create_using_function="read_excel",
+             function_parameters={"io": "/app/data/xlsx/46316fa7-bc48-4957-84f8-d3c3236a0d98/crm.xlsx"}
+           )
+        4. run_dataframe_operation(dataframe_name="df", operation="sum", operation_parameters={})
+        
+        **COMMON MISTAKES TO AVOID:**
+        - ❌ {"io": "crm.xlsx"} ← Missing directory path - WILL FAIL
+        - ❌ {"filepath_or_buffer": "..."} ← Wrong parameter name for read_excel
+        - ✅ {"io": "/full/path/to/file.xlsx"} ← Correct!
+        
+        **ALWAYS prefer PandasTools for numerical analysis - it's FAR more accurate than mental math!**
         
  """)
     )

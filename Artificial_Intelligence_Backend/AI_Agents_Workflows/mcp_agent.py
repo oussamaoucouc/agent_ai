@@ -345,6 +345,8 @@ async def run_agent_async(query, user_id, session_id, images=None, audio=None, v
 
     agent_common_kwargs = dict(
         model=session_model,
+        #For debuggin purposes
+        debug_mode=True,
         name="mcp_llm_agent",
         instructions=dedent(f"""\
         <IMPORTANT>
