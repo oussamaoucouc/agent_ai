@@ -71,7 +71,7 @@ async def run_excel_agent(query, user_id, session_id, stream=False):
             "csv_directory": csv_dir_str
         },
         tools=[csv_tools, calculator_tools, thinking_tools],
-        show_tool_calls=True,
+        show_tool_calls=False,
         markdown=True,
         read_chat_history=True,
         add_history_to_messages=True,
