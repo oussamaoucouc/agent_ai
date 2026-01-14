@@ -15,6 +15,9 @@ from . import model_factory
 from .output_utils import clean_agent_output
 from .ollama_queue import local_llm_rate_limit
 from agno.tools.calculator import CalculatorTools
+from agno.tools.duckduckgo import DuckDuckGoTools
+from agno.tools.wikipedia import WikipediaTools
+from agno.tools.baidusearch import BaiduSearchTools
 
 
 logging.basicConfig(level=logging.INFO)
@@ -76,6 +79,9 @@ async def run_assistant_agent_async(query, user_id, session_id, images=None, aud
     is_tool_unsupported_model = any(pattern in model_id_lower for pattern in TOOL_UNSUPPORTED_MODEL_PATTERNS)
 
     calculator_tools = CalculatorTools(add_instructions=True)
+    duckduckgo_tools = DuckDuckGoTools(add_instructions=True)
+    wikipedia_tools = WikipediaTools(add_instructions=True)
+    baidu_tools = BaiduSearchTools(add_instructions=True)
 
 
     assistant_agent = Agent(
@@ -107,7 +113,7 @@ async def run_assistant_agent_async(query, user_id, session_id, images=None, aud
         num_history_responses=5,
         monitoring=True,
         show_tool_calls=False if is_tool_unsupported_model else True,
-        tools=None if is_tool_unsupported_model else [calculator_tools],
+        tools=None if is_tool_unsupported_model else [calculator_tools, duckduckgo_tools, wikipedia_tools, baidu_tools],
         storage = PostgresStorage(table_name="agent_session", db_url=cfg.DB_URL),
         enable_session_summaries=False,
         instructions=dedent("""\

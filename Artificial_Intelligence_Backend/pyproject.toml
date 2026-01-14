@@ -46,4 +46,6 @@ dependencies = [
     "piper-tts>=1.2.0",
     "onnxruntime-gpu>=1.19.0",
     "docling>=2.66.0",
+    "duckduckgo-search>=8.1.1",
+    "wikipedia>=1.4.0",
 ]
