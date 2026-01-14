@@ -16,7 +16,8 @@ from pydub import AudioSegment
 from AI_Agents_Workflows.rag_agent import run_rag_agent, initialize_knowledge_base
 from AI_Agents_Workflows.locks import get_user_kb_lock
 from AI_Agents_Workflows.ai_agent_assistant import run_assistant_agent
-from AI_Agents_Workflows.config import get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_xlsx_dir, get_user_pptx_dir, get_user_images_dir
+from AI_Agents_Workflows.excel_agent import run_excel_agent
+from AI_Agents_Workflows.config import get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir, get_user_pptx_dir, get_user_images_dir
 from AI_Agents_Workflows.mcp_agent import run_agent_async as run_mcp_agent, reset_mcp_gateway_state
 from AI_Agents_Workflows.tts import text_to_speech
 from AI_Agents_Workflows.sentence_buffer import SentenceBuffer
@@ -482,7 +483,7 @@ async def upload_document_endpoint(
         allowed = {
             ".pdf", ".docx", ".doc",  # Documents
             ".pptx", ".ppt",  # Presentations
-            ".txt", ".md",".xlsx",  # Text/data
+            ".txt", ".md", ".csv",  # Text/data
             ".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".gif"  # Images (OCR)
         }
         if file_extension not in allowed:
@@ -507,9 +508,9 @@ async def upload_document_endpoint(
         elif file_extension in {".txt", ".md"}:
             target_dir = str(get_user_text_dir(effective_user_id))
             kind = "text"
-        else:  # .xlsx
-            target_dir = str(get_user_xlsx_dir(effective_user_id))
-            kind = "xlsx"
+        else:  # .csv
+            target_dir = str(get_user_csv_dir(effective_user_id))
+            kind = "csv"
         
         # Check file size against user's quotas
         from users import get_user_file_size_limits, get_user_storage_usage
@@ -730,7 +731,7 @@ async def list_documents(user_id: Optional[str] = None, request: Request = None,
             (str(get_user_pptx_dir(effective_user_id)), "pptx", {".ppt", ".pptx"}),
             (str(get_user_images_dir(effective_user_id)), "images", {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".gif"}),
             (str(get_user_text_dir(effective_user_id)), "text", {".txt", ".md"}),
-            (str(get_user_xlsx_dir(effective_user_id)), "xlsx", {".xlsx"}),
+            (str(get_user_csv_dir(effective_user_id)), "csv", {".csv"}),
         ]
         docs = []
         for d, kind, exts in dirs:
@@ -810,8 +811,8 @@ async def delete_document(user_id: Optional[str] = None, filename: str = "", kin
         elif kind == "text":
             d = str(get_user_text_dir(user_id))
             candidates.append(os.path.join(d, safe_name))
-        elif kind == "xlsx":
-            d = str(get_user_xlsx_dir(user_id))
+        elif kind == "csv":
+            d = str(get_user_csv_dir(user_id))
             candidates.append(os.path.join(d, safe_name))
         else:
             # Search all directories
@@ -821,7 +822,7 @@ async def delete_document(user_id: Optional[str] = None, filename: str = "", kin
                 str(get_user_pptx_dir(user_id)),
                 str(get_user_images_dir(user_id)),
                 str(get_user_text_dir(user_id)), 
-                str(get_user_xlsx_dir(user_id))
+                str(get_user_csv_dir(user_id))
             ]:
                 candidates.append(os.path.join(d, safe_name))
         file_path = next((p for p in candidates if os.path.isfile(p)), None)
@@ -879,9 +880,9 @@ async def delete_document(user_id: Optional[str] = None, filename: str = "", kin
             uid = f"u_{hashlib.sha1(str(user_id).encode('utf-8')).hexdigest()[:12]}"
             tables_base = [f"combined_documents_{uid}"]
             # Route to correct vector DB table based on file type
-            # Docling handles: PDF, DOCX, PPTX, images, XLSX
+            # Docling handles: PDF, DOCX, PPTX, images
             # AGNO handles: text
-            if kind in {"pdf", "docx", "pptx", "images", "xlsx"}:
+            if kind in {"pdf", "docx", "pptx", "images"}:
                 tables_base.append(f"docling_documents_{uid}")
             elif kind == "text":
                 tables_base.append(f"text_documents_{uid}")
@@ -1503,6 +1504,73 @@ async def query_mcp_direct(request: QueryRequest, http_request: Request):
             "X-Accel-Buffering": "no"
         }
     )
+
+
+# Excel QUERY (with SSE Streaming)
+@app.post("/query_excel")
+async def query_excel(request: QueryRequest, http_request: Request):
+    key = f"{request.user_id}:{request.session_id}"
+    active_tasks[key] = asyncio.current_task()
+    
+    # Auth check outside the generator
+    token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+    if not token_payload:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    uid = token_payload.get("uid")
+    
+    with sessions.SessionLocal() as db:
+        s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+        if not s:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+    async def stream_response():
+        full_response = ""
+        try:
+            # Get streaming generator from Excel agent
+            stream_gen = await run_excel_agent(
+                request.query, uid, request.session_id,
+                stream=True
+            )
+            
+            async for chunk in stream_gen:
+                if chunk:
+                    full_response += chunk
+                    # SSE format: data: JSON\n\n
+                    response_data = {'content': chunk}
+                    yield f"data: {json.dumps(response_data)}\n\n"
+            
+            # Clean the final response and send done event
+            cleaned_response = clean_model_output(full_response)
+            cleaned_response = ensure_response_content(cleaned_response)
+            
+            response_data = {"done": True, 'full_response': cleaned_response}
+            yield f"data: {json.dumps(response_data)}\n\n"
+            
+        except asyncio.CancelledError:
+            response_data = {'error': 'Request cancelled'}
+            yield f"data: {json.dumps(response_data)}\n\n"
+        except Exception as e:
+            logging.error(f"Error in Excel streaming: {type(e).__name__}: {str(e)}")
+            response_data = {"error": str(e)}
+            yield f"data: {json.dumps(response_data)}\n\n"
+        finally:
+            active_tasks.pop(key, None)
+    
+    return StreamingResponse(
+        stream_response(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+# Excel QUERY Direct (with SSE Streaming)
+@app.post("/query_excel_direct")
+async def query_excel_direct(request: QueryRequest, http_request: Request):
+    # This is identical to /query_excel but kept for consistency with other agents
+    return await query_excel(request, http_request)
 
 
 # MCP Speech-to-text then Query
@@ -3181,3 +3249,302 @@ async def auth_refresh(request: Request):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error refreshing token: {str(e)}")
+
+
+# Excel Speech-to-text then Query
+@app.post("/stt_query_excel", response_model=Dict[str, str])
+async def stt_query_excel_endpoint(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    session_id: str = Form(...),
+    request: Request = None,
+):
+    key = f"{user_id}:{session_id}"
+    active_tasks[key] = asyncio.current_task()
+    try:
+        token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
+        # First transcribe the audio
+        stt_result = await stt_endpoint(file, user_id, session_id)
+        if stt_result["status"] != "success":
+            return stt_result
+
+        # Get the transcribed text
+        query_text = stt_result["text"]
+        try:
+            logging.info(f"STT transcript len={len(query_text)} user={user_id} session={session_id}")
+        except Exception:
+            pass
+        if not query_text:
+            return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
+
+        # Process the query using the Excel agent
+        response = await run_excel_agent(query_text, user_id, session_id)
+        if hasattr(response, 'content'):
+            response = response.content
+        response = clean_model_output(str(response))
+        response = ensure_response_content(response)
+
+        return {
+            "text": query_text,
+            "response": response,
+            "user_id": user_id,
+            "session_id": session_id,
+            "status": "success"
+        }
+    except asyncio.CancelledError:
+        logging.warning(f"Task cancelled: user={user_id} session={session_id}")
+        return {
+            "text": "",
+            "response": "Request cancelled by user",
+            "user_id": user_id,
+            "session_id": session_id,
+            "status": "cancelled"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing audio query: {str(e)}")
+    finally:
+        active_tasks.pop(key, None)
+
+# Excel STT then Query, direct (filtered reasoning)
+@app.post("/stt_query_excel_direct", response_model=Dict[str, str])
+async def stt_query_excel_direct_endpoint(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    session_id: str = Form(...),
+    request: Request = None,
+):
+    # Identical to non-direct for now as run_excel_agent handles streaming logic if needed, but here we just want text
+    return await stt_query_excel_endpoint(file, user_id, session_id, request)
+
+# Excel Query then TTS
+@app.post("/query_excel_tts")
+async def query_excel_tts_endpoint(request: QueryRequest, http_request: Request):
+    """
+    Returns a JSON with the Excel text response, audio filename, and viseme data.
+    """
+    key = f"{request.user_id}:{request.session_id}"
+    active_tasks[key] = asyncio.current_task()
+    try:
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
+        
+        response = await run_excel_agent(request.query, uid, request.session_id)
+        if hasattr(response, 'content'):
+            response_text = response.content
+        else:
+            response_text = str(response)
+            
+        response_text = clean_model_output(response_text)
+        response_text = ensure_response_content(response_text)
+
+        # Generate audio and visemes
+        # Apply per-session voice before generating audio
+        with sessions.SessionLocal() as db:
+            sessions.apply_session_voice(db, request.user_id, request.session_id)
+        audio_path, viseme_data = await run_in_threadpool(text_to_speech, response_text)
+
+        audio_filename = None
+        if audio_path:
+            audio_filename = os.path.basename(audio_path)
+
+        return {
+            "user_id": uid,
+            "session_id": request.session_id,
+            "response": response_text,
+            "audio_filename": audio_filename,
+            "visemes": viseme_data,
+            "status": "success"
+        }
+    except asyncio.CancelledError:
+        raise HTTPException(status_code=499, detail="Request cancelled")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        active_tasks.pop(key, None)
+
+# Excel STT then Query then TTS (Added as per request for full parity)
+@app.post("/stt_query_excel_tts", response_model=Dict[str, Any])
+async def stt_query_excel_tts_endpoint(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    session_id: str = Form(...),
+    request: Request = None,
+):
+    key = f"{user_id}:{session_id}"
+    active_tasks[key] = asyncio.current_task()
+    try:
+        token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        
+        # 1. Transcribe
+        stt_result = await stt_endpoint(file, user_id, session_id)
+        if stt_result["status"] != "success":
+            return stt_result
+        query_text = stt_result["text"]
+        if not query_text:
+             return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
+
+        # 2. Query Excel Agent
+        response = await run_excel_agent(query_text, user_id, session_id)
+        if hasattr(response, 'content'):
+            response_text = response.content
+        else:
+            response_text = str(response)
+        response_text = clean_model_output(response_text)
+        response_text = ensure_response_content(response_text)
+
+        # 3. TTS
+        with sessions.SessionLocal() as db:
+            sessions.apply_session_voice(db, user_id, session_id)
+        audio_path, viseme_data = await run_in_threadpool(text_to_speech, response_text)
+        
+        audio_filename = None
+        if audio_path:
+            audio_filename = os.path.basename(audio_path)
+
+        return {
+            "text": query_text,
+            "response": response_text,
+            "audio_filename": audio_filename,
+            "visemes": viseme_data,
+            "user_id": user_id,
+            "session_id": session_id,
+            "status": "success"
+        }
+    except asyncio.CancelledError:
+        raise HTTPException(status_code=499, detail="Request cancelled")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        active_tasks.pop(key, None)
+
+
+@app.post("/query_excel_tts_direct")
+async def query_excel_tts_direct_endpoint(request: QueryRequest, http_request: Request):
+    """
+    Returns a SSE stream with text chunks, followed by audio filename and viseme data.
+    """
+    key = f"{request.user_id}:{request.session_id}"
+    active_tasks[key] = asyncio.current_task()
+    
+    # Define tool log regex for chunk cleaning
+    import re
+    tool_log_regex = re.compile(r"[\w_]+\([^)]*\)\s*completed\s+in\s+[\d.]+s\.?", re.IGNORECASE)
+    
+    try:
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
+        
+        async def stream_response():
+            full_response = ""
+            try:
+                with sessions.SessionLocal() as db:
+                    sessions.apply_session_voice(db, uid, request.session_id)
+                
+                logging.info("Excel TTS: Starting text streaming")
+                stream_gen = await run_excel_agent(request.query, uid, request.session_id, stream=True)
+                
+                async for chunk in stream_gen:
+                    if chunk:
+                        cleaned_chunk = tool_log_regex.sub("\n", chunk)
+                        full_response += chunk
+                        if cleaned_chunk.strip():
+                            response_data = {"content": cleaned_chunk}
+                            yield f"data: {json.dumps(response_data)}\n\n"
+                            await asyncio.sleep(0.01)
+                
+                cleaned_response = clean_model_output(full_response)
+                cleaned_response = ensure_response_content(cleaned_response)
+                chunks = _split_text_for_tts(cleaned_response)
+                logging.info(f"Excel TTS: Split into {len(chunks)} chunks")
+                
+                sent_count = 0
+                skipped_count = 0
+                
+                for idx, chunk_text in enumerate(chunks):
+                    try:
+                        logging.info(f"Excel TTS: Generating chunk {idx+1}/{len(chunks)}")
+                        audio_path, viseme_data = await asyncio.wait_for(
+                            run_in_threadpool(text_to_speech, chunk_text),
+                            timeout=30.0
+                        )
+                        if audio_path:
+                            audio_filename = os.path.basename(audio_path)
+                            response_data = {
+                                "type": "audio_chunk",
+                                "sentence_index": idx,
+                                "audio_filename": audio_filename,
+                                "visemes": viseme_data,
+                                "sentence_text": chunk_text
+                            }
+                            yield f"data: {json.dumps(response_data)}\n\n"
+                            sent_count += 1
+                            logging.info(f"Excel TTS: Sent chunk {idx}")
+                        else:
+                            logging.warning(f"Excel TTS: No audio for chunk {idx}")
+                            skipped_count += 1
+                    except asyncio.TimeoutError:
+                        logging.error(f"Excel TTS: Timeout chunk {idx}")
+                        skipped_count += 1
+                    except Exception as e:
+                        logging.error(f"Excel TTS: Error chunk {idx}: {str(e)}")
+                        skipped_count += 1
+                
+                logging.info(f"Excel TTS: Done. Sent: {sent_count}, Skipped: {skipped_count}")
+                response_data = {
+                    "done": True,
+                    "full_response": cleaned_response,
+                    "total_audio_chunks": sent_count
+                }
+                yield f"data: {json.dumps(response_data)}\n\n"
+            except asyncio.CancelledError:
+                logging.warning("Excel TTS: Cancelled")
+                return
+            except Exception as e:
+                logging.error(f"Excel TTS: Error: {str(e)}", exc_info=True)
+                response_data = {"error": str(e)}
+                yield f"data: {json.dumps(response_data)}\n\n"
+            finally:
+                active_tasks.pop(key, None)
+
+        return StreamingResponse(
+            stream_response(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+    except Exception as e:
+        logging.error(f"Excel TTS: Error: {str(e)}", exc_info=True)
+        active_tasks.pop(key, None)
+        raise HTTPException(status_code=500, detail=str(e))
+

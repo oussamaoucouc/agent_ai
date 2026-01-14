@@ -35,8 +35,6 @@ from agno.tools.thinking import ThinkingTools
 from agno.tools.knowledge import KnowledgeTools
 from agno.storage.sqlite import SqliteStorage
 from agno.tools.calculator import CalculatorTools
-from agno.tools.pandas import PandasTools
-from agno.tools.file import FileTools
 from . import config as cfg
 from . import model_factory
 from .locks import get_user_kb_lock
@@ -55,14 +53,10 @@ except ImportError:
     logging.error("CRITICAL: Docling not installed but REQUIRED. Install with `uv pip install docling`.")
     raise ImportError("Docling is mandatory for this configuration.")
 
-# CSV reader removed - XLSX files are now processed via Docling
-
 from .output_utils import clean_agent_output
 from .ollama_queue import local_llm_rate_limit
 
 # Removed custom KB cache directory; rely on AGNO/Chroma persistence.
-
-
 # Removed custom directory state sync; AGNO's knowledge base handles loading/upserts.
 
 
@@ -98,7 +92,6 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
     user_pdf_dir = cfg.get_user_pdf_dir(user_id)
     user_docx_dir = cfg.get_user_docx_dir(user_id)
     user_text_dir = cfg.get_user_text_dir(user_id)
-    user_xlsx_dir = cfg.get_user_xlsx_dir(user_id)
     user_pptx_dir = cfg.get_user_pptx_dir(user_id)
     user_images_dir = cfg.get_user_images_dir(user_id)
 
@@ -135,7 +128,6 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
         search_type=SearchType.hybrid,
         schema="rag"
     )
-    # csv_vector_db removed - XLSX now processed via Docling into docling_documents table
     combined_vector_db = PgVector(
         table_name=_tbl("combined_documents"),
         db_url=cfg.VECTOR_DB_URL,
@@ -174,7 +166,7 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
             logging.warning(f"Could not query existing hashes from {combined_table_name}: {e}")
             return set()
 
-    logging.info(f"Using user-specific directories: pdf={user_pdf_dir}, docx={user_docx_dir}, pptx={user_pptx_dir}, images={user_images_dir}, xlsx={user_xlsx_dir}, text={user_text_dir}")
+    logging.info(f"Using user-specific directories: pdf={user_pdf_dir}, docx={user_docx_dir}, pptx={user_pptx_dir}, images={user_images_dir}, text={user_text_dir}")
     
     # Gather all file paths
     try:
@@ -205,10 +197,6 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
         text_files = list(Path(user_text_dir).glob("*.txt")) + list(Path(user_text_dir).glob("*.md"))
     except Exception:
         text_files = []
-    try:
-        xlsx_files = list(Path(user_xlsx_dir).glob("*.xlsx"))
-    except Exception:
-        xlsx_files = []
 
     # Handle single-file processing mode
     if only_path and only_kind:
@@ -219,7 +207,6 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
         pptx_files = [p] if kind == "pptx" and p.suffix.lower() in {".ppt", ".pptx"} else []
         image_files = [p] if kind == "images" and p.suffix.lower() in {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".gif"} else []
         text_files = [p] if kind == "text" and p.suffix.lower() in {".txt", ".md"} else []
-        xlsx_files = [p] if kind == "xlsx" and p.suffix.lower() == ".xlsx" else []
 
     def _sha256(path: Path) -> str:
         import hashlib
@@ -231,11 +218,9 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
 
     knowledge_sources = []
     
-    # --- Docling-handled documents (PDF, DOCX, PPTX, Images, XLSX) ---
-    docling_files = pdf_files + docx_files + pptx_files + image_files + xlsx_files
-    
-    # --- Docling-handled documents (PDF, DOCX, PPTX, Images, XLSX) ---
-    docling_files = pdf_files + docx_files + pptx_files + image_files + xlsx_files
+    # --- Docling-handled documents (PDF, DOCX, PPTX, Images) ---
+    # XLSX files are OMITTED here - handled by Excel Agent
+    docling_files = pdf_files + docx_files + pptx_files + image_files
     
     if docling_files:
         # Get already-indexed hashes to skip re-processing (from combined table)
@@ -314,8 +299,6 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
             )
             knowledge_sources.append(text_kb)
     
-    # NOTE: XLSX files are now processed via Docling above (added to docling_files)
-
     # Combine all knowledge sources
     knowledge_base = CombinedKnowledgeBase(
         sources=knowledge_sources,
@@ -325,7 +308,7 @@ async def initialize_knowledge_base(user_id: str, only_path: str | None = None, 
 
     # Log basic ingestion diagnostics
     try:
-        logging.info(f"Knowledge ingestion: pdf={len(pdf_files)} docx={len(docx_files)} pptx={len(pptx_files)} images={len(image_files)} xlsx={len(xlsx_files)} text={len(text_files)} for user {user_id}")
+        logging.info(f"Knowledge ingestion: pdf={len(pdf_files)} docx={len(docx_files)} pptx={len(pptx_files)} images={len(image_files)} text={len(text_files)} for user {user_id}")
     except Exception as e:
         logging.warning(f"Unable to list files in user directories: {e}")
 
@@ -376,13 +359,6 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
     # add_instructions=True injects function docstrings into agent context
     calculator_tools = CalculatorTools(add_instructions=True)
     
-    # PandasTools for data analysis on Excel/CSV files
-    pandas_tools = PandasTools(add_instructions=True)
-    
-    # FileTools for reading Excel files - restricted to user's xlsx directory
-    user_xlsx_dir = cfg.get_user_xlsx_dir(user_id)
-    file_tools = FileTools(base_dir=user_xlsx_dir)
-
     # Resolve per-session model preference
     try:
         import sessions as session_mod
@@ -409,7 +385,7 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
         reasoning=False,
         name="rag_expert_agent",
         session_id=session_id,
-        session_state={"user_id":user_id, "session_id":session_id, "xlsx_directory": str(user_xlsx_dir)},
+        session_state={"user_id":user_id, "session_id":session_id},
         add_state_in_messages=True,
         role="AI Expert in Retrieval-Augmented Generation (RAG) systems that provides comprehensive, accurate, and contextually relevant responses by leveraging advanced document retrieval and knowledge synthesis techniques",
         user_id=user_id,
@@ -417,7 +393,7 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
             You are an AI RAG Expert, optimized for maximum retrieval accuracy, semantic understanding, and knowledge synthesis. 
             Your expertise lies in intelligently retrieving, analyzing, and synthesizing information from knowledge bases to provide comprehensive, accurate, and contextually relevant responses.
             """),
-        tools=[knowledge_tools, calculator_tools, pandas_tools, file_tools],
+        tools=[knowledge_tools, calculator_tools],
         knowledge=knowledge_base,
         # Note: User isolation already handled by per-user table names (_uid_suffix)
         #search_knowledge=True,
@@ -561,41 +537,6 @@ async def run_rag_agent_async(query, user_id, session_id, images=None, audio=Non
         - Example block: \\[ \\frac{a + b}{2} = c \\]
         - Example inline: The formula \\( x^2 + y^2 = z^2 \\) is the Pythagorean theorem.
         - NEVER output raw LaTeX commands like \\frac{} without delimiters!
-        
-        12. ▶ Excel/CSV Data Analysis with FileTools + PandasTools (CRITICAL)
-        The user's Excel files are in: session_state['xlsx_directory']
-        
-        **CRITICAL: Use FULL PATH for read_excel**
-        The xlsx_directory path + filename must be combined for pandas to work.
-        
-        **Workflow for accurate Excel data analysis:**
-        1. First, use `list_files` (FileTools) to see available Excel files
-        2. Get the xlsx_directory from session_state (e.g., "/app/data/xlsx/user123/")
-        3. Use `create_pandas_dataframe` with the FULL path:
-           • create_using_function: "read_excel"
-           • function_parameters: {"io": "/app/data/xlsx/user123/crm.xlsx"}  ← FULL PATH!
-        4. Use `run_dataframe_operation` to perform analysis:
-           • For SUM of column: operation="sum", operation_parameters={}
-           • For specific column sum: First select column, then sum
-           • For AVERAGE: operation="mean", operation_parameters={}
-        
-        **Correct Example:**
-        1. xlsx_directory = "/app/data/xlsx/46316fa7-bc48-4957-84f8-d3c3236a0d98/"
-        2. File = "crm.xlsx"
-        3. create_pandas_dataframe(
-             dataframe_name="df",
-             create_using_function="read_excel",
-             function_parameters={"io": "/app/data/xlsx/46316fa7-bc48-4957-84f8-d3c3236a0d98/crm.xlsx"}
-           )
-        4. run_dataframe_operation(dataframe_name="df", operation="sum", operation_parameters={})
-        
-        **COMMON MISTAKES TO AVOID:**
-        - ❌ {"io": "crm.xlsx"} ← Missing directory path - WILL FAIL
-        - ❌ {"filepath_or_buffer": "..."} ← Wrong parameter name for read_excel
-        - ✅ {"io": "/full/path/to/file.xlsx"} ← Correct!
-        
-        **ALWAYS prefer PandasTools for numerical analysis - it's FAR more accurate than mental math!**
-        
  """)
     )
 

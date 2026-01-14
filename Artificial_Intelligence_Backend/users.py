@@ -11,7 +11,7 @@ import binascii
 import secrets
 import os
 
-from AI_Agents_Workflows.config import DB_URL, get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_xlsx_dir, get_user_pptx_dir, get_user_images_dir
+from AI_Agents_Workflows.config import DB_URL, get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir, get_user_pptx_dir, get_user_images_dir
 import sessions as session_mod
 from auth import issue_token, get_user_from_auth_header, issue_access_token, issue_refresh_token, verify_refresh_token, APP_ENV
 # Local SQLAlchemy base separate from sessions.py to avoid circular import
@@ -221,7 +221,7 @@ DEFAULT_FILE_SIZE_LIMITS = {
     "pptx": 20 * 1024 * 1024,    # 20 MB (presentations tend to be larger)
     "images": 20 * 1024 * 1024,  # 20 MB (images for OCR)
     "text": 5 * 1024 * 1024,     # 5 MB
-    "xlsx": 50 * 1024 * 1024,    # 50 MB (Excel files)
+    "csv": 50 * 1024 * 1024,    # 50 MB (CSV files)
 }
 
 
@@ -231,7 +231,7 @@ class FileSizeLimitsModel(BaseModel):
     pptx: int = DEFAULT_FILE_SIZE_LIMITS["pptx"]
     images: int = DEFAULT_FILE_SIZE_LIMITS["images"]
     text: int = DEFAULT_FILE_SIZE_LIMITS["text"]
-    xlsx: int = DEFAULT_FILE_SIZE_LIMITS["xlsx"]
+    csv: int = DEFAULT_FILE_SIZE_LIMITS["csv"]
 
 
 class FileSizeLimitsUpdateRequest(BaseModel):
@@ -276,7 +276,7 @@ def get_user_storage_usage(user_id: str, db: SASession) -> dict:
         "pptx": 0,
         "images": 0,
         "text": 0,
-        "xlsx": 0
+        "csv": 0
     }
     for file_type, total_size in results:
         if file_type in usage and total_size:

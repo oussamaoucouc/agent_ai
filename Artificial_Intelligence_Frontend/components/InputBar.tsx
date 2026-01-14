@@ -1,6 +1,6 @@
 import React, { useState, KeyboardEvent, useRef, useEffect } from 'react';
 import { MicButton } from './MicButton';
-import { SendIcon, ToolIcon, StopIcon, AgentIcon, DocumentWithTextIcon, PlusIcon, XMarkIcon, ImageIcon } from './icons';
+import { SendIcon, ToolIcon, StopIcon, AgentIcon, DocumentWithTextIcon, PlusIcon, XMarkIcon, ImageIcon, ExcelIcon } from './icons';
 import { QueryMode, MediaAttachment } from '../types';
 
 interface InputBarProps {
@@ -247,6 +247,20 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isRecording, onStart
                                     </button>
                                     <span className="absolute -bottom-8 whitespace-nowrap text-xs text-white bg-gray-900/80 backdrop-blur-sm px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                                         Tools
+                                    </span>
+                                </div>
+                                <div className="relative group flex flex-col items-center">
+                                    <button
+                                        onClick={() => onQueryModeChange('excel')}
+                                        disabled={isLoading || isRecording}
+                                        className={`p-2 rounded-full ${queryMode === 'excel' ? 'bg-sky-600 hover:bg-sky-500' : 'bg-transparent hover:bg-white/10'} disabled:bg-slate-700 disabled:cursor-not-allowed transition-colors`}
+                                        aria-label="CSV Analyst Mode"
+                                        aria-pressed={queryMode === 'excel'}
+                                    >
+                                        <ExcelIcon className="w-5 h-5 text-white" />
+                                    </button>
+                                    <span className="absolute -bottom-8 whitespace-nowrap text-xs text-white bg-gray-900/80 backdrop-blur-sm px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                        CSV Analyst
                                     </span>
                                 </div>
                             </div>

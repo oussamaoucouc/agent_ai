@@ -1,4 +1,4 @@
-export type QueryMode = 'agent' | 'direct' | 'tools';
+export type QueryMode = 'agent' | 'direct' | 'tools' | 'excel';
 
 export enum User {
     USER = 'user',
@@ -47,7 +47,7 @@ export interface UploadedFile {
     id: string;
     file: File;
     status: UploadStatus;
-    kind?: 'pdf' | 'docx' | 'pptx' | 'images' | 'text' | 'xlsx';
+    kind?: 'pdf' | 'docx' | 'pptx' | 'images' | 'text' | 'csv';
     is_admin_uploaded?: boolean;
     uploaded_by?: string;
 }
@@ -80,7 +80,7 @@ export interface FileSizeLimits {
     pptx: number;   // bytes
     images: number; // bytes
     text: number;   // bytes
-    xlsx: number;   // bytes
+    csv: number;   // bytes
 }
 
 // Response from file size limits endpoint
@@ -234,13 +234,13 @@ export interface UploadDocumentResponse {
     filename: string;
     path?: string;
     duplicate?: boolean;
-    kind?: 'pdf' | 'docx' | 'pptx' | 'images' | 'text' | 'xlsx';
+    kind?: 'pdf' | 'docx' | 'pptx' | 'images' | 'text' | 'csv';
 }
 
 export interface DeleteDocumentRequest {
     user_id: string;
     filename: string;
-    kind?: 'pdf' | 'docx' | 'pptx' | 'images' | 'text' | 'xlsx';
+    kind?: 'pdf' | 'docx' | 'pptx' | 'images' | 'text' | 'csv';
 }
 
 export interface DeleteDocumentResponse {
@@ -290,7 +290,7 @@ export interface ListDocumentsResponse {
     documents: {
         filename: string;
         path: string;
-        kind?: 'pdf' | 'docx' | 'pptx' | 'images' | 'text' | 'xlsx';
+        kind?: 'pdf' | 'docx' | 'pptx' | 'images' | 'text' | 'csv';
         is_admin_uploaded?: boolean;
         uploaded_by?: string;
     }[];

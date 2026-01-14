@@ -14,7 +14,7 @@ import { AddUserPage } from './components/AddUserPage';
 import { EditUserPage } from './components/EditUserPage';
 import { Modal } from './components/Modal';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
-import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, listUserStats, createUser, deleteUser, loginUser, updateUser, getSessionSettings, getMcpToolsCatalog, setMcpTools, getMcpStdioCatalog, setMcpStdioTools, getConfig, getModelsLabeledCatalog, getVoicesLabeledCatalog, startTokenExpirationCheck, stopTokenExpirationCheck } from './services/apiService';
+import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, queryExcel, queryExcelTTS, fullAgentExcel, listUserStats, createUser, deleteUser, loginUser, updateUser, getSessionSettings, getMcpToolsCatalog, setMcpTools, getMcpStdioCatalog, setMcpStdioTools, getConfig, getModelsLabeledCatalog, getVoicesLabeledCatalog, startTokenExpirationCheck, stopTokenExpirationCheck } from './services/apiService';
 import * as storage from './services/storageService';
 import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice, QueryMode, AdminUser, McpToolItem, McpStdioItem, LabeledItem, MediaAttachment } from './types';
 import { API_BASE_URL } from './constants';
@@ -1249,6 +1249,129 @@ const App: React.FC = () => {
                         return;
                     }
                     break;
+                case 'excel':
+                    if (spokenResponses) {
+                        const streamingMessageId = crypto.randomUUID();
+                        assistantMessage = {
+                            id: streamingMessageId,
+                            text: '',
+                            sender: User.ASSISTANT,
+                            createdAt: new Date().toISOString()
+                        };
+                        setMessages(prev => [...prev, assistantMessage]);
+                        // Keep isLoading=true so Avatar stays in thinking/generating mode while text streams
+                        isStreamingRef.current = true;
+                        setStreamingMessageId(streamingMessageId);  // Track for UI indicator
+
+                        // Reset audio queue to allow new audio (in case previous stream was stopped)
+                        webAudioQueueRef.current?.reset();
+
+                        // Debounce timer to detect when text streaming ends
+                        let textEndTimeout: NodeJS.Timeout | null = null;
+
+                        const data = await queryExcelTTS(requestParams, controller.signal, (chunk) => {
+                            // Clear any existing timeout on each new chunk
+                            if (textEndTimeout) clearTimeout(textEndTimeout);
+
+                            setMessages(prev => prev.map(m => {
+                                if (m.id === streamingMessageId) {
+                                    const newText = m.text + chunk;
+                                    // Apply full formatting during streaming for better UX
+                                    const formatted = formatAssistantText(newText);
+                                    return { ...m, text: formatted };
+                                }
+                                return m;
+                            }));
+
+                            // Set timeout - if no more chunks for 400ms, assume text is done
+                            textEndTimeout = setTimeout(() => {
+                                setStreamingMessageId(null);  // Text streaming complete
+                            }, 400);
+                        }, (audioFilename, visemes, sentenceIndex) => {
+                            // Clear text end timeout since audio is starting
+                            if (textEndTimeout) clearTimeout(textEndTimeout);
+
+                            // NEW: Audio chunk callback - enqueue immediately for continuous playback!
+                            const audioUrl = `${API_BASE_URL}/querytts_audio/${audioFilename}?delete=true&delay_seconds=${DEFAULT_TTS_DELETE_DELAY_SECONDS}&t=${Date.now()}`;
+                            enqueueAudio(audioUrl, visemes, streamingMessageId);
+
+                            // Stop "thinking" animation when first audio starts
+                            // Also clear streaming indicator as backup
+                            if (sentenceIndex === 0) {
+                                setIsLoading(false);
+                                setStreamingMessageId(null);  // Backup clear
+                            }
+                        });
+
+                        // Update with final formatted response
+                        setMessages(prev => prev.map(m =>
+                            m.id === streamingMessageId
+                                ? { ...m, text: formatAssistantText(data.response) || ' ' }
+                                : m
+                        ));
+
+                        isStreamingRef.current = false;
+                        setStreamingMessageId(null);  // Clear streaming indicator
+                        // Cleanup any stuck empty messages
+                        setMessages(prev => prev.filter(m => m.text.trim().length > 0 || (m.attachedImages?.length ?? 0) > 0 || (m.attachedAudio?.length ?? 0) > 0 || (m.attachedVideos?.length ?? 0) > 0));
+                    } else {
+                        // Create empty assistant message for streaming
+                        const streamingMessageId = crypto.randomUUID();
+                        assistantMessage = {
+                            id: streamingMessageId,
+                            text: '',
+                            sender: User.ASSISTANT,
+                            createdAt: new Date().toISOString()
+                        };
+                        setMessages(prev => [...prev, assistantMessage]);
+                        // Stop showing loading indicator since we're now streaming
+                        setIsLoading(false);
+                        // Mark as streaming to prevent session save spam
+                        isStreamingRef.current = true;
+                        setStreamingMessageId(streamingMessageId);  // Track for UI indicator
+
+                        const data = await queryExcel(requestParams, controller.signal, (chunk) => {
+                            // Append chunk and format immediately for smooth display
+                            setMessages(prev => prev.map(m => {
+                                if (m.id === streamingMessageId) {
+                                    const newText = m.text + chunk;
+                                    // Apply comprehensive formatting during stream to match final output
+                                    // Identify if we're dealing with JSON-like structure keys
+                                    const formatted = newText
+                                        // Clean potential JSON structure artifacts if they appear raw in stream
+                                        .replace(/^\s*\{\s*$/gm, '')
+                                        .replace(/^\s*\}\s*$/gm, '')
+                                        .replace(/^\s*"[^"]*":\s*\[\s*$/gm, '')
+                                        .replace(/^\s*"[^"]*":\s*"([^"]*)"[,]?\s*$/gm, '$1')
+                                        .replace(/^\s*\]\s*[,]?\s*$/gm, '')
+                                        .replace(/^\s*[,]\s*$/gm, '')
+                                        // content cleanup
+                                        .replace(/key_findings/gi, 'Key Points')
+                                        .replace(/\bdetails\b/gi, 'Explanation')
+                                        .replace(/\bconclusion\b/gi, 'Summary')
+                                        .replace(/(?<!Additional\s)\bnotes\b/gi, 'Additional Notes');
+                                    return { ...m, text: formatted };
+                                }
+                                return m;
+                            }));
+                        });
+
+                        // Update with final formatted response (full cleanup)
+                        setMessages(prev => prev.map(m =>
+                            m.id === streamingMessageId
+                                ? { ...m, text: formatAssistantText(data.response) }
+                                : m
+                        ));
+
+                        // Streaming done - allow session save
+                        isStreamingRef.current = false;
+                        setStreamingMessageId(null);  // Clear streaming indicator
+                        // Skip adding message again since we already added it
+                        setIsLoading(false);
+                        abortControllerRef.current = null;
+                        return;
+                    }
+                    break;
                 case 'tools':
                     if (spokenResponses) {
                         const streamingMessageId = crypto.randomUUID();
@@ -1622,7 +1745,7 @@ const App: React.FC = () => {
             };
 
             let data: FullAgentResponse;
-            const apiFn = queryMode === 'agent' ? fullAgentAgent : (queryMode === 'tools' ? fullAgentMcp : fullAgent);
+            const apiFn = queryMode === 'agent' ? fullAgentAgent : (queryMode === 'tools' ? fullAgentMcp : (queryMode === 'excel' ? fullAgentExcel : fullAgent));
 
             data = await apiFn(requestParams, controller.signal, onChunk, onTranscription);
 
