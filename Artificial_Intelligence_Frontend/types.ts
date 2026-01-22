@@ -1,4 +1,4 @@
-export type QueryMode = 'agent' | 'direct' | 'tools' | 'excel';
+export type QueryMode = 'agent' | 'direct' | 'tools' | 'excel' | 'postgres';
 
 export enum User {
     USER = 'user',
@@ -70,6 +70,7 @@ export interface AdminUser {
     mcpWebTools?: number;
     mcpLocalTools?: number;
     createdAt: string;
+    postgresDbUrl?: string; // Connection string for Postgres Agent
     fileSizeLimits?: FileSizeLimits;
 }
 

@@ -19,6 +19,7 @@ from AI_Agents_Workflows.ai_agent_assistant import run_assistant_agent
 from AI_Agents_Workflows.excel_agent import run_excel_agent
 from AI_Agents_Workflows.config import get_user_pdf_dir, get_user_docx_dir, get_user_text_dir, get_user_csv_dir, get_user_pptx_dir, get_user_images_dir
 from AI_Agents_Workflows.mcp_agent import run_agent_async as run_mcp_agent, reset_mcp_gateway_state
+from AI_Agents_Workflows.postgres_agent import run_postgres_agent
 from AI_Agents_Workflows.tts import text_to_speech
 from AI_Agents_Workflows.sentence_buffer import SentenceBuffer
 from AI_Agents_Workflows.config import TTS_DELETE_AFTER_SERVE, TTS_DELETE_DELAY_SECONDS
@@ -3548,3 +3549,347 @@ async def query_excel_tts_direct_endpoint(request: QueryRequest, http_request: R
         active_tasks.pop(key, None)
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.post("/query_postgres")
+async def query_postgres(
+    request: QueryRequest,
+    http_request: Request
+):
+    token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+    if not token_payload:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    uid = token_payload.get("uid")
+
+    key = f"{uid}:{request.session_id}"
+    active_tasks[key] = asyncio.current_task()
+
+    # Regex for filtering tool execution logs from streaming chunks
+    import re
+    tool_log_regex = re.compile(r"[\w_]+\([^)]*\)\s*completed\s+in\s+[\d.]+s\.?", re.IGNORECASE)
+
+    try:
+        async def stream_response():
+            full_response = ""
+            try:
+                # Run agent
+                agent_response_gen = await run_postgres_agent(
+                    query=request.query,
+                    user_id=uid,
+                    session_id=request.session_id,
+                    stream=True
+                )
+
+                # If agent returned a string (error), yield it as an error event
+                if isinstance(agent_response_gen, str):
+                    response_data = {"error": agent_response_gen}
+                    yield f"data: {json.dumps(response_data)}\n\n"
+                    return
+
+                # Handle async generator
+                if hasattr(agent_response_gen, '__aiter__'):
+                    async for chunk in agent_response_gen:
+                        content = ""
+                        if hasattr(chunk, "content"):
+                             content = chunk.content
+                        elif isinstance(chunk, str):
+                            content = chunk
+                        
+                        if content:
+                            cleaned_chunk = tool_log_regex.sub("\n", content)
+                            full_response += content
+                            # SSE format: data: JSON\n\n
+                            if cleaned_chunk.strip():
+                                response_data = {'content': cleaned_chunk}
+                                yield f"data: {json.dumps(response_data)}\n\n"
+                else:
+                    # Handle sync generator fallback (just in case)
+                    for chunk in agent_response_gen:
+                        content = ""
+                        if hasattr(chunk, "content"):
+                             content = chunk.content
+                        elif isinstance(chunk, str):
+                            content = chunk
+                        
+                        if content:
+                            cleaned_chunk = tool_log_regex.sub("\n", content)
+                            full_response += content
+                            if cleaned_chunk.strip():
+                                response_data = {'content': cleaned_chunk}
+                                yield f"data: {json.dumps(response_data)}\n\n"
+
+                # Clean the final response and send done event
+                cleaned_response = clean_model_output(full_response)
+                cleaned_response = ensure_response_content(cleaned_response)
+                
+                response_data = {"done": True, 'full_response': cleaned_response}
+                yield f"data: {json.dumps(response_data)}\n\n"
+
+            except asyncio.CancelledError:
+                response_data = {'error': 'Request cancelled'}
+                yield f"data: {json.dumps(response_data)}\n\n"
+            except Exception as e:
+                logging.error(f"Error in Postgres streaming: {e}")
+                response_data = {"error": str(e)}
+                yield f"data: {json.dumps(response_data)}\n\n"
+            finally:
+                active_tasks.pop(key, None)
+
+        return StreamingResponse(
+            stream_response(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+
+    except Exception as e:
+        active_tasks.pop(key, None)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Postgres STT then Query
+@app.post("/stt_query_postgres", response_model=Dict[str, str])
+async def stt_query_postgres_endpoint(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    session_id: str = Form(...),
+    request: Request = None,
+):
+    key = f"{user_id}:{session_id}"
+    active_tasks[key] = asyncio.current_task()
+    try:
+        token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
+        # First transcribe the audio
+        stt_result = await stt_endpoint(file, user_id, session_id)
+        if stt_result["status"] != "success":
+            return stt_result
+
+        # Get the transcribed text
+        query_text = stt_result["text"]
+        if not query_text:
+            return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
+
+        # Process the query using the Postgres agent
+        response = await run_postgres_agent(query_text, user_id, session_id)
+        # Handle if response is RunResponse object
+        if hasattr(response, 'content'):
+            response = response.content
+            
+        response = clean_model_output(str(response))
+        response = ensure_response_content(response)
+
+        return {
+            "text": query_text,
+            "response": response,
+            "user_id": user_id,
+            "session_id": session_id,
+            "status": "success"
+        }
+    except asyncio.CancelledError:
+        return {
+            "text": "",
+            "response": "Request cancelled by user",
+            "user_id": user_id,
+            "session_id": session_id,
+            "status": "cancelled"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing audio query: {str(e)}")
+    finally:
+        active_tasks.pop(key, None)
+
+# Postgres Query then TTS (Streaming)
+@app.post("/query_postgres_tts_direct")
+async def query_postgres_tts_direct_endpoint(request: QueryRequest, http_request: Request):
+    """
+    Returns a SSE stream with text chunks, followed by audio filename and viseme data.
+    """
+    key = f"{request.user_id}:{request.session_id}"
+    active_tasks[key] = asyncio.current_task()
+    
+    # Define tool log regex for chunk cleaning
+    import re
+    tool_log_regex = re.compile(r"[\w_]+\([^)]*\)\s*completed\s+in\s+[\d.]+s\.?", re.IGNORECASE)
+    
+    try:
+        token_payload = get_user_from_auth_header(http_request.headers.get("Authorization"))
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        with sessions.SessionLocal() as db:
+            s = db.query(sessions.SessionDB).filter(sessions.SessionDB.id == request.session_id, sessions.SessionDB.user_id == uid).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session not found")
+        
+        async def stream_response():
+            full_response = ""
+            try:
+                with sessions.SessionLocal() as db:
+                    sessions.apply_session_voice(db, uid, request.session_id)
+                
+                logging.info("Postgres TTS: Starting text streaming")
+                # Ensure run_postgres_agent supports stream=True and returns synchronous generator or async generator
+                stream_gen = await run_postgres_agent(request.query, uid, request.session_id, stream=True)
+                
+                # Handle both async and sync generators if needed (assuming async for now based on pattern)
+                # If stream_gen is not async iterator, wrap it or iterate normally
+                if hasattr(stream_gen, '__aiter__'):
+                    async for chunk in stream_gen:
+                        content = ""
+                        if hasattr(chunk, "content"):
+                            content = chunk.content
+                        elif isinstance(chunk, str):
+                            content = chunk
+                        
+                        if content:
+                            cleaned_chunk = tool_log_regex.sub("\n", content)
+                            full_response += content
+                            if cleaned_chunk.strip():
+                                response_data = {"content": cleaned_chunk}
+                                yield f"data: {json.dumps(response_data)}\n\n"
+                                await asyncio.sleep(0.01)
+                else:
+                    # Sync generator?
+                    for chunk in stream_gen:
+                         content = ""
+                         if hasattr(chunk, "content"):
+                             content = chunk.content
+                         elif isinstance(chunk, str):
+                             content = chunk
+                         if content:
+                            cleaned_chunk = tool_log_regex.sub("\n", content)
+                            full_response += content
+                            if cleaned_chunk.strip():
+                                response_data = {"content": cleaned_chunk}
+                                yield f"data: {json.dumps(response_data)}\n\n"
+                                await asyncio.sleep(0.01)
+
+                
+                cleaned_response = clean_model_output(full_response)
+                cleaned_response = ensure_response_content(cleaned_response)
+                chunks = _split_text_for_tts(cleaned_response)
+                logging.info(f"Postgres TTS: Split into {len(chunks)} chunks")
+                
+                sent_count = 0
+                skipped_count = 0
+                
+                for idx, chunk_text in enumerate(chunks):
+                    try:
+                        logging.info(f"Postgres TTS: Generating chunk {idx+1}/{len(chunks)}")
+                        audio_path, viseme_data = await asyncio.wait_for(
+                            run_in_threadpool(text_to_speech, chunk_text),
+                            timeout=30.0
+                        )
+                        if audio_path:
+                            audio_filename = os.path.basename(audio_path)
+                            response_data = {
+                                "type": "audio_chunk",
+                                "sentence_index": idx,
+                                "audio_filename": audio_filename,
+                                "visemes": viseme_data,
+                                "sentence_text": chunk_text
+                            }
+                            yield f"data: {json.dumps(response_data)}\n\n"
+                            sent_count += 1
+                        else:
+                            skipped_count += 1
+                    except Exception:
+                        skipped_count += 1
+                
+                response_data = {
+                    "done": True,
+                    "full_response": cleaned_response,
+                    "total_audio_chunks": sent_count
+                }
+                yield f"data: {json.dumps(response_data)}\n\n"
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                response_data = {"error": str(e)}
+                yield f"data: {json.dumps(response_data)}\n\n"
+            finally:
+                active_tasks.pop(key, None)
+
+        return StreamingResponse(
+            stream_response(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+    except Exception as e:
+        active_tasks.pop(key, None)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Postgres STT then Query then TTS (Buffered)
+@app.post("/stt_query_postgres_tts", response_model=Dict[str, Any])
+async def stt_query_postgres_tts_endpoint(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    session_id: str = Form(...),
+    request: Request = None,
+):
+    key = f"{user_id}:{session_id}"
+    active_tasks[key] = asyncio.current_task()
+    try:
+        token_payload = get_user_from_auth_header(request.headers.get("Authorization") if request else None)
+        if not token_payload:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        uid = token_payload.get("uid")
+        
+        # 1. Transcribe
+        stt_result = await stt_endpoint(file, user_id, session_id)
+        if stt_result["status"] != "success":
+            return stt_result
+        query_text = stt_result["text"]
+        if not query_text:
+             return {"text": "", "user_id": user_id, "session_id": session_id, "status": "error", "message": "No speech detected"}
+
+        # 2. Query Postgres Agent
+        response = await run_postgres_agent(query_text, user_id, session_id)
+        if hasattr(response, 'content'):
+            response_text = response.content
+        else:
+            response_text = str(response)
+            
+        response_text = clean_model_output(response_text)
+        response_text = ensure_response_content(response_text)
+
+        # 3. TTS
+        with sessions.SessionLocal() as db:
+            sessions.apply_session_voice(db, user_id, session_id)
+        audio_path, viseme_data = await run_in_threadpool(text_to_speech, response_text)
+        
+        audio_filename = None
+        if audio_path:
+            audio_filename = os.path.basename(audio_path)
+
+        return {
+            "text": query_text,
+            "response": response_text,
+            "audio_filename": audio_filename,
+            "visemes": viseme_data,
+            "user_id": user_id,
+            "session_id": session_id,
+            "status": "success"
+        }
+    except asyncio.CancelledError:
+        raise HTTPException(status_code=499, detail="Request cancelled")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        active_tasks.pop(key, None)

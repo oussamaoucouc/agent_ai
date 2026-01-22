@@ -14,7 +14,7 @@ import { AddUserPage } from './components/AddUserPage';
 import { EditUserPage } from './components/EditUserPage';
 import { Modal } from './components/Modal';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
-import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, queryExcel, queryExcelTTS, fullAgentExcel, listUserStats, createUser, deleteUser, loginUser, updateUser, getSessionSettings, getMcpToolsCatalog, setMcpTools, getMcpStdioCatalog, setMcpStdioTools, getConfig, getModelsLabeledCatalog, getVoicesLabeledCatalog, startTokenExpirationCheck, stopTokenExpirationCheck } from './services/apiService';
+import { queryTTS, query, queryMcp, uploadDocument, fullAgent, queryMcpTTS, fullAgentMcp, setModel, setVoice, cancelSession, getSessions, createSession, renameSession as apiRenameSession, deleteSession as apiDeleteSession, saveSessionMessages, listDocuments, deleteDocument, queryAgent, queryAgentTTS, fullAgentAgent, queryExcel, queryExcelTTS, queryPostgres, queryPostgresTTS, fullAgentExcel, fullAgentPostgres, listUserStats, createUser, deleteUser, loginUser, updateUser, getSessionSettings, getMcpToolsCatalog, setMcpTools, getMcpStdioCatalog, setMcpStdioTools, getConfig, getModelsLabeledCatalog, getVoicesLabeledCatalog, startTokenExpirationCheck, stopTokenExpirationCheck } from './services/apiService';
 import * as storage from './services/storageService';
 import { Message, User, VisemeData, UploadedFile, Session, FullAgentResponse, TTSVoice, QueryMode, AdminUser, McpToolItem, McpStdioItem, LabeledItem, MediaAttachment } from './types';
 import { API_BASE_URL } from './constants';
@@ -346,6 +346,7 @@ const App: React.FC = () => {
                 mcpWebTools: (u.mcpWebTools ?? 0),
                 mcpLocalTools: (u.mcpLocalTools ?? 0),
                 createdAt: u.createdAt,
+                postgresDbUrl: u.postgresDbUrl,
             }));
             setAdminUsers(mapped);
         } catch (err) {
@@ -1372,6 +1373,97 @@ const App: React.FC = () => {
                         return;
                     }
                     break;
+                case 'postgres':
+                    if (spokenResponses) {
+                        const streamingMessageId = crypto.randomUUID();
+                        assistantMessage = {
+                            id: streamingMessageId,
+                            text: '',
+                            sender: User.ASSISTANT,
+                            createdAt: new Date().toISOString()
+                        };
+                        setMessages(prev => [...prev, assistantMessage]);
+
+                        // Set streaming state
+                        isStreamingRef.current = true;
+                        setStreamingMessageId(streamingMessageId);
+                        webAudioQueueRef.current?.reset();
+
+                        await queryPostgresTTS(requestParams, controller.signal,
+                            (chunk) => {
+                                setMessages(prev => prev.map(m => {
+                                    if (m.id === streamingMessageId) {
+                                        // Basic cleanup for display
+                                        const newText = m.text + chunk;
+                                        const formatted = newText
+                                            .replace(/^\s*\{\s*$/gm, '')
+                                            .replace(/^\s*\}\s*$/gm, '')
+                                            .replace(/key_findings/gi, 'Key Points');
+                                        return { ...m, text: formatted };
+                                    }
+                                    return m;
+                                }));
+                            },
+                            (audioFilename, visemes) => {
+                                if (webAudioQueueRef.current) {
+                                    webAudioQueueRef.current.enqueue(`${API_BASE_URL}/media/${audioFilename}`, visemes, streamingMessageId);
+                                }
+                            }
+                        );
+
+                        isStreamingRef.current = false;
+                        setStreamingMessageId(null);
+                        setIsLoading(false);
+                        abortControllerRef.current = null;
+                        return;
+                    } else {
+                        // Text-only mode (Streaming)
+                        const streamingMessageId = crypto.randomUUID();
+                        assistantMessage = {
+                            id: streamingMessageId,
+                            text: '',
+                            sender: User.ASSISTANT,
+                            createdAt: new Date().toISOString()
+                        };
+                        setMessages(prev => [...prev, assistantMessage]);
+                        setIsLoading(false);
+                        isStreamingRef.current = true;
+                        setStreamingMessageId(streamingMessageId);
+
+                        const data = await queryPostgres(requestParams, controller.signal, (chunk) => {
+                            setMessages(prev => prev.map(m => {
+                                if (m.id === streamingMessageId) {
+                                    const newText = m.text + chunk;
+                                    const formatted = newText
+                                        .replace(/^\s*\{\s*$/gm, '')
+                                        .replace(/^\s*\}\s*$/gm, '')
+                                        .replace(/^\s*"[^"]*":\s*\[\s*$/gm, '')
+                                        .replace(/^\s*"[^"]*":\s*"([^"]*)"[,]?\s*$/gm, '$1')
+                                        .replace(/^\s*\]\s*[,]?\s*$/gm, '')
+                                        .replace(/^\s*[,]\s*$/gm, '')
+                                        .replace(/key_findings/gi, 'Key Points')
+                                        .replace(/\bdetails\b/gi, 'Explanation')
+                                        .replace(/\bconclusion\b/gi, 'Summary')
+                                        .replace(/(?<!Additional\s)\bnotes\b/gi, 'Additional Notes');
+                                    return { ...m, text: formatted };
+                                }
+                                return m;
+                            }));
+                        });
+
+                        setMessages(prev => prev.map(m =>
+                            m.id === streamingMessageId
+                                ? { ...m, text: formatAssistantText(data.response) }
+                                : m
+                        ));
+
+                        isStreamingRef.current = false;
+                        setStreamingMessageId(null);
+                        setIsLoading(false);
+                        abortControllerRef.current = null;
+                        return;
+                    }
+                    break;
                 case 'tools':
                     if (spokenResponses) {
                         const streamingMessageId = crypto.randomUUID();
@@ -1745,7 +1837,7 @@ const App: React.FC = () => {
             };
 
             let data: FullAgentResponse;
-            const apiFn = queryMode === 'agent' ? fullAgentAgent : (queryMode === 'tools' ? fullAgentMcp : (queryMode === 'excel' ? fullAgentExcel : fullAgent));
+            const apiFn = queryMode === 'agent' ? fullAgentAgent : (queryMode === 'tools' ? fullAgentMcp : (queryMode === 'excel' ? fullAgentExcel : (queryMode === 'postgres' ? fullAgentPostgres : fullAgent)));
 
             data = await apiFn(requestParams, controller.signal, onChunk, onTranscription);
 
@@ -1905,7 +1997,7 @@ const App: React.FC = () => {
         setAdminView('editUser');
     };
 
-    const handleSaveEditedUser = async (payload: { password: string; role?: 'user' | 'admin' }) => {
+    const handleSaveEditedUser = async (payload: { password?: string; role?: 'user' | 'admin'; postgresDbUrl?: string }) => {
         try {
             if (!editingUser) return;
             await updateUser(editingUser.id, payload);
@@ -1973,6 +2065,7 @@ const App: React.FC = () => {
                             userId={editingUser.id}
                             username={editingUser.name}
                             currentRole={editingUser.role}
+                            currentPostgresUrl={editingUser.postgresDbUrl}
                             onSave={handleSaveEditedUser}
                             onCancel={handleCancelEditUser}
                         />
@@ -1984,6 +2077,7 @@ const App: React.FC = () => {
                         onDeleteUser={handleDeleteAdminUser}
                         onEditUser={handleEditAdminUser}
                         onShowConfirmation={showConfirmation}
+                        onShowAlert={showAlert}
                     />;
                 case 'config':
                     return <ConfigPage onCancel={() => setAdminView('dashboard')} onShowAlert={(message, title) => showAlert(title, message)} onShowConfirmation={showConfirmation} />;
@@ -1997,6 +2091,7 @@ const App: React.FC = () => {
                             onDeleteUser={handleDeleteAdminUser}
                             onEditUser={handleEditAdminUser}
                             onShowConfirmation={showConfirmation}
+                            onShowAlert={showAlert}
                         />
                     );
             }
@@ -2134,3 +2229,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+

@@ -33,6 +33,8 @@ class UserDB(Base):
     rag_combined_table_name = Column(String(256), nullable=True)
     # Per-file-type max upload size in bytes: {"pdf": 10485760, "docx": 10485760, "text": 5242880, "csv": 52428800}
     file_size_limits = Column(JSON, nullable=True)
+    # Per-user Postgres connection string
+    postgres_db_url = Column(String(512), nullable=True)
 
 
 class RefreshTokenDB(Base):
@@ -103,6 +105,20 @@ try:
             print("Migration complete.")
 except Exception as e:
     print(f"User schema migration error (file_size_limits): {e}")
+
+# Runtime migration: Add postgres_db_url column if missing
+try:
+    from sqlalchemy import inspect
+    insp = inspect(engine)
+    cols = [c.get('name') for c in insp.get_columns('app_users')]
+    if 'postgres_db_url' not in cols:
+        print("Migrating app_users: adding postgres_db_url column...")
+        with engine.connect() as conn:
+            conn.exec_driver_sql("ALTER TABLE app_users ADD COLUMN postgres_db_url VARCHAR(512)")
+            conn.commit()
+            print("Migration complete (postgres_db_url).")
+except Exception as e:
+    print(f"User schema migration error (postgres_db_url): {e}")
 
 # Runtime migration: Add file_size column to document_metadata if missing
 try:
@@ -180,6 +196,7 @@ class UserCreateRequest(BaseModel):
 class UserUpdateRequest(BaseModel):
     password: constr(strip_whitespace=True, min_length=4, max_length=256) | None = None
     role: constr(strip_whitespace=True, min_length=4, max_length=10) | None = None
+    postgresDbUrl: constr(strip_whitespace=True, min_length=1, max_length=512) | None = None
 
 
 class UserModel(BaseModel):
@@ -187,6 +204,7 @@ class UserModel(BaseModel):
     username: str
     role: str
     createdAt: str
+    postgresDbUrl: str | None = None
 
 
 class LoginRequest(BaseModel):
@@ -212,6 +230,7 @@ class UserStatsModel(BaseModel):
     mcpWebTools: int
     mcpLocalTools: int
     createdAt: str
+    postgresDbUrl: str | None = None
 
 
 # Default file size limits in bytes per file type
@@ -315,7 +334,13 @@ def _verify_password(password: str, stored_hash: str) -> bool:
 
 
 def _db_to_user_model(u: UserDB) -> UserModel:
-    return UserModel(id=u.id, username=u.username, role=u.role, createdAt=u.created_at.isoformat())
+    return UserModel(
+        id=u.id, 
+        username=u.username, 
+        role=u.role, 
+        createdAt=u.created_at.isoformat(),
+        postgresDbUrl=u.postgres_db_url
+    )
 
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -473,6 +498,9 @@ def update_user(user_id: str, request: UserUpdateRequest, http_request: Request,
             u.password_hash = _hash_password_secure(request.password)
         if request.role:
             u.role = request.role if request.role in ("admin", "user") else u.role
+        if request.postgresDbUrl is not None:
+             # Empty string typically means clear it, or update it.
+             u.postgres_db_url = request.postgresDbUrl if request.postgresDbUrl else None
         db.commit()
         db.refresh(u)
         return _db_to_user_model(u)
@@ -733,7 +761,8 @@ def user_stats(request: Request, db: SASession = Depends(get_db)):
                 mcpTools=tools_count,
                 mcpWebTools=web_tools_count,
                 mcpLocalTools=local_tools_count,
-                createdAt=u.created_at.isoformat()
+                createdAt=u.created_at.isoformat(),
+                postgresDbUrl=u.postgres_db_url
             ))
         return stats
     except Exception as e:

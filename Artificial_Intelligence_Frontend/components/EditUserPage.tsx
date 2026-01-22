@@ -4,29 +4,36 @@ interface EditUserPageProps {
     userId: string;
     username: string;
     currentRole: 'user' | 'admin';
-    onSave: (payload: { password: string; role?: 'user' | 'admin' }) => void;
+    currentPostgresUrl?: string;
+    onSave: (payload: { password?: string; role?: 'user' | 'admin'; postgresDbUrl?: string }) => void;
     onCancel: () => void;
 }
 
-export const EditUserPage: React.FC<EditUserPageProps> = ({ username, currentRole, onSave, onCancel }) => {
+export const EditUserPage: React.FC<EditUserPageProps> = ({ username, currentRole, currentPostgresUrl, onSave, onCancel }) => {
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [role, setRole] = useState<'user' | 'admin'>(currentRole);
+    const [postgresUrl, setPostgresUrl] = useState(currentPostgresUrl || '');
     const [showPassword, setShowPassword] = useState(false);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         const newPass = password.trim();
         const confirmPass = confirmPassword.trim();
-        if (!newPass) {
-            alert('Password cannot be empty.');
-            return;
+
+        // If password is provided, validate it
+        if (newPass) {
+            if (newPass !== confirmPass) {
+                alert('Passwords do not match.');
+                return;
+            }
         }
-        if (newPass !== confirmPass) {
-            alert('Passwords do not match.');
-            return;
-        }
-        onSave({ password: newPass, role });
+
+        onSave({
+            password: newPass || undefined,
+            role,
+            postgresDbUrl: postgresUrl.trim() || undefined
+        });
     };
 
     return (
@@ -57,11 +64,11 @@ export const EditUserPage: React.FC<EditUserPageProps> = ({ username, currentRol
                                     id="password-edit"
                                     name="password"
                                     type={showPassword ? 'text' : 'password'}
-                                    required
+
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     className="appearance-none rounded-lg relative block w-full px-3 py-3 border border-slate-600 bg-slate-800/50 placeholder-slate-500 text-white focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 focus:z-10 sm:text-sm"
-                                    placeholder="Enter a new password"
+                                    placeholder="Leave blank to keep current password"
                                 />
                                 <button
                                     type="button"
@@ -78,11 +85,10 @@ export const EditUserPage: React.FC<EditUserPageProps> = ({ username, currentRol
                                 id="confirm-password-edit"
                                 name="confirmPassword"
                                 type={showPassword ? 'text' : 'password'}
-                                required
                                 value={confirmPassword}
                                 onChange={(e) => setConfirmPassword(e.target.value)}
                                 className="appearance-none rounded-lg relative block w-full px-3 py-3 border border-slate-600 bg-slate-800/50 placeholder-slate-500 text-white focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 focus:z-10 sm:text-sm"
-                                placeholder="Re-enter the new password"
+                                placeholder="Re-enter new password"
                             />
                         </div>
                         <div>
@@ -96,7 +102,21 @@ export const EditUserPage: React.FC<EditUserPageProps> = ({ username, currentRol
                             >
                                 <option value="user">User</option>
                                 <option value="admin">Admin</option>
+
                             </select>
+                        </div>
+                        <div>
+                            <label htmlFor="postgres-url" className="block text-sm font-medium text-slate-300 mb-2">Postgres Connection String</label>
+                            <input
+                                id="postgres-url"
+                                name="postgresUrl"
+                                type="text"
+                                value={postgresUrl}
+                                onChange={(e) => setPostgresUrl(e.target.value)}
+                                className="appearance-none rounded-lg relative block w-full px-3 py-3 border border-slate-600 bg-slate-800/50 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 sm:text-sm"
+                                placeholder="postgresql://user:pass@host:port/dbname"
+                            />
+                            <p className="mt-1 text-xs text-slate-500">Optional. Required for Postgres Agent.</p>
                         </div>
                     </div>
 
@@ -116,7 +136,7 @@ export const EditUserPage: React.FC<EditUserPageProps> = ({ username, currentRol
                         </button>
                     </div>
                 </form>
-            </div>
-        </div>
+            </div >
+        </div >
     );
 };

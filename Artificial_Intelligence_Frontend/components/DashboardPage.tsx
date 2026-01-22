@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { AdminUser, UploadedFile, FileSizeLimits } from '../types';
-import { LogoutIcon, UserOutlineIcon, ChatIcon, FolderOpenIcon, PlusIcon, TrashIcon, SearchIcon, EditIcon, SettingsIcon, DocumentIcon, UploadIcon, SpinnerIcon, CloseIcon } from './icons';
+import { LogoutIcon, UserOutlineIcon, ChatIcon, FolderOpenIcon, PlusIcon, TrashIcon, SearchIcon, EditIcon, SettingsIcon, DocumentIcon, UploadIcon, SpinnerIcon, CloseIcon, DatabaseIcon } from './icons';
 import { CustomDropdown } from './CustomDropdown';
 import { listDocuments, uploadDocument, deleteDocument, getUserFileSizeLimits, updateUserFileSizeLimits } from '../services/apiService';
 import * as storage from '../services/storageService';
@@ -13,6 +13,7 @@ interface DashboardPageProps {
     onDeleteUser: (userId: string) => void;
     onEditUser: (user: AdminUser) => void;
     onShowConfirmation: (title: string, message: string, onConfirm: () => void) => void;
+    onShowAlert: (title: string, message: string) => void;
 }
 
 const StatCard: React.FC<{ title: string; value: string | number; icon: React.ReactNode }> = ({ title, value, icon }) => (
@@ -394,7 +395,7 @@ const DocumentManagementModal: React.FC<{
     );
 };
 
-export const DashboardPage: React.FC<DashboardPageProps> = ({ users, onLogout, onNavigateToAddUser, onNavigateToConfig, onDeleteUser, onEditUser, onShowConfirmation }) => {
+export const DashboardPage: React.FC<DashboardPageProps> = ({ users, onLogout, onNavigateToAddUser, onNavigateToConfig, onDeleteUser, onEditUser, onShowConfirmation, onShowAlert }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'user'>('all');
     const [managingDocsUser, setManagingDocsUser] = useState<AdminUser | null>(null);
@@ -508,6 +509,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ users, onLogout, o
                                         <th className="p-4">Documents</th>
                                         <th className="p-4">Web Tools</th>
                                         <th className="p-4">Local Tools</th>
+                                        <th className="p-4">Database</th>
                                         <th className="p-4">Joined On</th>
                                         <th className="p-4 text-right">Actions</th>
                                     </tr>
@@ -521,6 +523,26 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ users, onLogout, o
                                             <td className="p-4">{user.documents}</td>
                                             <td className="p-4">{user.mcpWebTools ?? 0}</td>
                                             <td className="p-4">{user.mcpLocalTools ?? 0}</td>
+                                            <td className="p-4">
+                                                <button
+                                                    onClick={() => {
+                                                        if (user.postgresDbUrl) {
+                                                            // Show the URL using styled modal
+                                                            navigator.clipboard.writeText(user.postgresDbUrl).then(() => {
+                                                                onShowAlert('URL Copied', `The PostgreSQL URL has been copied to your clipboard:\n\n${user.postgresDbUrl}`);
+                                                            }).catch(() => {
+                                                                onShowAlert('PostgreSQL URL', user.postgresDbUrl!);
+                                                            });
+                                                        } else {
+                                                            onShowAlert('Not Configured', 'No PostgreSQL database URL configured for this user.\n\nUse the Edit button to set one.');
+                                                        }
+                                                    }}
+                                                    className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors cursor-pointer ${user.postgresDbUrl ? 'bg-emerald-500/20 hover:bg-emerald-500/30' : 'bg-slate-800/50 hover:bg-slate-700/50'}`}
+                                                    title={user.postgresDbUrl ? "Click to view/copy URL" : "Not Configured - Click for info"}
+                                                >
+                                                    <DatabaseIcon className={`w-5 h-5 ${user.postgresDbUrl ? 'text-emerald-400' : 'text-slate-600/50'}`} />
+                                                </button>
+                                            </td>
                                             <td className="p-4 text-sm text-slate-400">{new Date(user.createdAt).toLocaleDateString()}</td>
                                             <td className="p-4 text-right">
                                                 <button
